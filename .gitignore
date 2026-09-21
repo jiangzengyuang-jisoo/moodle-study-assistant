@@ -1,0 +1,18 @@
+# Personal learning data and authentication never belong in the public repository.
+/Study/
+/.private/
+/config.local.json
+/.codex/
+/.venv/
+/node_modules/
+__pycache__/
+*.pyc
+*.log
+*.tmp
+*.zip
+.env
+.env.*
+*.dpapi
+*.pem
+*.key
+/.local/

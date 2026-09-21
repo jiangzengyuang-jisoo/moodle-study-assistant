@@ -1,0 +1,23 @@
+{
+  "name": "moodle-study-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local Moodle study workflow with assignment-based learning, FSRS and SymPy",
+  "license": "MIT",
+  "engines": {"node": ">=22"},
+  "scripts": {
+    "postinstall": "node tools/moodle/patch-upstream.mjs",
+    "init": "node tools/moodle/run.mjs init",
+    "check": "node tools/moodle/run.mjs check",
+    "courses": "node tools/moodle/run.mjs courses",
+    "refresh": "node tools/moodle/run.mjs refresh",
+    "mcp": "node tools/moodle/run.mjs mcp",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "moodle-mcp": "0.2.0",
+    "@modelcontextprotocol/sdk": "1.27.1",
+    "zod": "3.25.76"
+  }
+}
