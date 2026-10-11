@@ -1,9 +1,9 @@
 {
   "name": "moodle-study-assistant",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Local Moodle study workflow with assignment-based learning, FSRS and SymPy",
+  "description": "Local Moodle learning loop, current study plans and source-grounded exam practice",
   "license": "MIT",
   "engines": {"node": ">=22"},
   "scripts": {

@@ -25,9 +25,14 @@ export function initialize(root) {
   const path = join(root, 'Study/_System/state.json');
   if (!existsSync(path)) {
     const state = {schema_version: 1, revision: 0, timezone: 'Asia/Hong_Kong',
-      created_at: new Date().toISOString(), settings: {brief_send_authorized: false, study_capacity_target: 0.8},
-      integrations: {}, daily_plans: {}, weekly_plan: null};
-    for (const key of ['courses','deadlines','tasks','materials','schedules','mistakes','review_queue','course_updates','discussion_notes','pending_inputs','activity_log']) state[key] = [];
+      study_root: 'Study', created_at: new Date().toISOString(), settings: {
+        brief_send_authorized: false, study_capacity_target: 0.8,
+        study_capacity_range: [0.7, 0.85], review_minutes_range: [15, 30],
+        learning_loop: {enabled: true, version: 1, default_review_minutes: 15, daily_max_minutes: 30, same_day_budget_shared: true},
+        exam_preparation: {enabled: true, version: 1, answer_keys_separate: true, auto_download_materials: false, mastery_from_generation: false}
+      }, integrations: {}, daily_plans: {}, weekly_plan: null};
+    for (const key of ['courses','deadlines','tasks','materials','schedules','mistakes','review_queue','course_updates','discussion_notes','pending_inputs','activity_log',
+      'review_sessions','review_attempts','learning_feedback','exam_profiles','mock_exams','mock_attempts']) state[key] = [];
     atomicJSON(path, state);
   }
   const mcpPath = join(root, '.codex/config.toml');

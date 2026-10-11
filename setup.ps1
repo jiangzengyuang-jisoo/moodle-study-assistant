@@ -22,4 +22,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Node dependency installation failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Initialization failed.' }
 & '.venv/Scripts/python.exe' tools/study/review.py init
 if ($LASTEXITCODE -ne 0) { throw 'Review initialization failed.' }
+& '.venv/Scripts/python.exe' tools/study/daily.py run
+if ($LASTEXITCODE -ne 0) { throw 'Learning workflow initialization failed.' }
 Write-Host 'Setup complete. Next: connect.cmd, choose-courses.cmd, refresh.cmd. Read README.md.'

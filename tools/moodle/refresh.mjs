@@ -1,7 +1,7 @@
 // Evidence collection only. An assistant reviews changes before promoting a baseline.
 export function redactEvidence(value, token) {
   if (typeof value === 'string') return (token ? value.replaceAll(token, '[REDACTED]') : value)
-    .replace(/([?&](?:amp;)?(?:token|wstoken)=)[^"'\s<>]+/gi, '$1[REDACTED]')
+    .replace(/([?&](?:amp;)?(?:token|wstoken|sesskey)=)[^&"'\s<>]+/gi, '$1[REDACTED]')
     .replace(/((?:Password|Passcode)\s*:?\s*(?:<[^>]*>\s*)*)[\w-]+/gi, '$1[meeting access code omitted]');
   if (Array.isArray(value)) return value.map(v => redactEvidence(v, token));
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, redactEvidence(v, token)]));
@@ -36,7 +36,7 @@ export function verifyPosts(discussion, data) {
 }
 
 export async function collectRefresh(client, state) {
-  const report = { started_at: new Date().toISOString(), pages: [], forums: [], threads: [],
+  const report = { started_at: new Date().toISOString(), moodle_url: client.baseUrl, pages: [], forums: [], threads: [],
     submissions: [], attempts: [], errors: [], scope_limits: [], files_downloaded: 0, reviewed: false };
   const safe = async (scope, work) => {
     try { return await work(); } catch (e) { report.errors.push({ scope, error: e.message }); return null; }

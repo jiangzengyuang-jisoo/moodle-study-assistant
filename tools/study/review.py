@@ -1,5 +1,6 @@
 """FSRS integration for the existing shared study state. No background process."""
 import argparse
+import study_time
 from datetime import date, datetime, timedelta, timezone
 from importlib.metadata import version
 import json
@@ -24,28 +25,31 @@ def timestamp(value=None):
     return result.astimezone(timezone.utc)
 
 
+@study_time.state_timezone
 def scheduler(state):
     config = state["settings"]["spaced_repetition"]["scheduler"]
     return Scheduler.from_dict(config)
 
 
+@study_time.state_timezone
 def initialize(state):
     settings = state.setdefault("settings", {})
     if "spaced_repetition" not in settings:
         settings["spaced_repetition"] = {
             "engine": "py-fsrs", "scheduler": Scheduler(enable_fuzzing=False).to_dict(),
-            "timezone": "Asia/Hong_Kong", "daily_minutes": [15, 30],
+            "timezone": study_time.name(), "daily_minutes": [15, 30],
             "real_independent_attempts_only": True,
             "mastery_is_not_inferred_from_schedule": True,
         }
-    state.setdefault("integrations", {})["study_tools"] = {
+    state.setdefault("integrations", {}).setdefault("study_tools", {}).update({
         "status": "configured", "fsrs_version": version("fsrs"), "sympy_version": version("sympy"),
         "review_entry": "tools/study/review.py",
         "math_entry": "tools/study/math_check.py",
         "instructions": "docs/TOOLS.md", "local_only": True,
-    }
+    })
 
 
+@study_time.state_timezone
 def record(state, payload):
     required = ("review_id", "attempt_id", "rating", "prompt", "answer", "feedback", "evidence")
     for key in required:
@@ -78,13 +82,13 @@ def record(state, payload):
     if card.last_review and now <= card.last_review:
         raise ValueError("作答时间必须晚于该项目上一条记录")
     card, log = scheduler(state).review_card(card, RATINGS[payload["rating"]], review_datetime=now)
-    evidence.update(reviewed_at=now.astimezone(HK).isoformat(), log=log.to_dict())
+    evidence.update(reviewed_at=now.astimezone(study_time.local_zone()).isoformat(), log=log.to_dict())
     item["fsrs"] = {"card": card.to_dict(), "history": history + [evidence]}
-    item["due_date"] = card.due.astimezone(HK).date().isoformat()
+    item["due_date"] = card.due.astimezone(study_time.local_zone()).date().isoformat()
     item["status"] = "scheduled_review"
-    item["updated_at"] = now.astimezone(HK).isoformat()
+    item["updated_at"] = now.astimezone(study_time.local_zone()).isoformat()
     return {"status": "recorded", "review_id": item["id"],
-            "next_review_at": card.due.astimezone(HK).isoformat(),
+            "next_review_at": card.due.astimezone(study_time.local_zone()).isoformat(),
             "feedback": payload["feedback"], "mastery_updated": False}
 
 
@@ -94,6 +98,7 @@ def questions(item, mistake):
                                               else [item.get("prompt", "请先准备独立检查题")])
 
 
+@study_time.state_timezone
 def due(state, now, minutes=15, course=None):
     if not 0 <= minutes <= 30:
         raise ValueError("单次复习预算应为 0–30 分钟，计入当天原有预算")
@@ -107,7 +112,7 @@ def due(state, now, minutes=15, course=None):
         card = item.get("fsrs", {}).get("card")
         if card and timestamp(card["due"]) > now:
             continue
-        if not card and item.get("due_date") and date.fromisoformat(item["due_date"]) > now.astimezone(HK).date():
+        if not card and item.get("due_date") and date.fromisoformat(item["due_date"]) > now.astimezone(study_time.local_zone()).date():
             continue
         candidates.append(item)
     candidates.sort(key=lambda x: (0 if x.get("priority") == "High" else 1,
@@ -128,10 +133,11 @@ def due(state, now, minutes=15, course=None):
                        "material_id": item.get("material_id"), "pages": item.get("pages"),
                        "first_independent_check": not bool(item.get("fsrs"))})
         total += cost
-    return {"date": now.astimezone(HK).date().isoformat(), "budget_minutes": minutes,
+    return {"date": now.astimezone(study_time.local_zone()).date().isoformat(), "budget_minutes": minutes,
             "estimated_minutes": total, "remaining_candidates": len(candidates) - len(chosen), "items": chosen}
 
 
+@study_time.state_timezone
 def render(state):
     mistakes = {m["id"]: m for m in state.get("mistakes", [])}
     lines = ["# 智能复习", "", "每天在原有复习预算内选取约 15–30 分钟。先独立作答，再核对并调整下次复习；讲过不等于掌握。", ""]
@@ -144,7 +150,7 @@ def render(state):
         if card:
             history = item["fsrs"]["history"]
             lines += ["", "最近表现：" + LABELS[history[-1]["rating"]],
-                      "", "下次复习：" + timestamp(card["due"]).astimezone(HK).strftime("%Y-%m-%d %H:%M") + "（香港时间；消息触发时安排）"]
+                      "", "下次复习：" + timestamp(card["due"]).astimezone(study_time.local_zone()).strftime("%Y-%m-%d %H:%M") + "（学习时区；消息触发时安排）"]
         else:
             lines += ["", "状态：待首次独立检查，尚未计算个人复习间隔。"]
         lines += [""]
@@ -170,7 +176,8 @@ def save(path, state, original):
     if path.read_bytes() != original:
         raise ValueError("共享状态刚被另一任务更新，请重新读取后重试")
     state["revision"] = state.get("revision", 0) + 1
-    state["updated_at"] = datetime.now(HK).isoformat()
+    with study_time.using_state(state):
+        state["updated_at"] = datetime.now(study_time.local_zone()).isoformat()
     content = json.dumps(state, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
     json.loads(content)
     atomic_text(path.with_name("state.previous.json"), original.decode("utf-8-sig"))
@@ -193,8 +200,21 @@ def main():
     args = parser.parse_args()
     original = args.state.read_bytes()
     state = json.loads(original.decode("utf-8-sig"))
+    loop_enabled = state.get("settings", {}).get("learning_loop", {}).get("enabled") is True
+    if loop_enabled and args.command == "record":
+        raise ValueError("复习闭环已启用：请用 daily.py attempt 关联具体日包和变式，以核对答案曝光并同步计划")
     if args.command == "due":
-        output = due(state, timestamp(args.at), args.minutes, args.course)
+        if loop_enabled:
+            import copy
+            import learning_loop
+            import planning
+            now = timestamp(args.at)
+            output = learning_loop.prepare(copy.deepcopy(state), now,
+                                           planning.review_budget_limit(state, now, args.minutes), args.course)
+            output["read_only_preview"] = True
+            output["next_step"] = "正式题包请运行 daily.py run；此预览未保存新题或修改学习状态"
+        else:
+            output = due(state, timestamp(args.at), args.minutes, args.course)
     else:
         before = json.dumps(state, sort_keys=True)
         if args.command == "init":
@@ -206,7 +226,11 @@ def main():
             output = {"status": "rendered"}
         if json.dumps(state, sort_keys=True) != before:
             save(args.state, state, original)
-        atomic_text(args.state.with_name("Review Queue.md"), render(state))
+        if loop_enabled:
+            import daily
+            daily.execute(args.state, "render", timestamp())
+        else:
+            atomic_text(args.state.with_name("Review Queue.md"), render(state))
     print(json.dumps(output, ensure_ascii=False))
 
 

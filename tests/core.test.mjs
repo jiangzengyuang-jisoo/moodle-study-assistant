@@ -14,6 +14,10 @@ test('initialization is blank, portable and preserves existing state', () => {
     const state = JSON.parse(readFileSync(path));
     assert.deepEqual(state.courses, []);
     assert.deepEqual(state.mistakes, []);
+    for (const name of ['review_sessions','review_attempts','learning_feedback','exam_profiles','mock_exams','mock_attempts'])
+      assert.deepEqual(state[name], []);
+    assert.equal(state.settings.learning_loop.enabled, true);
+    assert.equal(state.settings.exam_preparation.auto_download_materials, false);
     state.tasks.push({id: 'KEEP', status: 'Completed'});
     writeFileSync(path, JSON.stringify(state));
     initialize(root);
@@ -46,6 +50,7 @@ test('client rejects writes and downloads before network, redacts returned crede
 
 test('empty redaction token does not corrupt evidence', () => {
   assert.equal(redactEvidence('lesson text', ''), 'lesson text');
+  assert.equal(redactEvidence('https://school.example/?sesskey=private&event=4', ''), 'https://school.example/?sesskey=[REDACTED]&event=4');
 });
 
 test('collection supports one configured course and flags partial failures', async () => {

@@ -20,22 +20,22 @@ def call(script, *args, payload=None):
 
 class ReviewTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(dir=HERE)
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name) / "state.json"
         self.original = {
             "revision": 4, "settings": {"brief_send_authorized": False},
             "integrations": {"moodle": {"status": "connected"}},
-            "courses": [{"id": "DEMO101", "mastered": []}],
+            "courses": [{"id": "MATH-DEMO", "mastered": []}],
             "tasks": [{"id": "A1", "status": "Completed"}],
-            "mistakes": [{"id": "M1", "course_id": "DEMO101", "entry_type": "question",
+            "mistakes": [{"id": "M1", "course_id": "MATH-DEMO", "entry_type": "question",
                           "display_title": "极限", "check_question": "求极限"}],
             "review_queue": [
-                {"id": "R1", "course_id": "DEMO101", "mistake_id": "M1",
+                {"id": "R1", "course_id": "MATH-DEMO", "mistake_id": "M1",
                  "priority": "High", "due_date": None, "status": "independent_review_pending",
                  "independent_prompts": ["不看答案，求极限"], "answer_check": ["隐藏答案"],
                  "estimated_minutes": {"min": 3, "max": 5}},
-                {"id": "R2", "course_id": "DEMO101", "mistake_id": "M1",
+                {"id": "R2", "course_id": "MATH-DEMO", "mistake_id": "M1",
                  "priority": "Normal", "due_date": "2030-01-01", "prompt": "未来项目"},
             ], "activity_log": [],
         }

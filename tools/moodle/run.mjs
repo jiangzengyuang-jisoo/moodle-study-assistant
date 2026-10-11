@@ -69,7 +69,18 @@ async function main() {
     if (!result.collection_complete) process.exitCode = 2;
     return;
   }
+  if (mode === 'download') {
+    const args = process.argv.slice(3);
+    const authorized = args.includes('--authorized');
+    const ids = args.filter(arg => arg !== '--authorized').map(Number);
+    const { downloadModules } = await import('./download.mjs');
+    const result = await downloadModules(client, json(statePath), root, {moduleIds: ids, authorized});
+    atomicJSON(join(root, 'Study/_System/authorized-download-latest.json'), result);
+    console.log(JSON.stringify(result));
+    if (result.errors.length) process.exitCode = 2;
+    return;
+  }
   if (mode === 'mcp') { const { serve } = await import('./server.mjs'); await serve(client); return; }
-  throw new Error('用法：run.mjs init | check | courses | refresh | mcp');
+  throw new Error('用法：run.mjs init | check | courses | refresh | mcp | download <module-id> [...] --authorized');
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });
