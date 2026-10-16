@@ -1,0 +1,7 @@
+interface:
+  display_name: "Self-Study Tutor"
+  short_description: "On-demand tutoring; activates for learning and exits when done"
+  default_prompt: "Use $self-study-tutor to help me learn this topic at my current level, gradually choose methods independently, and check my understanding with new problems without hints. Follow my preferred language or the language of our conversation."
+
+policy:
+  allow_implicit_invocation: true

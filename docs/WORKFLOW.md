@@ -39,6 +39,8 @@
 
 ## 教学、错题与计划
 
+课程教学、概念讲解、引导练习和复习必须使用仓库内的 [self-study-tutor](../skills/self-study-tutor/SKILL.md)，同时执行 [十条苏格拉底教学规则](TUTORING.md)。教学前读取技能；出测验、评分或安排复习时再读取其检测参考。无需另装全局技能，也不要求本人每次点名。规则作用于学习任务；本人明确要直接答案、完整讲解或处理事务时遵从当前要求。
+
 教学先读课程 orientation、当前任务、相关讨论、资料及 teaching_cursor。先梳理结构，再按初学者顺序讲动机、定义、直觉、例子、老师方法、常见错误和检查题。每次适量，让本人独立尝试；公式/嵌图查看原页。实际学会多少依作答证据，不用平台百分比。
 
 本人学科提问自动记为 `entry_type=question`；只有观察到真实错误才为 `mistake`。同一疑问追问合并，不把老师或同学论坛问题记为本人错题。字段包括 id、course_id、原问题、本人答案/方法、正确方法、知识点、confusion_point、why_wrong、mistake_type、resolution_status、review_status、source、occurrences；未知为 null。纯提问的 why_wrong 和 mistake_type 为 null。
