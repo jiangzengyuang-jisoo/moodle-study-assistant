@@ -28,6 +28,10 @@ export function initialize(root) {
       study_root: 'Study', created_at: new Date().toISOString(), settings: {
         brief_send_authorized: false, study_capacity_target: 0.8,
         study_capacity_range: [0.7, 0.85], review_minutes_range: [15, 30],
+        moodle_refresh_policy: {mode: 'conversation_start_or_explicit_request', conversation_boundary: 'new_chat_thread',
+          automatic_interval_minutes: null, scheduled_background_run: false,
+          refresh_on_course_switch: false, refresh_on_date_change: false,
+          refresh_on_context_compaction: false, refresh_on_reopen_existing_conversation: false},
         learning_loop: {enabled: true, version: 1, default_review_minutes: 15, daily_max_minutes: 30, same_day_budget_shared: true},
         exam_preparation: {enabled: true, version: 1, answer_keys_separate: true, auto_download_materials: false, mastery_from_generation: false}
       }, integrations: {}, daily_plans: {}, weekly_plan: null};

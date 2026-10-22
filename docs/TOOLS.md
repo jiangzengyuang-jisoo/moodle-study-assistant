@@ -14,6 +14,8 @@ node tools/moodle/run.mjs mcp
 
 `init` 只创建缺失的配置/空白状态，不覆盖已有资料。`courses` 交互选择跟踪页面，保留未选页面的既有历史。`refresh` 采集到 `Study/_System/refresh-latest.json`，完整成功另存 `refresh-last-complete.json`；不直接更新个人掌握、作业完成或 AI 核读状态。退出码2表示部分采集失败。
 
+AI 按新对话开始或用户明确要求调用 `refresh`，不会每条追问重复执行；命令本身始终进行真实采集。采集器全局最多同时执行4个 API 请求，每个论坛的分页仍按顺序读取，完整正文、回复和权限核对保留。不要把没有重新联网的缓存复用记为新的检查。
+
 MCP 暴露课程、作业、测验、论坛只读查询；全论坛分页用 `study_all_discussions`，回复用 `study_discussion_posts`。上游 recent discussions 只有最近20条，不能替代完整采集。不注册学校写操作；默认刷新和普通 MCP 查询不会下载文件。
 
 ### 明确授权的资料下载
@@ -29,6 +31,8 @@ node tools/moodle/run.mjs download 123 --authorized
 下载先落到 `Study/_Inbox/`，保留官方文件名，按内容哈希去重，同名不同内容保留为不同文件。成功下载不代表已经核读或掌握。AI 随后检查实际文件、课程归属和页数，按用户目录约定归档并更新 `materials`；下载器本身不替 AI 作语义判断。账号、权限或站点限制导致失败时如实说明，不绕过限制。
 
 ## 复习、复测、反馈和当前计划
+
+资料初始化和快速读取另见 [LIBRARY.md](LIBRARY.md)：`tools/study/library.cmd context` 直接读取最新状态，`sync` 构建或更新资料缓存，`search/read/render/outline` 定位并核对完整原页。这些命令不写学习进度、作答或 FSRS。
 
 ```powershell
 & '.venv/Scripts/python.exe' 'tools/study/daily.py' run

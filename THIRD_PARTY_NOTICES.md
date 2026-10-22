@@ -10,6 +10,11 @@
 | py-fsrs | 基于真实独立作答安排复习 | MIT；[上游](https://github.com/open-spaced-repetition/py-fsrs) |
 | SymPy | 符号计算核验 | BSD；[上游](https://github.com/sympy/sympy) |
 | Playwright Python | 本机浏览器官方授权辅助 | Apache-2.0；[上游](https://github.com/microsoft/playwright-python) |
+| pypdf | PDF 逐页文字抽取 | [上游及许可证](https://github.com/py-pdf/pypdf) |
+| pypdfium2 / PDFium | 无需另装 Poppler 的原 PDF 页渲染 | [上游及所含第三方许可证](https://github.com/pypdfium2-team/pypdfium2) |
+| Pillow | 原页图像保存与验证 | [上游及许可证](https://github.com/python-pillow/Pillow) |
+
+资料缓存也可使用用户已安装的 Poppler `pdftoppm`；Windows OCR 使用操作系统已有组件及语言包。仓库不分发 Poppler、OCR 语言包或课程资料，OCR 候选仍须对照原页核验。
 
 `tools/moodle/patch-upstream.mjs` 针对固定的 moodle-mcp 0.2.0 做四处兼容调整：作业 cmid 映射、论坛 instance ID、不发送不支持的论坛排序参数、作者字段 userfullname。上游升级必须复核补丁和测试。
 

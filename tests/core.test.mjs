@@ -18,10 +18,15 @@ test('initialization is blank, portable and preserves existing state', () => {
       assert.deepEqual(state[name], []);
     assert.equal(state.settings.learning_loop.enabled, true);
     assert.equal(state.settings.exam_preparation.auto_download_materials, false);
+    assert.equal(state.settings.moodle_refresh_policy.mode, 'conversation_start_or_explicit_request');
+    assert.equal(state.settings.moodle_refresh_policy.automatic_interval_minutes, null);
+    assert.equal(state.settings.moodle_refresh_policy.scheduled_background_run, false);
+    state.settings.moodle_refresh_policy.mode = 'user_selected_policy';
     state.tasks.push({id: 'KEEP', status: 'Completed'});
     writeFileSync(path, JSON.stringify(state));
     initialize(root);
     assert.equal(JSON.parse(readFileSync(path)).tasks[0].id, 'KEEP');
+    assert.equal(JSON.parse(readFileSync(path)).settings.moodle_refresh_policy.mode, 'user_selected_policy');
   } finally { rmSync(root, {recursive: true, force: true}); }
 });
 

@@ -8,14 +8,16 @@
 
 向本人了解已交/纸面完成/小组代交、学过章节和真实日程。没有资料或证据的完成状态为 null。建立本科目录：Lectures、Tutorials、Assignments、Practice、错题本、Other；阅读原件归 Other，错题本只放本人的问题/错误。
 
+资料核读归档并登记 `materials` 后运行 `tools/study/library.cmd sync`，建立完整逐页文字与来源哈希缓存；没有资料时保持空目录，不导入示例或作者记录。之后用 `context` 读取当前课程接续，按 `omitted` 补读细节；`search/read/render/outline` 的范围与质量要求见 [LIBRARY.md](LIBRARY.md)。新资料或源文件变化才重解析，原件与学习状态不由缓存命令改写。
+
 ## 刷新与证据
 
-1. 每次开始响应项目消息先运行 `node tools/moodle/run.mjs refresh`，读取本次结果。失效不冒充已更新；保留上次状态和成功水位。
+1. 每个新对话开始时运行一次 `node tools/moodle/run.mjs refresh`；用户明确要求刷新或查询最新学校信息时再运行。新对话指新的聊天线程；同一线程的追问、切换课程、跨日、上下文压缩和重新打开都不另触发，不按固定小时数刷新。启动检查可与本地只读资料定位并行，依赖此次检查的结论须等采集与核读完成。只有采集及语义核读均完成才算本对话已检查；在上下文接续摘要保留这一事实与实际检查时间。同一对话复用已核验结果，不声称此后学校没有更新。失败保留上次状态并说明未更新，不在每条追问自动重试；用户要求重试或连接修复后再检查。
 2. 比较 `Study/_System/refresh-latest.json` 与 state 中保留的来源/内容哈希。逐项读取新增和修改的作业、活动、讨论与回复。完整采集和 AI 已核读是两种状态；`reviewed: false` 不得直接改成已全部核验而不阅读。
 3. 提取 ACTION / DEADLINE / COURSE UPDATE / KNOWLEDGE / OTHER IMPORTANT。教师/TA 的结论、学生猜测、未答复和 AI 推断分开保存。原文证据包括 URL、课程/活动 ID、帖子 ID 或原资料物理页码；面向用户不堆内部信息。
 4. 论坛列表需全部分页和回复，MCP 上游“recent discussions”只作预览，完整核读使用本地刷新结果或 `study_all_discussions`/`study_discussion_posts`。图片正文无法从文本判断时标待确认，使用用户提供原页，不把缺失当没有内容。
 5. 日历与作业/测验/课程页面交叉核对。API 日期为秒级时间戳，转成 state.timezone 指定的学习时区时间（默认香港）；0/缺失表示未提供，不补23:59。未开放活动、隐藏模块和接口拒绝不能推断成不存在。
-6. 用 `daily.py exam-sync --snapshot Study/_System/refresh-latest.json` 同步本轮考试来源变化。新公告、原文变更、来源撤回或采集失败需重新核读。连接失败、尚未生成本轮快照时，不得拿旧成功文件冒充新结果；向考试入口传入明确标为 `collection_complete: false` 的本轮失败结果，保留旧证据并标待核读。考试相关流程见 [EXAM_PREP.md](EXAM_PREP.md)。
+6. 实际检查后用 `daily.py exam-sync --snapshot Study/_System/refresh-latest.json` 同步该次考试来源变化。新公告、原文变更、来源撤回或采集失败需重新核读。未执行新的学校检查时，不拿旧快照反复运行 exam-sync 冒充新核验。连接失败、尚未生成本轮快照时，向考试入口传入明确标为 `collection_complete: false` 的本轮失败结果，保留旧证据并标待核读。考试相关流程见 [EXAM_PREP.md](EXAM_PREP.md)。
 
 普通刷新不下载附件。用户明确要求获取某份课件时，核对对应课程与资源模块，再按 [TOOLS.md](TOOLS.md#明确授权的资料下载) 下载指定范围；不自动下载相邻章节或整个课程。原件先放入 `Study/_Inbox/`，核读后按课程归档并登记来源、内容哈希和物理页数；保留文件名，不覆盖同名不同内容。老师的考试说明若仅在附件中且尚未授权获取，应请用户提供附件或取得该具体资料的下载授权。
 
@@ -56,6 +58,8 @@
 写入前重新读取 state，保留无关内容和历史。将上版备份为 state.previous.json，同目录临时 JSON 序列化且校验后替换正式状态。避免多个 AI 同时写同一档案。
 
 更新 state 中的任务、讨论记录、课程焦点、mistakes 和 review_queue 后，运行 `daily.py run`、`daily.py check`。统一入口维护今日/周计划、Upcoming、今日具体复习题、复习队列、学习反馈、考前覆盖、周复盘和模拟卷入口共9份系统页面，以及已登记的各科试卷；模拟题错题区写入本科错题本时保留其他内容。一般教学问答产生的错题仍由助手按状态同步到本科错题本。
+
+没有新状态的普通追问不重复生成计划。真实作答、提示曝光、错题和进度反馈仍按原规则及时保存；减少 Moodle 检查不改变学习证据标准。跨日呈现计划时做本地重建与校验，不触发新的学校检查。
 
 `check` 验证学习时区的日期、状态版本和页面内容；若不新鲜，重读状态并重新生成。换日后未运行的文件可能过期，不能说它会自行更新。需要 Daily Brief 或 Discussion Notes 时由助手从状态另行生成，它们不属于 `daily.py` 的9份视图；Daily Brief 只是本地简报，不发送邮件。
 

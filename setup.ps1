@@ -24,4 +24,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Initialization failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Review initialization failed.' }
 & '.venv/Scripts/python.exe' tools/study/daily.py run
 if ($LASTEXITCODE -ne 0) { throw 'Learning workflow initialization failed.' }
+& '.venv/Scripts/python.exe' tools/study/library.py sync
+if ($LASTEXITCODE -ne 0) { throw 'Material library initialization failed. Your study records are preserved.' }
 Write-Host 'Setup complete. Next: connect.cmd, choose-courses.cmd, refresh.cmd. Read README.md.'

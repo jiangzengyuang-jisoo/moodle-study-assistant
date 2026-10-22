@@ -4,7 +4,7 @@
 
 ## 核读当前考试要求
 
-每次按 [WORKFLOW.md](WORKFLOW.md) 刷新 Moodle，然后执行：
+按 [WORKFLOW.md](WORKFLOW.md) 在新对话开始或用户明确要求更新时刷新 Moodle，再执行下列来源检查。同一对话内复用已核验的考试要求，不因模拟题追问重复联网或把旧快照当成本轮新检查：
 
 ```powershell
 & '.venv/Scripts/python.exe' 'tools/study/daily.py' exam-sync --snapshot 'Study/_System/refresh-latest.json'
