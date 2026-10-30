@@ -16,6 +16,8 @@ import tempfile
 import threading
 import time
 
+from cursor_evidence import PENDING_KEYS, validate_cursor_transition
+
 _held = threading.local()
 
 
@@ -119,7 +121,7 @@ _EVIDENCE_FIELDS = {'fsrs', 'source', 'sources', 'original_question', 'user_answ
 _IMMUTABLE_COLLECTIONS = {'review_attempts', 'learning_feedback', 'mock_attempts'}
 _COURSE_UPDATES = {'moodle_course_ids', 'assignment_focus', 'current_topic', 'orientation'}
 _CURSOR_ROUTING = {'pages', 'slides', 'material_id', 'task_id', 'work_unit_id', 'next_step',
-                   'pending_question', 'pending_question_answer_exposed'}
+                   'pending_question_answer_exposed'}
 
 
 def _source_enrichment(previous, following):
@@ -145,13 +147,20 @@ def _source_enrichment(previous, following):
 def _preserve_details(previous, following, location):
     """Ordinary drafts may enrich records, never silently truncate evidence."""
     if isinstance(previous, dict):
-        routing = _CURSOR_ROUTING if location.endswith('.teaching_cursor') else set()
-        if (not isinstance(following, dict) or (previous and not following)
+        cursor_root = location.endswith('.teaching_cursor')
+        if cursor_root:
+            validate_cursor_transition(previous, following)
+        routing = set(_CURSOR_ROUTING) if cursor_root else set()
+        # The root transition check covers nested handoffs too. Archived checks
+        # remain ordinary protected records and never receive this exemption.
+        if '.teaching_cursor' in location and '.checks' not in location:
+            routing.update(PENDING_KEYS)
+        if (not isinstance(following, dict) or (previous and not following and not cursor_root)
                 or set(previous) - set(following) - routing):
             raise ValueError('完整草稿遗漏已有学习详情：' + location)
         for key, value in previous.items():
             if key in routing:
-                continue  # Current question/page is a cursor, not historical evidence.
+                continue  # Attempt preservation was checked at the cursor root.
             # School selection/focus legitimately changes without erasing progress.
             if location.startswith('courses[') and location.endswith(']') and key in _COURSE_UPDATES:
                 continue
@@ -165,6 +174,13 @@ def _preserve_details(previous, following, location):
     elif isinstance(previous, list):
         if not isinstance(following, list):
             raise ValueError('不能清空已有学习详情：' + location)
+        if location.endswith('.teaching_cursor.checks'):
+            # A question may produce several real attempts with the same id.
+            # This is an append-only event history, not a unique-question table.
+            if (len(following) < len(previous)
+                    or any(digest(old) != digest(new) for old, new in zip(previous, following))):
+                raise ValueError('教学作答历史只能追加，不能改写或删除已有记录：' + location)
+            return
         old_ids = [_identity(row) for row in previous]
         if previous and all(old_ids):
             new_ids = [_identity(row) for row in following]
@@ -235,6 +251,8 @@ def bridge(path, mode, payload):
     original = path.read_bytes()
     if json.loads(original.decode('utf-8-sig')) != payload['expected']:
         raise ValueError('学习状态已更新，请重读后重试；未覆盖任何记录')
+    if payload['state'].get('exam_profiles', []) != payload['expected'].get('exam_profiles', []):
+        raise ValueError('考试要求必须通过绑定本轮快照的 daily.py exam-profile/exam-sync 或会话核读入口更新')
     validate_draft(payload['expected'], payload['state'])
     for key in ('operation_receipts', 'refresh_receipts'):
         if payload['state'].get(key) != payload['expected'].get(key):

@@ -1,7 +1,6 @@
 """Conversation entry point. Collection is never equivalent to semantic review."""
 import argparse
 from datetime import datetime, timezone
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,15 +11,14 @@ import uuid
 
 from state_io import atomic, digest, file_lock, read, workspace_lock, timed, validate_draft, prepare_state
 
+from snapshot_guard import file_sha, scope_details, validate_binding, validate_current_snapshot
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def stamp():
     return datetime.now(timezone.utc).isoformat()
 
-
-def file_sha(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 class Session:
@@ -38,36 +36,13 @@ class Session:
         return timed(self.state, stage)
 
     def scope_details(self, state=None):
-        state = read(self.state) if state is None else state
-        config = self.root / 'config.local.json'
-        credential = self.root / '.private/moodle-token.dpapi'
-        courses = [{'id': c['id'], 'moodle_course_ids': sorted(c.get('moodle_course_ids', []))}
-                   for c in state.get('courses', [])]
-        return {'site': read(config).get('moodle_url') if config.exists() else None,
-                'credential_generation': file_sha(credential) if credential.exists() else None,
-                'courses': courses,
-                'course_ids': sorted({i for c in courses for i in c['moodle_course_ids']})}
+        return scope_details(self.root, read(self.state) if state is None else state)
 
     def scope(self):
         return digest(self.scope_details())
 
     def _validate_snapshot(self, manifest, snapshot):
-        request_path = self._manifest(manifest).with_name('request.json')
-        if not request_path.exists() or file_sha(request_path) != manifest.get('request_sha256'):
-            raise ValueError('采集请求缺失或变化，请明确重新检查')
-        request = read(request_path)
-        binding = snapshot.get('collection_binding', {})
-        if binding != {'protocol': 1, 'run_id': manifest['run_id'],
-                       'request_sha256': manifest['request_sha256']}:
-            raise ValueError('快照未绑定本轮实际采集请求，请明确重新检查')
-        expected = {i: c['id'] for c in request['scope']['courses'] for i in c['moodle_course_ids']}
-        pages = snapshot.get('pages', [])
-        actual = [p.get('courseid') for p in pages]
-        if any(p.get('course_id') != expected.get(p.get('courseid')) or p.get('courseid') not in expected
-               for p in pages) or len(set(actual)) != len(actual):
-            raise ValueError('快照课程范围与采集请求不一致')
-        if snapshot.get('collection_complete') is True and set(actual) != set(expected):
-            raise ValueError('完整采集快照没有覆盖请求的全部课程')
+        validate_binding(manifest, snapshot, self._manifest(manifest).parent)
 
     def _finish_snapshot(self, manifest):
         snapshot = self._manifest(manifest).with_name('snapshot.json')
@@ -252,9 +227,8 @@ class Session:
             manifest = self._load()
             if not manifest or manifest.get('snapshot_sha256') != snapshot_hash:
                 raise ValueError('核读回执必须对应本轮快照哈希')
-            if manifest['scope_sha256'] != self.scope():
-                raise ValueError('账户或课程范围已变化，请明确重新检查')
-            self._validate_snapshot(manifest, read(self._manifest(manifest).with_name('snapshot.json')))
+            snapshot = read(self._manifest(manifest).with_name('snapshot.json'))
+            validate_current_snapshot(self.state, snapshot, allow_legacy=False)
             if manifest['phase'] == 'reviewed':
                 receipt = read(self.state)['refresh_receipts'][manifest['run_id']]
                 if receipt['request_sha256'] != digest(proposal):
@@ -265,10 +239,6 @@ class Session:
                 return self.describe(manifest)
             if manifest['phase'] != 'collected' or proposal.get('reviewed') is not True:
                 raise ValueError('采集不完整或尚未逐项核读，不能标记已检查')
-            if manifest['scope_sha256'] != self.scope():
-                raise ValueError('账户或课程范围已变化，请明确重新检查')
-            if read(self.runtime / 'latest-request.json')['run_id'] != manifest['run_id']:
-                raise ValueError('已有较新的检查；旧轮次不能覆盖新来源')
             original = self.state.read_bytes()
             current = json.loads(original.decode('utf-8-sig'))
             if digest(current) != proposal.get('base_sha256'):

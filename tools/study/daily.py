@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import re
 import state_io
+from snapshot_guard import validate_current_snapshot
 
 import review
 import learning_loop
@@ -137,6 +138,10 @@ def execute(state_path, command, now, minutes=None, course=None, payload=None, s
     state_io.prepare_state(state_path)
     original = state_path.read_bytes()
     state = json.loads(original.decode("utf-8-sig"))
+    if snapshot is not None:
+        # Before idempotent replays too: even view/receipt rewrites must not
+        # silently acknowledge stale school evidence after a newer check.
+        validate_current_snapshot(state_path, snapshot, state)
     if operation_id is None and payload:
         operation_id = payload.get("attempt_id") or payload.get("feedback_id")
     operation = None

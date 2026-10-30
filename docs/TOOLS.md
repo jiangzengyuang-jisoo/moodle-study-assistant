@@ -12,7 +12,7 @@ node tools/moodle/run.mjs refresh
 node tools/moodle/run.mjs mcp
 ```
 
-`init` 只创建缺失的配置/空白状态，不覆盖已有资料。`courses` 交互选择跟踪页面，保留未选页面的既有历史。`refresh` 采集到 `Study/_System/refresh-latest.json`，完整成功另存 `refresh-last-complete.json`；不直接更新个人掌握、作业完成或 AI 核读状态。退出码2表示部分采集失败。
+`init` 只创建缺失的配置/空白状态，不覆盖已有资料。`courses` 交互选择跟踪页面，保留未选页面的既有历史。`refresh` 采集到 `Study/_System/Runtime/runs/<run_id>/snapshot.json`，完整成功另存 `refresh-last-complete.json`；不直接更新个人掌握、作业完成或 AI 核读状态。退出码2表示部分采集失败。
 
 AI 按新对话开始或用户明确要求调用 `refresh`，不会每条追问重复执行；命令本身始终进行真实采集。采集器全局最多同时执行4个 API 请求，每个论坛的分页仍按顺序读取，完整正文、回复和权限核对保留。不要把没有重新联网的缓存复用记为新的检查。
 
@@ -76,8 +76,9 @@ node tools/moodle/run.mjs download 123 --authorized
 ## 考前覆盖与模拟卷
 
 ```powershell
-& '.venv/Scripts/python.exe' 'tools/study/daily.py' exam-sync --snapshot 'Study/_System/refresh-latest.json'
-& '.venv/Scripts/python.exe' 'tools/study/daily.py' exam-intake --snapshot 'Study/_System/refresh-latest.json'
+# 将 <run_id> 替换为本轮入口返回的运行编号，使用返回的 snapshot_path。
+& '.venv/Scripts/python.exe' 'tools/study/daily.py' exam-sync --snapshot 'Study/_System/Runtime/runs/<run_id>/snapshot.json'
+& '.venv/Scripts/python.exe' 'tools/study/daily.py' exam-intake --snapshot 'Study/_System/Runtime/runs/<run_id>/snapshot.json'
 ```
 
 采集候选不是确认官方要求。`exam-profile` 登记实际核读的要求，`mock-register` 登记 AI 已核验的原创卷，`mock-attempt` 保存真实作答，`mock-answers` / `mock-answer-shown` 记录答案/提示曝光。输入结构、三种试卷模式和来源变更处理见 [EXAM_PREP.md](EXAM_PREP.md)。这些命令不会自动阅读附件、编题或检查证明。
@@ -108,3 +109,6 @@ npm test
 
 
 资料升级、历史引用与经授权的 30 天归档清理见 [MATERIAL_VERSIONS.md](MATERIAL_VERSIONS.md)。默认搜索只读当前版；`context/sync` 可触发已启用的归档维护，实际删除时会更新资料删除标记，学习证据保持不变。
+
+
+考试来源写入与统一聊天入口共用快照校验。已有较新轮次、范围改变或快照被修改时，旧的 `exam-sync/exam-profile` 会拒绝保存；重读最新独立快照并核读后再提交，不使用旧草稿回退已核验要求。

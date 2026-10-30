@@ -7,8 +7,9 @@
 按 [WORKFLOW.md](WORKFLOW.md) 在新对话开始或用户明确要求更新时刷新 Moodle，再执行下列来源检查。同一对话内复用已核验的考试要求，不因模拟题追问重复联网或把旧快照当成本轮新检查：
 
 ```powershell
-& '.venv/Scripts/python.exe' 'tools/study/daily.py' exam-sync --snapshot 'Study/_System/refresh-latest.json'
-& '.venv/Scripts/python.exe' 'tools/study/daily.py' exam-intake --snapshot 'Study/_System/refresh-latest.json'
+# 将 <run_id> 替换为本轮入口返回的运行编号，使用返回的 snapshot_path。
+& '.venv/Scripts/python.exe' 'tools/study/daily.py' exam-sync --snapshot 'Study/_System/Runtime/runs/<run_id>/snapshot.json'
+& '.venv/Scripts/python.exe' 'tools/study/daily.py' exam-intake --snapshot 'Study/_System/Runtime/runs/<run_id>/snapshot.json'
 ```
 
 `exam-intake` 只找候选内容，不自动认定官方要求。实际核对课程、班别、考试轮次、发布日期和老师/助教身份。学生推测、另一班或往年的题型不覆盖当前教师说明；“written test”不能推成已公布选择题或长题。样卷不必然保证正式题量。
@@ -117,3 +118,6 @@
 `Weekly Reflection.md` 汇总最近7个学习时区日期的真实记录：独立/辅助作答、跨日复测、重复失误、本人反馈和少量下一步重点。时间未知保持未知；累计时间与逐段时间、模拟用时与反馈用时不重复相加。没有足够记录就说明不足，不拟造趋势。
 
 视图随对话中的运行更新，没有后台任务。每次状态合并后运行 `daily.py run`、`daily.py check`。空白安装不附任何作者的考试档案、老师原文、课件、模拟题或个人作答。
+
+
+考试来源写入与统一聊天入口共用快照校验。已有较新轮次、范围改变或快照被修改时，旧的 `exam-sync/exam-profile` 会拒绝保存；重读最新独立快照并核读后再提交，不使用旧草稿回退已核验要求。

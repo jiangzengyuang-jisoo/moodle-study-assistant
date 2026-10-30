@@ -15,6 +15,8 @@ import json
 import re
 from typing import Any
 
+from cursor_evidence import PENDING_KEYS
+
 
 _COLLECTIONS = (
     "tasks", "deadlines", "materials", "mistakes", "review_queue",
@@ -231,7 +233,7 @@ def _continuity(cursor: Any, base_path: str, projection: _Projection) -> Any:
         leaf = path.rsplit("/", 1)[-1]
         if leaf in ("session_handoff", "handoff"):
             handoffs.append((stamp, path, node))
-        for key in ("pending_question", "pending_check", "pending_questions", "pending_checks"):
+        for key in PENDING_KEYS:
             if key in node and node[key] is not None:
                 pending.append({"path": path + "/" + key, "record": _pending(node[key])})
         if "next_step" in node or "next_check" in node:
