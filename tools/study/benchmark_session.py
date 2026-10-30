@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 from session import Session, ROOT
+from session_test_fixtures import write_snapshot
 from state_io import atomic
 
 
@@ -24,7 +25,7 @@ def main():
             nonlocal calls
             calls += 1
             time.sleep(0.25)  # Controlled simulated network, not measured school latency.
-            atomic(path, {'collection_complete': True, 'pages': [], 'threads': [], 'errors': []})
+            write_snapshot(path, {'collection_complete': True, 'pages': [], 'threads': [], 'errors': []})
         started = time.perf_counter()
         session.context(); session.start(collector=collect)
         first = (time.perf_counter()-started)*1000

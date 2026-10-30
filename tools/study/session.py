@@ -10,7 +10,7 @@ import subprocess
 import sys
 import uuid
 
-from state_io import atomic, digest, file_lock, read, workspace_lock, timed, validate_draft
+from state_io import atomic, digest, file_lock, read, workspace_lock, timed, validate_draft, prepare_state
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -37,15 +37,76 @@ class Session:
     def timing(self, stage):
         return timed(self.state, stage)
 
-    def scope(self):
-        state = read(self.state)
+    def scope_details(self, state=None):
+        state = read(self.state) if state is None else state
         config = self.root / 'config.local.json'
-        # Runtime code fingerprints the encrypted file; it never decrypts/logs it.
         credential = self.root / '.private/moodle-token.dpapi'
-        return digest({'site': read(config).get('moodle_url') if config.exists() else None,
-                       'credential_generation': file_sha(credential) if credential.exists() else None,
-                       'course_ids': sorted({i for c in state.get('courses', [])
-                                             for i in c.get('moodle_course_ids', [])})})
+        courses = [{'id': c['id'], 'moodle_course_ids': sorted(c.get('moodle_course_ids', []))}
+                   for c in state.get('courses', [])]
+        return {'site': read(config).get('moodle_url') if config.exists() else None,
+                'credential_generation': file_sha(credential) if credential.exists() else None,
+                'courses': courses,
+                'course_ids': sorted({i for c in courses for i in c['moodle_course_ids']})}
+
+    def scope(self):
+        return digest(self.scope_details())
+
+    def _validate_snapshot(self, manifest, snapshot):
+        request_path = self._manifest(manifest).with_name('request.json')
+        if not request_path.exists() or file_sha(request_path) != manifest.get('request_sha256'):
+            raise ValueError('采集请求缺失或变化，请明确重新检查')
+        request = read(request_path)
+        binding = snapshot.get('collection_binding', {})
+        if binding != {'protocol': 1, 'run_id': manifest['run_id'],
+                       'request_sha256': manifest['request_sha256']}:
+            raise ValueError('快照未绑定本轮实际采集请求，请明确重新检查')
+        expected = {i: c['id'] for c in request['scope']['courses'] for i in c['moodle_course_ids']}
+        pages = snapshot.get('pages', [])
+        actual = [p.get('courseid') for p in pages]
+        if any(p.get('course_id') != expected.get(p.get('courseid')) or p.get('courseid') not in expected
+               for p in pages) or len(set(actual)) != len(actual):
+            raise ValueError('快照课程范围与采集请求不一致')
+        if snapshot.get('collection_complete') is True and set(actual) != set(expected):
+            raise ValueError('完整采集快照没有覆盖请求的全部课程')
+
+    def _finish_snapshot(self, manifest):
+        snapshot = self._manifest(manifest).with_name('snapshot.json')
+        value = read(snapshot)
+        manifest.update(snapshot_sha256=file_sha(snapshot), finished_at=stamp())
+        try:
+            self._validate_snapshot(manifest, value)
+        except ValueError:
+            manifest.update(phase='failed', binding_valid=False)
+        else:
+            manifest.update(phase='collected' if value.get('collection_complete') else 'failed', binding_valid=True)
+        self._save(manifest)
+        return value
+
+    def _record_failure(self, manifest):
+        # This is a learning-state write: call only from the main continuation,
+        # never the read-only status/subtask path. Older runs cannot stale newer evidence.
+        with workspace_lock(self.state):
+            prepare_state(self.state)
+            pointer = self.runtime / 'latest-request.json'
+            if not pointer.exists() or read(pointer)['run_id'] != manifest['run_id']:
+                return
+            original = self.state.read_bytes()
+            state = json.loads(original.decode('utf-8-sig'))
+            old = state.get('refresh_receipts', {}).get(manifest['run_id'])
+            if old:
+                return
+            if not state.get('exam_profiles'):
+                return
+            import exam_sources
+            import review
+            exam_sources.sync_profiles(state, {'collection_complete': False,
+                'finished_at': manifest.get('finished_at')}, review.timestamp())
+            state.setdefault('refresh_receipts', {})[manifest['run_id']] = {
+                'phase': 'failed', 'sequence': manifest['sequence'],
+                'snapshot_sha256': manifest.get('snapshot_sha256'),
+                'revision': state.get('revision', 0) + 1}
+            review.save(self.state, state, original)
+
 
     def _manifest(self, record):
         run = record['run_id']
@@ -62,20 +123,18 @@ class Session:
             return None
         manifest = read(self._manifest(read(self.record)))
         snapshot = self._manifest(manifest).with_name('snapshot.json')
-        if manifest['phase'] == 'collecting':
+        if manifest['phase'] in {'collecting', 'interrupted', 'failed'} and not manifest.get('snapshot_sha256'):
             # Called only while holding the conversation OS lock. Its old owner
             # is gone; no timeout/reboot heuristic and no automatic network retry.
             if snapshot.exists():
-                value = read(snapshot)
-                manifest.update(phase='collected' if value.get('collection_complete') else 'failed',
-                                snapshot_sha256=file_sha(snapshot))
-            else:
+                self._finish_snapshot(manifest)
+            elif manifest['phase'] == 'collecting':
                 manifest['phase'] = 'interrupted'
             self._save(manifest)
         if manifest.get('snapshot_sha256') and file_sha(snapshot) != manifest['snapshot_sha256']:
             raise ValueError('本轮快照已变化，不能继续核读或复用')
         receipt = read(self.state).get('refresh_receipts', {}).get(manifest['run_id'])
-        if receipt and receipt['snapshot_sha256'] == manifest.get('snapshot_sha256'):
+        if receipt and receipt.get('phase', 'reviewed') == 'reviewed' and receipt['snapshot_sha256'] == manifest.get('snapshot_sha256'):
             manifest['phase'] = 'reviewed'
             manifest['reviewed_revision'] = receipt['revision']
             marker = self._manifest(manifest).with_name('review-status.json')
@@ -85,8 +144,10 @@ class Session:
     def describe(self, manifest):
         if not manifest:
             return {'phase': 'not_started'}
+        scope_changed = manifest['scope_sha256'] != self.scope()
         return {**manifest, 'snapshot_path': str(self._manifest(manifest).with_name('snapshot.json')),
-                'scope_changed': manifest['scope_sha256'] != self.scope(),
+                'scope_changed': scope_changed,
+                'school_evidence_pending': manifest['phase'] != 'reviewed' or scope_changed,
                 'automatic_retry': False}
 
     def status(self):
@@ -101,7 +162,7 @@ class Session:
         if not node:
             raise ValueError('未找到 Node；请先运行 setup.cmd')
         result = subprocess.run([node, str(self.root / 'tools/moodle/run.mjs'), 'collect',
-                                 '--output', str(snapshot_path)], cwd=self.root,
+                                 '--output', str(snapshot_path), '--request', str(snapshot_path.with_name('request.json'))], cwd=self.root,
                                 capture_output=True, timeout=300)
         if result.returncode not in (0, 2) or not snapshot_path.exists():
             raise ValueError('学校检查失败；请检查连接后明确重试，旧学习记录保留')
@@ -117,6 +178,8 @@ class Session:
         try:
             manifest = None if explicit else self._load()
             if manifest and not explicit:
+                if manifest['phase'] in {'failed', 'interrupted'}:
+                    self._record_failure(manifest)
                 if manifest.get('views_pending'):
                     self._repair_views()
                     atomic(self._manifest(manifest).with_name('review-status.json'), {'phase': 'complete'})
@@ -124,32 +187,46 @@ class Session:
                 return {**self.describe(manifest), 'network_started': False}
             self.maintain()
             with workspace_lock(self.state):
+                prepare_state(self.state)
                 pointer = self.runtime / 'latest-request.json'
                 sequence = (read(pointer)['sequence'] if pointer.exists() else 0) + 1
+                state = read(self.state)
+                details = self.scope_details(state)
                 manifest = {'run_id': uuid.uuid4().hex, 'sequence': sequence,
-                            'scope_sha256': self.scope(), 'phase': 'collecting', 'started_at': stamp()}
+                            'scope_sha256': digest(details), 'phase': 'collecting', 'started_at': stamp()}
+                request_path = self._manifest(manifest).with_name('request.json')
+                # Quiz collection also consults already tracked task URLs. Freeze only
+                # that necessary metadata; learning answers/history are not copied.
+                task_urls = sorted({t.get('source', {}).get('url') for t in state.get('tasks', [])
+                                    if isinstance(t.get('source'), dict)
+                                    and isinstance(t['source'].get('url'), str)})
+                collect_state = {'tasks': [{'source': {'url': url}} for url in task_urls]}
+                atomic(request_path, {'protocol': 1, 'run_id': manifest['run_id'], 'scope': details,
+                                      'collect_state': collect_state})
+                manifest['request_sha256'] = file_sha(request_path)
                 self._save(manifest)
                 atomic(pointer, {'sequence': sequence, 'run_id': manifest['run_id']})
             snapshot = self._manifest(manifest).with_name('snapshot.json')
             try:
                 with self.timing('moodle_collection'):
                     (collector or self.collect)(snapshot)
-                value = read(snapshot)
-                manifest.update(snapshot_sha256=file_sha(snapshot), finished_at=stamp(),
-                                phase='collected' if value.get('collection_complete') else 'failed')
+                value = self._finish_snapshot(manifest)
             except Exception:
-                # A fully written snapshot remains recoverable without another fetch.
+                # A child may atomically finish writing after the parent exits. A later
+                # continuation checks failed/interrupted runs again without fetching.
                 if snapshot.exists():
-                    value = read(snapshot)
-                    manifest.update(snapshot_sha256=file_sha(snapshot),
-                                    phase='collected' if value.get('collection_complete') else 'failed')
+                    self._finish_snapshot(manifest)
                 else:
                     manifest['phase'] = 'failed'
-                self._save(manifest)
+                    self._save(manifest)
+                if manifest['phase'] == 'failed':
+                    self._record_failure(manifest)
                 raise
+            if manifest['phase'] == 'failed':
+                self._record_failure(manifest)
             self._save(manifest)
             with workspace_lock(self.state):
-                if read(self.runtime / 'latest-request.json')['run_id'] == manifest['run_id']:
+                if manifest.get('binding_valid') and read(self.runtime / 'latest-request.json')['run_id'] == manifest['run_id']:
                     atomic(self.state.parent / 'refresh-latest.json', value)
                     if value.get('collection_complete'):
                         atomic(self.state.parent / 'refresh-last-complete.json', value)
@@ -171,9 +248,13 @@ class Session:
         completeness and conflicts; it cannot prove the quality of an AI review.
         """
         with file_lock(self.lock), workspace_lock(self.state), self.timing('review_commit'):
+            prepare_state(self.state)
             manifest = self._load()
             if not manifest or manifest.get('snapshot_sha256') != snapshot_hash:
                 raise ValueError('核读回执必须对应本轮快照哈希')
+            if manifest['scope_sha256'] != self.scope():
+                raise ValueError('账户或课程范围已变化，请明确重新检查')
+            self._validate_snapshot(manifest, read(self._manifest(manifest).with_name('snapshot.json')))
             if manifest['phase'] == 'reviewed':
                 receipt = read(self.state)['refresh_receipts'][manifest['run_id']]
                 if receipt['request_sha256'] != digest(proposal):
@@ -208,7 +289,7 @@ class Session:
             import review
             snapshot = read(self._manifest(manifest).with_name('snapshot.json'))
             exam_sources.sync_profiles(draft, snapshot, review.timestamp())
-            receipt = {'request_sha256': request_sha, 'snapshot_sha256': snapshot_hash, 'scope_sha256': manifest['scope_sha256'],
+            receipt = {'phase': 'reviewed', 'request_sha256': request_sha, 'snapshot_sha256': snapshot_hash, 'scope_sha256': manifest['scope_sha256'],
                        'sequence': manifest['sequence'], 'reviewed_at': stamp(),
                        'revision': current.get('revision', 0) + 1}
             draft.setdefault('refresh_receipts', {})[manifest['run_id']] = receipt
@@ -264,7 +345,7 @@ def main():
             import review
             with session.timing('today_views'):
                 output['today'] = daily.execute(session.state, 'run', review.timestamp(), course=args.course)
-            output['school_evidence_pending'] = output['school_check']['phase'] != 'reviewed'
+            output['school_evidence_pending'] = output['school_check'].get('school_evidence_pending', True)
     print(json.dumps(output, ensure_ascii=False), flush=True)
 
 

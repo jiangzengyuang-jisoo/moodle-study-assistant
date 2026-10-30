@@ -175,6 +175,7 @@ def atomic_text(path, content):
 
 @state_io.locked
 def save(path, state, original):
+    state_io.prepare_state(path)
     with state_io.timed(path, "state_save"):
         if path.read_bytes() != original:
             raise ValueError("共享状态刚被另一任务更新，请重新读取后重试")
@@ -202,6 +203,7 @@ def main():
     commands.add_parser("render")
     args = parser.parse_args()
     with state_io.workspace_lock(args.state):
+        state_io.prepare_state(args.state)
         original = args.state.read_bytes()
         state = json.loads(original.decode("utf-8-sig"))
         loop_enabled = state.get("settings", {}).get("learning_loop", {}).get("enabled") is True

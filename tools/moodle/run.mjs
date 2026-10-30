@@ -1,3 +1,5 @@
+import {decryptWindowsToken} from './windows-token.mjs';
+import {loadCollectionRequest, bindCollection} from './collection-request.mjs';
 import { saveState, python } from './state-bridge.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -11,15 +13,8 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const statePath = join(root, 'Study/_System/state.json');
 const json = path => JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
 
-function tokenFromWindows() {
-  const path = join(root, '.private/moodle-token.dpapi').replaceAll("'", "''");
-  const shell = join(process.env.SystemRoot ?? 'C:/Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe');
-  const result = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-Command',
-    "Add-Type -AssemblyName System.Security; [Console]::Out.Write([Text.Encoding]::UTF8.GetString([Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes('" + path + "'),$null,[Security.Cryptography.DataProtectionScope]::CurrentUser)))"
-  ], {encoding: 'utf8', windowsHide: true});
-  if (result.status !== 0 || !/^[a-zA-Z0-9]+$/.test(result.stdout ?? ''))
-    throw new Error('请先运行 connect.cmd；Token 只能由保存它的 Windows 账户使用');
-  return result.stdout;
+function tokenFromWindows(ciphertext = null) {
+  return decryptWindowsToken(ciphertext ?? readFileSync(join(root, '.private/moodle-token.dpapi')));
 }
 
 async function main() {
@@ -35,19 +30,17 @@ async function main() {
     process.exitCode = result.status ?? 1;
     return;
   }
-  let output;
+  let output, bundle;
   if (mode === 'collect') {
     const index = process.argv.indexOf('--output');
     output = index >= 0 ? process.argv[index + 1] : null;
-    const {resolve, relative, isAbsolute} = await import('node:path');
-    const runs = resolve(root, 'Study/_System/Runtime/runs');
-    const rel = output ? relative(runs, resolve(output)) : '..';
-    if (rel.startsWith('..') || isAbsolute(rel) || existsSync(output))
-      throw new Error('采集快照必须写入新的独立运行目录');
+    const requestIndex = process.argv.indexOf('--request');
+    const requestPath = requestIndex >= 0 ? process.argv[requestIndex + 1] : null;
+    bundle = loadCollectionRequest(root, requestPath, output);
   }
-  const config = json(join(root, 'config.local.json'));
+  const config = bundle?.config ?? json(join(root, 'config.local.json'));
   process.env.TZ = config.timezone;
-  const client = await new ReadOnlyClient(config.moodle_url, tokenFromWindows()).connect();
+  const client = await new ReadOnlyClient(config.moodle_url, tokenFromWindows(bundle?.credential)).connect();
   if (mode === 'check') { console.log('Moodle API 已连接。'); return; }
   if (mode === 'courses') {
     const available = await client.call('core_enrol_get_users_courses', {userid: client.userId});
@@ -76,8 +69,7 @@ async function main() {
     return;
   }
   if (mode === 'collect') {
-    const result = await collectRefresh(client, json(statePath));
-    result.account_scope = {site: config.moodle_url, user_id: client.userId};
+    const result = bindCollection(bundle, await collectRefresh(client, bundle.state), client.userId);
     atomicJSON(output, result);
     console.log(JSON.stringify({collection_complete: result.collection_complete, reviewed: false,
       courses: result.pages.length, discussions: result.threads.length, errors: result.errors,

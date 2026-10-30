@@ -4,6 +4,7 @@ Order: conversation lock -> workspace lock -> material/library lock. Never hold
 the workspace lock over network or AI review. OS releases locks after a crash.
 """
 from contextlib import contextmanager
+from collections import Counter
 from functools import wraps
 from datetime import datetime, timezone
 import hashlib
@@ -93,23 +94,118 @@ def read(path):
     return json.loads(Path(path).read_text(encoding='utf-8-sig'))
 
 
+@locked
+def prepare_state(path):
+    """Resolve file/state transactions before another supported writer reads state.
+
+    No journal means no library imports or maintenance work. Recovery failure
+    stops the caller; it must not advance the journal's state hash underneath it.
+    """
+    path = Path(path)
+    if path.with_name('material-version-transaction.json').exists():
+        from learning_library.versions import recover
+        recover(path)
+
+
+def _identity(row):
+    if not isinstance(row, dict):
+        return None
+    return next(((key, str(row[key])) for key in ('id', 'attempt_id', 'feedback_id', 'session_id')
+                 if row.get(key)), None)
+
+
+_EVIDENCE_FIELDS = {'fsrs', 'source', 'sources', 'original_question', 'user_answer',
+                    'user_answer_or_method', 'user_attempt', 'answer', 'evidence'}
+_IMMUTABLE_COLLECTIONS = {'review_attempts', 'learning_feedback', 'mock_attempts'}
+_COURSE_UPDATES = {'moodle_course_ids', 'assignment_focus', 'current_topic', 'orientation'}
+_CURSOR_ROUTING = {'pages', 'slides', 'material_id', 'task_id', 'work_unit_id', 'next_step',
+                   'pending_question', 'pending_question_answer_exposed'}
+
+
+def _source_enrichment(previous, following):
+    """An original source may gain verified pages/details, not lose old evidence."""
+    if previous in (None, '', [], {}):
+        return True
+    if isinstance(previous, dict):
+        return isinstance(following, dict) and all(
+            key in following and _source_enrichment(value, following[key]) for key, value in previous.items())
+    if isinstance(previous, list):
+        if not isinstance(following, list):
+            return False
+        remaining = list(following)
+        for value in previous:
+            match = next((i for i, item in enumerate(remaining) if _source_enrichment(value, item)), None)
+            if match is None:
+                return False
+            remaining.pop(match)
+        return True
+    return previous == following
+
+
+def _preserve_details(previous, following, location):
+    """Ordinary drafts may enrich records, never silently truncate evidence."""
+    if isinstance(previous, dict):
+        routing = _CURSOR_ROUTING if location.endswith('.teaching_cursor') else set()
+        if (not isinstance(following, dict) or (previous and not following)
+                or set(previous) - set(following) - routing):
+            raise ValueError('完整草稿遗漏已有学习详情：' + location)
+        for key, value in previous.items():
+            if key in routing:
+                continue  # Current question/page is a cursor, not historical evidence.
+            # School selection/focus legitimately changes without erasing progress.
+            if location.startswith('courses[') and location.endswith(']') and key in _COURSE_UPDATES:
+                continue
+            if key in {'source', 'sources'}:
+                if not _source_enrichment(value, following[key]):
+                    raise ValueError('既有来源证据不能删除或改写：' + location + '.' + key)
+                continue
+            if key in _EVIDENCE_FIELDS and value not in (None, '', [], {}) and following[key] != value:
+                raise ValueError('既有学习证据不可由完整草稿改写，请用专用工具或追加更正：' + location + '.' + key)
+            _preserve_details(value, following[key], location + '.' + key)
+    elif isinstance(previous, list):
+        if not isinstance(following, list):
+            raise ValueError('不能清空已有学习详情：' + location)
+        old_ids = [_identity(row) for row in previous]
+        if previous and all(old_ids):
+            new_ids = [_identity(row) for row in following]
+            if any(x is None for x in new_ids) or len(set(new_ids)) != len(new_ids):
+                raise ValueError('学习记录编号缺失或重复：' + location)
+            indexed = dict(zip(new_ids, following))
+            for identity, row in zip(old_ids, previous):
+                if identity not in indexed:
+                    raise ValueError('完整草稿遗漏已有学习记录：' + location)
+                new = indexed[identity]
+                if location in _IMMUTABLE_COLLECTIONS and new != row:
+                    raise ValueError('历史学习事件不能由完整草稿改写：' + location)
+                _preserve_details(row, new, location + '[' + identity[1] + ']')
+        else:
+            # Unidentified historical entries cannot safely be matched by position.
+            old_items, new_items = Counter(map(digest, previous)), Counter(map(digest, following))
+            if old_items - new_items:
+                raise ValueError('完整草稿遗漏或改写无编号的学习详情：' + location)
+    elif previous is not None and previous != '' and (following is None or following == ''):
+        raise ValueError('不能清空已有学习详情：' + location)
+    elif previous is not None and isinstance(following, (dict, list)):
+        raise ValueError('不能改变已有学习详情的类型：' + location)
+
+
 def validate_draft(current, draft):
     """Reject accidentally partial replacements; deletion needs a separate workflow."""
     if not isinstance(draft, dict) or set(current) - set(draft):
         raise ValueError('必须提交完整状态，不能遗漏已有字段')
     for name in ('courses', 'materials', 'mistakes', 'review_queue', 'review_attempts',
-                 'learning_feedback', 'mock_attempts'):
+                 'learning_feedback', 'mock_attempts', 'review_sessions', 'mock_exams'):
         previous, following = current.get(name, []), draft.get(name, [])
         if not isinstance(previous, list):
             continue  # Legacy formats are left to their existing migration tools.
         if not isinstance(following, list):
             raise ValueError('不能替换已有学习记录集合：' + name)
-        def identity(row):
-            return next((str(row[k]) for k in ('id', 'attempt_id', 'feedback_id') if row.get(k)), None)
-        old_ids = {identity(row) for row in previous if isinstance(row, dict)} - {None}
-        new_ids = {identity(row) for row in following if isinstance(row, dict)} - {None}
-        if old_ids - new_ids:
-            raise ValueError('完整草稿遗漏已有学习记录：' + name)
+        _preserve_details(previous, following, name)
+        if name == 'materials':
+            indexed = {_identity(row): row for row in following if isinstance(row, dict)}
+            for row in previous:
+                if isinstance(row, dict) and row.get('sha256') and indexed[_identity(row)].get('sha256') != row['sha256']:
+                    raise ValueError('资料版本哈希不可改写，请使用资料版本工具')
 
 
 def atomic(path, value):
@@ -129,6 +225,7 @@ def atomic(path, value):
 @locked
 def bridge(path, mode, payload):
     path = Path(path)
+    prepare_state(path)
     if mode == 'init':
         if not path.exists():
             atomic(path, payload)
@@ -151,6 +248,9 @@ def bridge(path, mode, payload):
 
 
 if __name__ == '__main__':
+    # Lazy recovery imports state_io through versions; share the same reentrant
+    # lock registry when this module was launched by the Node bridge as a script.
+    sys.modules.setdefault('state_io', sys.modules[__name__])
     sys.stdin.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
     try:

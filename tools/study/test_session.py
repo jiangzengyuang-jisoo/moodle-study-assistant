@@ -12,6 +12,7 @@ from unittest.mock import patch
 import daily
 import review
 from session import Session
+from session_test_fixtures import write_snapshot
 from state_io import atomic, digest, read, workspace_lock
 
 HERE = Path(__file__).resolve().parent
@@ -30,7 +31,7 @@ class SessionTests(unittest.TestCase):
 
     def collect(self, path):
         self.calls += 1
-        atomic(path, {'collection_complete': True, 'reviewed': False, 'pages': [],
+        write_snapshot(path, {'collection_complete': True, 'reviewed': False, 'pages': [],
                       'threads': [], 'errors': [], 'finished_at': '2026-10-30T00:00:00Z'})
 
     def proposal(self):
@@ -82,7 +83,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(self.calls, 1)
 
     def test_failed_collection_does_not_retry_or_claim_review(self):
-        def incomplete(path): atomic(path, {'collection_complete': False, 'errors': ['offline']})
+        def incomplete(path): write_snapshot(path, {'collection_complete': False, 'errors': ['offline']})
         result = self.session.start(collector=incomplete)
         self.assertEqual(result['phase'], 'failed')
         self.session.start(collector=self.collect)
@@ -107,8 +108,8 @@ class SessionTests(unittest.TestCase):
     def test_late_old_run_cannot_overwrite_newer_run(self):
         other = Session(self.root, 'new-chat')
         def delayed(path):
-            other.start(collector=lambda p: atomic(p, {'collection_complete': True, 'source': 'new'}))
-            atomic(path, {'collection_complete': True, 'source': 'old'})
+            other.start(collector=lambda p: write_snapshot(p, {'collection_complete': True, 'source': 'new'}))
+            write_snapshot(path, {'collection_complete': True, 'source': 'old'})
         old = self.session.start(collector=delayed)
         with self.assertRaisesRegex(ValueError, '较新的检查'):
             self.session.acknowledge(old['snapshot_sha256'], self.proposal())

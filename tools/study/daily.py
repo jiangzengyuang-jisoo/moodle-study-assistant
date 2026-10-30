@@ -132,6 +132,9 @@ def sync_mock_notebooks(state, state_path, check=False):
 @state_io.locked
 def execute(state_path, command, now, minutes=None, course=None, payload=None, snapshot=None, operation_id=None):
     state_path = Path(state_path)
+    # A crashed material move must be reconciled before any normal state write
+    # can change the hash used by its recovery journal.
+    state_io.prepare_state(state_path)
     original = state_path.read_bytes()
     state = json.loads(original.decode("utf-8-sig"))
     if operation_id is None and payload:

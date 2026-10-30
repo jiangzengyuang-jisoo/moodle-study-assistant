@@ -32,6 +32,7 @@ def configure(path, days=30):
         return {"configured": True, "policy": policy, "state_written": True}
 
 
+@locked
 def install_download(path, data):
     """Only consume an explicitly authorized download already staged inside Study."""
     path = Path(path).resolve()
