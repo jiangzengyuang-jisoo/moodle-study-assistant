@@ -280,6 +280,8 @@ def build_context(state: dict, course_id: str | None = None, detail: bool = Fals
     course_id = course["id"]
     base = f"/courses/{index}"
     related = {collection: _rows(state, collection, course_id) for collection in _COLLECTIONS}
+    from learning_library.versions import current
+    related['materials'] = [(i, row) for i, row in related['materials'] if current(row)]
     counts = {collection: len(rows) if state.get(collection) is not None else None for collection, rows in related.items()}
     entry_types = Counter(row.get("entry_type") for _, row in related["mistakes"])
     summary = {"course_id": course_id, "name": course.get("name"), "record_counts": counts, "learning_entries_by_recorded_type": dict(entry_types) if state.get("mistakes") is not None else None, "evidence_policy": "Keep recorded question/error distinctions. Completion, explanation, exposure and assisted practice do not establish independent mastery."}

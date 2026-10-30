@@ -1,4 +1,4 @@
-"""Local, rebuildable course source library. Never writes learning state or originals."""
+"""Local course source library; optional archive maintenance runs on context/sync."""
 from __future__ import annotations
 
 import argparse
@@ -128,6 +128,8 @@ class Library:
         return path
 
     def state(self):
+        if (self.state_path.parent / "material-version-transaction.json").exists():
+            raise ValueError("Interrupted material update; run versions recover before reading sources")
         return read_json(self.state_path)
 
     def catalog(self):
@@ -217,7 +219,8 @@ class Library:
                              or any(w!='text_extraction_is_not_source_verification' for w in m.get('warnings',[]))],
                 'mastery_updated':False,'state_written':False}
 
-    def fresh_rows(self, course=None, mid=None):
+    def fresh_rows(self, course=None, mid=None, include_archived=False):
+        from learning_library.versions import current as is_current
         state = self.state()
         registered = {m['id']:m for m in state.get('materials',[])}
         catalog = self.catalog()
@@ -229,6 +232,9 @@ class Library:
             if not material or (course and material.get('course_id') != course) or (mid and row['id']!=mid):
                 continue
             indexed_ids.add(row['id'])
+            if not include_archived and not is_current(material):
+                if mid: issues.append({'id': row['id'], 'reason': 'archived_version_requires_include_archived', 'current_version': material.get('superseded_by')})
+                continue
             reason = None
             try:
                 source = safe_source(self.study,material['relative_path'])
@@ -252,6 +258,7 @@ class Library:
                 current['registry_sha256'] = material.get('sha256')
                 good.append(current)
         for material_id,m in registered.items():
+            if not include_archived and not is_current(m): continue
             if material_id not in indexed_ids and (not course or m.get('course_id')==course) and (not mid or material_id==mid):
                 issues.append({'id':material_id,'reason':'new_material_not_indexed'})
         return state, good, issues
@@ -327,8 +334,9 @@ class Library:
                 'evidence_sufficient':False,'next_action':'read candidate original units; if inadequate broaden to full section/outline',
                 'warning':'Search ranks candidates only. It does not establish complete course coverage or source verification.'}
 
-    def read(self, mid, start=1, end=None, around=1, include_solutions=False):
-        state, rows, issues = self.fresh_rows(mid=mid)
+    def read(self, mid, start=1, end=None, around=1, include_solutions=False, include_archived=False):
+        from learning_library.versions import current
+        state, rows, issues = self.fresh_rows(mid=mid, include_archived=include_archived)
         row = next((m for m in rows if m['id']==mid),None)
         if not row:
             raise ValueError('Source unavailable or stale: '+json.dumps([i for i in issues if i['id']==mid],ensure_ascii=False))
@@ -347,6 +355,7 @@ class Library:
                 'source_sha256':row['sha256'],'unit_kind':row['unit_kind'],'requested':[start,end],
                 'included':[lo,hi],'total_units':len(pages),'pages':selected,'verified':False,
                 'source_kind':row.get('kind'),'category':row.get('category'),
+                'historical_version':not current(next(m for m in state['materials'] if m['id']==mid)),
                 'previous_source_inspection':{'scope':row.get('inspection_scope'),
                     'source_hash_matches_registry':row.get('registry_sha256')==row['sha256'],
                     'units_recorded_as_visually_reviewed':[p for p in row.get('visually_reviewed_pages') or [] if lo<=p<=hi]
@@ -373,8 +382,8 @@ class Library:
                 'assignment_focus':c.get('assignment_focus'),'materials':result,'unavailable':issues,
                 'coverage_complete':False,'instruction':'Full review must use the confirmed exam/assignment scope and account for all relevant materials and units; top search results are not a coverage checklist.'}
 
-    def render(self, mid, unit, dpi=130, include_solutions=False):
-        source=self.read(mid,unit,unit,0,include_solutions)
+    def render(self, mid, unit, dpi=130, include_solutions=False, include_archived=False):
+        source=self.read(mid,unit,unit,0,include_solutions,include_archived)
         row=next(m for m in self.catalog()['materials'] if m['id']==mid)
         original=Path(source['source_path'])
         if row['unit_kind']=='image':
@@ -474,12 +483,16 @@ def main():
     p=sub.add_parser('ocr'); p.add_argument('--course'); p.add_argument('--force',action='store_true'); p.add_argument('--language',default='en-US')
     p=sub.add_parser('status'); p.add_argument('--check-sources',action='store_true')
     p=sub.add_parser('search'); p.add_argument('query'); p.add_argument('--course'); p.add_argument('--limit',type=int,default=8); p.add_argument('--include-solutions',action='store_true')
-    p=sub.add_parser('read'); p.add_argument('material_id'); p.add_argument('--start',type=int,default=1); p.add_argument('--end',type=int); p.add_argument('--around',type=int,default=1); p.add_argument('--include-solutions',action='store_true')
+    p=sub.add_parser('read'); p.add_argument('material_id'); p.add_argument('--start',type=int,default=1); p.add_argument('--end',type=int); p.add_argument('--around',type=int,default=1); p.add_argument('--include-solutions',action='store_true'); p.add_argument('--include-archived',action='store_true')
     p=sub.add_parser('outline'); p.add_argument('--course',required=True); p.add_argument('--include-solutions',action='store_true')
-    p=sub.add_parser('render'); p.add_argument('material_id'); p.add_argument('--unit',type=int,required=True); p.add_argument('--dpi',type=int,default=130); p.add_argument('--include-solutions',action='store_true')
+    p=sub.add_parser('render'); p.add_argument('material_id'); p.add_argument('--unit',type=int,required=True); p.add_argument('--dpi',type=int,default=130); p.add_argument('--include-solutions',action='store_true'); p.add_argument('--include-archived',action='store_true')
     p=sub.add_parser('context'); p.add_argument('--course'); p.add_argument('--detail',action='store_true')
     p=sub.add_parser('detail'); p.add_argument('collection'); p.add_argument('record_id')
     args=parser.parse_args(); lib=Library(args.state,args.cache_dir)
+    maintenance = {}
+    if args.command in {'context','sync'}:
+        from learning_library.versions import cleanup
+        maintenance = cleanup(args.state)
     if args.command=='sync': result=lib.sync(args.course,args.force)
     elif args.command=='ocr':
         from learning_library.ocr import build_ocr
@@ -490,20 +503,23 @@ def main():
             state,rows,issues=lib.fresh_rows()
             result.update(current_state_revision=state.get('revision'),fresh_materials=len(rows),unavailable=issues)
     elif args.command=='search': result=lib.search(args.query,args.course,max(1,min(100,args.limit)),args.include_solutions)
-    elif args.command=='read': result=lib.read(args.material_id,args.start,args.end,max(0,args.around),args.include_solutions)
+    elif args.command=='read': result=lib.read(args.material_id,args.start,args.end,max(0,args.around),args.include_solutions,args.include_archived)
     elif args.command=='outline': result=lib.outline(args.course,args.include_solutions)
-    elif args.command=='render': result=lib.render(args.material_id,args.unit,max(72,min(300,args.dpi)),args.include_solutions)
+    elif args.command=='render': result=lib.render(args.material_id,args.unit,max(72,min(300,args.dpi)),args.include_solutions,args.include_archived)
     elif args.command=='context':
         from learning_library.context import build_context
         result=build_context(lib.state(),args.course,args.detail)
     else:
         from learning_library.context import read_detail
         result=read_detail(lib.state(),args.collection,args.record_id)
+    if maintenance.get('deleted'):
+        result['archive_maintenance'] = maintenance
+        result['state_written'] = True
     print(json.dumps(result,ensure_ascii=False,indent=2))
 
 
 if __name__=='__main__':
     try: main()
     except Exception as exc:
-        print(json.dumps({'error':str(exc),'type':type(exc).__name__,'state_written':False},ensure_ascii=False),file=sys.stderr)
+        print(json.dumps({'error':str(exc),'type':type(exc).__name__},ensure_ascii=False),file=sys.stderr)
         sys.exit(1)

@@ -67,3 +67,6 @@ Moodle在每个新对话开始时完整检查一次，用户明确要求刷新�
 `setup.cmd` 安装 pypdf、pypdfium2 和 Pillow，并为已登记资料建立缓存；空白档案得到空目录，不带作者数据。已有安装更新代码后重新运行 setup.cmd，保留自己的 Study/，不要覆盖 state.json。PDF 渲染优先使用已安装的 Poppler，缺少时使用随 Python 环境安装的 pypdfium2；两者都从原 PDF 渲染。Windows OCR 需要系统已有语言支持，默认不自动安装语言包。
 
 文档解析覆盖 PDF、PPTX、DOCX、HTML、文本与图像等支持格式；详见命令输出中的类型、遗漏和错误。归档后的材料须先登记到 state.materials；缓存不自动把文件目录当作完整课程范围。所有缓存和渲染保存在被 Git 忽略的 Study/_System/Library/，不应上传。
+
+
+资料升级、历史引用与经授权的 30 天归档清理见 [MATERIAL_VERSIONS.md](MATERIAL_VERSIONS.md)。默认搜索只读当前版；`context/sync` 可触发已启用的归档维护，实际删除时会更新资料删除标记，学习证据保持不变。

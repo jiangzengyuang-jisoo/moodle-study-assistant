@@ -2,10 +2,16 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, extname, join, relative, resolve, sep } from 'node:path';
+import { installVersion } from './version-files.mjs';
 
 const LIMIT = 64 * 1024 * 1024;
 const EXTENSIONS = new Set(['.pdf', '.pptx', '.docx', '.xlsx', '.ppt', '.doc', '.xls', '.odt', '.txt', '.csv', '.rtf']);
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+function remoteName(source) {
+  if (source.remote_filename) return source.remote_filename;
+  try {return decodeURIComponent(new URL(source.url).pathname.split('/').at(-1));}
+  catch {return null;}
+}
 function safeName(value) {
   return typeof value === 'string' && value && value === basename(value) && !/[<>:"/\\|?*\x00-\x1f]/.test(value)
     && !/[. ]$/.test(value) && value !== '.' && value !== '..'
@@ -76,7 +82,7 @@ export async function downloadModules(client, state, root, {moduleIds, authorize
   mkdirSync(inbox, {recursive: true});
   if (realpathSync(inbox) !== inbox) throw new Error('Download folder must not be redirected');
   const result = {checked_at: new Date().toISOString(), requested_module_ids: moduleIds, files: [], errors: [],
-    note: 'Files remain unindexed in _Inbox until the assistant reads, classifies and records them. No learning progress inferred.'};
+    note: 'New sources remain in _Inbox for review; registered sources use the enabled version policy. No learning progress inferred.'};
   for (const id of moduleIds) {
     const {module, course_id} = found.get(id);
     if (!safeName(course_id)) throw new Error('Course ID is not safe for a local folder');
@@ -90,6 +96,22 @@ export async function downloadModules(client, state, root, {moduleIds, authorize
       try {
         const {bytes, source_url} = await readFile(client, file, maxBytes);
         const sha256 = digest(bytes);
+        const statePath = join(study, '_System', 'state.json');
+        const latest = existsSync(statePath) ? JSON.parse(readFileSync(statePath, 'utf8').replace(/^\uFEFF/, '')) : state;
+        const matches = (latest.materials ?? []).filter(m => m.course_id === course_id && !m.superseded_by
+          && !['archived', 'deleted'].includes(m.version_status)
+          && (m.moodle_file_sources ?? []).some(s => String(s.module_id) === String(id)
+            && remoteName(s) === file.filename && (s.filepath ?? '/') === (file.filepath ?? '/')));
+        if (latest.settings?.material_version_policy?.enabled && matches.length === 1) {
+          const installed = installVersion({study, statePath,
+            script: join(project, 'tools/study/material_versions.py'),
+            python: join(project, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'),
+            source: {course_id, module_id: id, filename: file.filename, filepath: file.filepath ?? '/',
+              category: matches[0].category, title: module.name, source_url,
+              module_url: module.url}, bytes});
+          result.files.push({course_id, module_id: id, filename: file.filename, source_url, ...installed});
+          continue;
+        }
         let directory = join(inbox, course_id, String(id));
         mkdirSync(directory, {recursive: true});
         if (realpathSync(directory) !== directory) throw new Error('Redirected folder');
@@ -113,7 +135,7 @@ export async function downloadModules(client, state, root, {moduleIds, authorize
           relative_path: relative(study, target).replaceAll('\\', '/'), source_url, status});
       } catch {
         if (temporary && existsSync(temporary)) unlinkSync(temporary);
-        result.errors.push({module_id: id, filename: file.filename, error: 'Course file could not be verified or saved; original files preserved'});
+        result.errors.push({module_id: id, filename: file.filename, error: 'Course file could not be verified or installed; inspect retained _Inbox downloads; existing sources preserved'});
       }
     }
   }
