@@ -1,4 +1,5 @@
 """Manage current material versions without resetting learning evidence."""
+from state_io import locked
 import argparse
 import copy
 import json
@@ -10,6 +11,7 @@ from library import DEFAULT_STATE, Library, build_lock
 from learning_library import versions
 
 
+@locked
 def configure(path, days=30):
     if days < 30:
         raise ValueError("Retention must be at least 30 days")

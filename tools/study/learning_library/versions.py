@@ -1,4 +1,5 @@
 """Transactional material versions; state IDs always keep their original evidence."""
+from state_io import locked
 import copy
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -136,6 +137,7 @@ def _write(path, value):
             os.unlink(temporary)
 
 
+@locked
 def recover(state_path):
     path = Path(state_path).resolve()
     journal = path.parent / "material-version-transaction.json"
@@ -169,6 +171,7 @@ def recover(state_path):
     journal.unlink()
 
 
+@locked
 def _commit(path, before, state, moves=(), edits=(), at=None):
     study = path.parent.parent
     state["revision"] = state.get("revision", 0) + 1
@@ -211,6 +214,7 @@ def _commit(path, before, state, moves=(), edits=(), at=None):
         raise
 
 
+@locked
 def promote(state_path, incoming, old_id=None, at=None):
     """Incoming is a registered local file or a verified download staged in Study."""
     from library import build_lock
@@ -317,6 +321,7 @@ def _referenced(state, row, study):
     return any(any(n in unquote(p.read_text(encoding="utf-8-sig")).casefold() for n in needles) for p in _notes(study))
 
 
+@locked
 def cleanup(state_path, at=None, force_check=False):
     """Authorized opt-in cleanup on use; never delete referenced or modified originals."""
     from library import build_lock

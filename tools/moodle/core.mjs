@@ -1,3 +1,4 @@
+import { saveState } from './state-bridge.mjs';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import { MoodleClient } from 'moodle-mcp/dist/moodle-client.js';
@@ -37,7 +38,7 @@ export function initialize(root) {
       }, integrations: {}, daily_plans: {}, weekly_plan: null};
     for (const key of ['courses','deadlines','tasks','materials','schedules','mistakes','review_queue','course_updates','discussion_notes','pending_inputs','activity_log',
       'review_sessions','review_attempts','learning_feedback','exam_profiles','mock_exams','mock_attempts']) state[key] = [];
-    atomicJSON(path, state);
+    saveState(root, 'init', state);
   }
   const mcpPath = join(root, '.codex/config.toml');
   if (!existsSync(mcpPath)) writeFileSync(mcpPath,

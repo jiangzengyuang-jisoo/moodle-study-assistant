@@ -486,36 +486,38 @@ def main():
     p=sub.add_parser('read'); p.add_argument('material_id'); p.add_argument('--start',type=int,default=1); p.add_argument('--end',type=int); p.add_argument('--around',type=int,default=1); p.add_argument('--include-solutions',action='store_true'); p.add_argument('--include-archived',action='store_true')
     p=sub.add_parser('outline'); p.add_argument('--course',required=True); p.add_argument('--include-solutions',action='store_true')
     p=sub.add_parser('render'); p.add_argument('material_id'); p.add_argument('--unit',type=int,required=True); p.add_argument('--dpi',type=int,default=130); p.add_argument('--include-solutions',action='store_true'); p.add_argument('--include-archived',action='store_true')
-    p=sub.add_parser('context'); p.add_argument('--course'); p.add_argument('--detail',action='store_true')
+    p=sub.add_parser('context'); p.add_argument('--read-only',action='store_true'); p.add_argument('--course'); p.add_argument('--detail',action='store_true')
     p=sub.add_parser('detail'); p.add_argument('collection'); p.add_argument('record_id')
     args=parser.parse_args(); lib=Library(args.state,args.cache_dir)
-    maintenance = {}
-    if args.command in {'context','sync'}:
-        from learning_library.versions import cleanup
-        maintenance = cleanup(args.state)
-    if args.command=='sync': result=lib.sync(args.course,args.force)
-    elif args.command=='ocr':
-        from learning_library.ocr import build_ocr
-        result=build_ocr(lib,args.course,args.force,args.language)
-    elif args.command=='status':
-        result=lib.summary()
-        if args.check_sources:
-            state,rows,issues=lib.fresh_rows()
-            result.update(current_state_revision=state.get('revision'),fresh_materials=len(rows),unavailable=issues)
-    elif args.command=='search': result=lib.search(args.query,args.course,max(1,min(100,args.limit)),args.include_solutions)
-    elif args.command=='read': result=lib.read(args.material_id,args.start,args.end,max(0,args.around),args.include_solutions,args.include_archived)
-    elif args.command=='outline': result=lib.outline(args.course,args.include_solutions)
-    elif args.command=='render': result=lib.render(args.material_id,args.unit,max(72,min(300,args.dpi)),args.include_solutions,args.include_archived)
-    elif args.command=='context':
-        from learning_library.context import build_context
-        result=build_context(lib.state(),args.course,args.detail)
-    else:
-        from learning_library.context import read_detail
-        result=read_detail(lib.state(),args.collection,args.record_id)
-    if maintenance.get('deleted'):
-        result['archive_maintenance'] = maintenance
-        result['state_written'] = True
-    print(json.dumps(result,ensure_ascii=False,indent=2))
+    from state_io import timed
+    with timed(args.state, "library_" + args.command):
+        maintenance = {}
+        if args.command in {'context','sync'} and not getattr(args,'read_only',False):
+            from learning_library.versions import cleanup
+            maintenance = cleanup(args.state)
+        if args.command=='sync': result=lib.sync(args.course,args.force)
+        elif args.command=='ocr':
+            from learning_library.ocr import build_ocr
+            result=build_ocr(lib,args.course,args.force,args.language)
+        elif args.command=='status':
+            result=lib.summary()
+            if args.check_sources:
+                state,rows,issues=lib.fresh_rows()
+                result.update(current_state_revision=state.get('revision'),fresh_materials=len(rows),unavailable=issues)
+        elif args.command=='search': result=lib.search(args.query,args.course,max(1,min(100,args.limit)),args.include_solutions)
+        elif args.command=='read': result=lib.read(args.material_id,args.start,args.end,max(0,args.around),args.include_solutions,args.include_archived)
+        elif args.command=='outline': result=lib.outline(args.course,args.include_solutions)
+        elif args.command=='render': result=lib.render(args.material_id,args.unit,max(72,min(300,args.dpi)),args.include_solutions,args.include_archived)
+        elif args.command=='context':
+            from learning_library.context import build_context
+            result=build_context(lib.state(),args.course,args.detail)
+        else:
+            from learning_library.context import read_detail
+            result=read_detail(lib.state(),args.collection,args.record_id)
+        if maintenance.get('deleted'):
+            result['archive_maintenance'] = maintenance
+            result['state_written'] = True
+        print(json.dumps(result,ensure_ascii=False,indent=2))
 
 
 if __name__=='__main__':

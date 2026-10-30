@@ -86,6 +86,22 @@ class DailyIntegrationTests(unittest.TestCase):
         self.assertIn("分段函数", self.path.with_name("Learning Feedback.md").read_text(encoding="utf-8"))
         self.assertTrue(daily.execute(self.path, "check", now)["fresh"])
 
+    def test_attempt_save_then_view_crash_does_not_rate_fsrs_twice(self):
+        from unittest.mock import patch
+        daily.execute(self.path, "run", self.now)
+        session = self.read()["review_sessions"][0]
+        item = session["items"][0]
+        payload = {"attempt_id": "CRASH-ATTEMPT", "session_id": session.get("session_id", session.get("id")),
+                   "review_id": "R", "variant_id": item["variant_id"], "answer": "4", "feedback": "independent",
+                   "evidence": "synthetic test", "independent": True, "answer_seen_before_attempt": False,
+                   "rating": "good", "reviewed_at": "2026-10-07T15:05:00+08:00", "actual_minutes": 5}
+        now = review.timestamp(payload["reviewed_at"])
+        with patch.object(daily, "write_views", side_effect=OSError("crash")):
+            with self.assertRaises(OSError): daily.execute(self.path, "attempt", now, payload=payload)
+        daily.execute(self.path, "attempt", now, payload=payload)
+        self.assertEqual(len(self.read()["review_attempts"]), 1)
+        self.assertEqual(len(self.read()["review_queue"][0]["fsrs"]["history"]), 1)
+
     def test_state_change_invalidates_existing_views(self):
         daily.execute(self.path, "run", self.now)
         newer = self.read()

@@ -1,3 +1,4 @@
+import { saveState, python } from './state-bridge.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -25,6 +26,25 @@ async function main() {
   const mode = process.argv[2] ?? 'check';
   if (mode === 'init') { initialize(root); console.log('空白档案和本地 MCP 配置已准备好；已有档案保留。'); return; }
   if (!existsSync(statePath)) throw new Error('请先运行 setup.cmd');
+  if (mode === 'refresh') {
+    const args = process.argv.slice(3);
+    const index = args.indexOf('--chat');
+    const chat = index >= 0 ? args[index + 1] : 'manual-refresh-entry';
+    const result = spawnSync(python(root), [join(root, 'tools/study/session.py'), '--chat', chat, 'refresh'],
+      {stdio: 'inherit', windowsHide: true, env: {...process.env, STUDY_NODE: process.execPath}});
+    process.exitCode = result.status ?? 1;
+    return;
+  }
+  let output;
+  if (mode === 'collect') {
+    const index = process.argv.indexOf('--output');
+    output = index >= 0 ? process.argv[index + 1] : null;
+    const {resolve, relative, isAbsolute} = await import('node:path');
+    const runs = resolve(root, 'Study/_System/Runtime/runs');
+    const rel = output ? relative(runs, resolve(output)) : '..';
+    if (rel.startsWith('..') || isAbsolute(rel) || existsSync(output))
+      throw new Error('采集快照必须写入新的独立运行目录');
+  }
   const config = json(join(root, 'config.local.json'));
   process.env.TZ = config.timezone;
   const client = await new ReadOnlyClient(config.moodle_url, tokenFromWindows()).connect();
@@ -51,18 +71,14 @@ async function main() {
       else state.courses.push({id: `moodle-${id}`, name: source.fullname, shortname: source.shortname,
         moodle_course_ids: [id], assignment_focus: null, current_topic: null, teaching_cursor: null, orientation: null});
     }
-    if (readFileSync(statePath, 'utf8') !== original) throw new Error('学习状态已被其他任务更新，请重试');
-    atomicJSON(join(root, 'Study/_System/state.previous.json'), JSON.parse(original));
-    state.revision++;
-    state.updated_at = new Date().toISOString();
-    atomicJSON(statePath, state);
+    saveState(root, 'replace', {expected: JSON.parse(original), state});
     console.log('课程选择已保存；原有学习记录保留。');
     return;
   }
-  if (mode === 'refresh') {
+  if (mode === 'collect') {
     const result = await collectRefresh(client, json(statePath));
-    atomicJSON(join(root, 'Study/_System/refresh-latest.json'), result);
-    if (result.collection_complete) atomicJSON(join(root, 'Study/_System/refresh-last-complete.json'), result);
+    result.account_scope = {site: config.moodle_url, user_id: client.userId};
+    atomicJSON(output, result);
     console.log(JSON.stringify({collection_complete: result.collection_complete, reviewed: false,
       courses: result.pages.length, discussions: result.threads.length, errors: result.errors,
       next: '请让 AI 阅读本次采集，与 state.json 核对后更新学习计划。'}));

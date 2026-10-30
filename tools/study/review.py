@@ -1,4 +1,5 @@
 """FSRS integration for the existing shared study state. No background process."""
+import state_io
 import argparse
 import study_time
 from datetime import date, datetime, timedelta, timezone
@@ -172,18 +173,20 @@ def atomic_text(path, content):
             Path(name).unlink()
 
 
+@state_io.locked
 def save(path, state, original):
-    if path.read_bytes() != original:
-        raise ValueError("共享状态刚被另一任务更新，请重新读取后重试")
-    state["revision"] = state.get("revision", 0) + 1
-    with study_time.using_state(state):
-        state["updated_at"] = datetime.now(study_time.local_zone()).isoformat()
-    content = json.dumps(state, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
-    json.loads(content)
-    atomic_text(path.with_name("state.previous.json"), original.decode("utf-8-sig"))
-    if path.read_bytes() != original:
-        raise ValueError("共享状态刚被另一任务更新，请重新读取后重试")
-    atomic_text(path, content)
+    with state_io.timed(path, "state_save"):
+        if path.read_bytes() != original:
+            raise ValueError("共享状态刚被另一任务更新，请重新读取后重试")
+        state["revision"] = state.get("revision", 0) + 1
+        with study_time.using_state(state):
+            state["updated_at"] = datetime.now(study_time.local_zone()).isoformat()
+        content = json.dumps(state, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
+        json.loads(content)
+        atomic_text(path.with_name("state.previous.json"), original.decode("utf-8-sig"))
+        if path.read_bytes() != original:
+            raise ValueError("共享状态刚被另一任务更新，请重新读取后重试")
+        atomic_text(path, content)
 
 
 def main():
@@ -198,40 +201,41 @@ def main():
     commands.add_parser("record")
     commands.add_parser("render")
     args = parser.parse_args()
-    original = args.state.read_bytes()
-    state = json.loads(original.decode("utf-8-sig"))
-    loop_enabled = state.get("settings", {}).get("learning_loop", {}).get("enabled") is True
-    if loop_enabled and args.command == "record":
-        raise ValueError("复习闭环已启用：请用 daily.py attempt 关联具体日包和变式，以核对答案曝光并同步计划")
-    if args.command == "due":
-        if loop_enabled:
-            import copy
-            import learning_loop
-            import planning
-            now = timestamp(args.at)
-            output = learning_loop.prepare(copy.deepcopy(state), now,
-                                           planning.review_budget_limit(state, now, args.minutes), args.course)
-            output["read_only_preview"] = True
-            output["next_step"] = "正式题包请运行 daily.py run；此预览未保存新题或修改学习状态"
+    with state_io.workspace_lock(args.state):
+        original = args.state.read_bytes()
+        state = json.loads(original.decode("utf-8-sig"))
+        loop_enabled = state.get("settings", {}).get("learning_loop", {}).get("enabled") is True
+        if loop_enabled and args.command == "record":
+            raise ValueError("复习闭环已启用：请用 daily.py attempt 关联具体日包和变式，以核对答案曝光并同步计划")
+        if args.command == "due":
+            if loop_enabled:
+                import copy
+                import learning_loop
+                import planning
+                now = timestamp(args.at)
+                output = learning_loop.prepare(copy.deepcopy(state), now,
+                                               planning.review_budget_limit(state, now, args.minutes), args.course)
+                output["read_only_preview"] = True
+                output["next_step"] = "正式题包请运行 daily.py run；此预览未保存新题或修改学习状态"
+            else:
+                output = due(state, timestamp(args.at), args.minutes, args.course)
         else:
-            output = due(state, timestamp(args.at), args.minutes, args.course)
-    else:
-        before = json.dumps(state, sort_keys=True)
-        if args.command == "init":
-            initialize(state)
-            output = {"status": "configured", "review_history_created": False}
-        elif args.command == "record":
-            output = record(state, json.load(sys.stdin))
-        else:
-            output = {"status": "rendered"}
-        if json.dumps(state, sort_keys=True) != before:
-            save(args.state, state, original)
-        if loop_enabled:
-            import daily
-            daily.execute(args.state, "render", timestamp())
-        else:
-            atomic_text(args.state.with_name("Review Queue.md"), render(state))
-    print(json.dumps(output, ensure_ascii=False))
+            before = json.dumps(state, sort_keys=True)
+            if args.command == "init":
+                initialize(state)
+                output = {"status": "configured", "review_history_created": False}
+            elif args.command == "record":
+                output = record(state, json.load(sys.stdin))
+            else:
+                output = {"status": "rendered"}
+            if json.dumps(state, sort_keys=True) != before:
+                save(args.state, state, original)
+            if loop_enabled:
+                import daily
+                daily.execute(args.state, "render", timestamp())
+            else:
+                atomic_text(args.state.with_name("Review Queue.md"), render(state))
+        print(json.dumps(output, ensure_ascii=False))
 
 
 if __name__ == "__main__":

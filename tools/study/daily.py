@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sys
 import re
+import state_io
 
 import review
 import learning_loop
@@ -128,14 +129,31 @@ def sync_mock_notebooks(state, state_path, check=False):
     return issues
 
 
-def execute(state_path, command, now, minutes=None, course=None, payload=None, snapshot=None):
+@state_io.locked
+def execute(state_path, command, now, minutes=None, course=None, payload=None, snapshot=None, operation_id=None):
+    state_path = Path(state_path)
     original = state_path.read_bytes()
     state = json.loads(original.decode("utf-8-sig"))
+    if operation_id is None and payload:
+        operation_id = payload.get("attempt_id") or payload.get("feedback_id")
+    operation = None
+    if operation_id:
+        key = state_io.digest(str(operation_id))
+        request = state_io.digest(dict(command=command, minutes=minutes, course=course, payload=payload, snapshot=snapshot))
+        operation = (key, request)
+        old = state.get("operation_receipts", {}).get(key)
+        if old:
+            if old["request_sha256"] != request:
+                raise ValueError("同一操作编号内容冲突；未重复保存")
+            files = write_views(state, state_path, now)
+            state_io.atomic(state_path.parent / "Runtime" / "operations" / (key + ".json"),
+                            {"phase": "complete", "revision": state.get("revision")})
+            return {**old["result"], "duplicate": True, "views_updated": files}
     with study_time.using_state(state):
-        return _execute_loaded(state, state_path, original, command, now, minutes, course, payload, snapshot)
+        return _execute_loaded(state, state_path, original, command, now, minutes, course, payload, snapshot, operation)
 
 
-def _execute_loaded(state, state_path, original, command, now, minutes, course, payload, snapshot):
+def _execute_loaded(state, state_path, original, command, now, minutes, course, payload, snapshot, operation=None):
     if command == "check":
         expected = view_contents(state, now)
         views = {name: view_path(state_path, name).read_text(encoding="utf-8")
@@ -197,9 +215,19 @@ def _execute_loaded(state, state_path, original, command, now, minutes, course, 
     else:
         session = None
     planning.refresh_plan_state(state, now)
+    if operation:
+        key, request = operation
+        state.setdefault("operation_receipts", {})[key] = {"request_sha256": request, "result": result,
+                                                           "committed_at": now.isoformat()}
     if json.dumps(state, sort_keys=True, ensure_ascii=False) != before:
         review.save(state_path, state, original)
-    files = write_views(state, state_path, now)
+    if operation:
+        marker = state_path.parent / "Runtime" / "operations" / (operation[0] + ".json")
+        state_io.atomic(marker, {"phase": "views_pending", "revision": state.get("revision")})
+    with state_io.timed(state_path, "view_generation"):
+        files = write_views(state, state_path, now)
+    if operation:
+        state_io.atomic(marker, {"phase": "complete", "revision": state.get("revision")})
     return {**result, "date": now.astimezone(study_time.local_zone()).date().isoformat(),
             "views_updated": files, "review": session, "mastery_inferred": False}
 
@@ -212,12 +240,13 @@ def main():
         "exam-intake", "exam-sync", "exam-profile", "mock-register", "mock-attempt", "mock-answers", "mock-answer-shown"])
     parser.add_argument("--minutes", type=int, help="当日首次预算或明确减量；省略则沿用当天已确认预算")
     parser.add_argument("--course")
+    parser.add_argument("--operation-id", help="同一事件重试必须沿用编号")
     parser.add_argument("--snapshot", type=Path, help="本轮 Moodle 只读采集文件；核对来源变化")
     args = parser.parse_args()
     payload = json.load(sys.stdin) if args.command in {"attempt", "feedback", "answer-shown", "exam-profile",
                                                      "mock-register", "mock-attempt", "mock-answers", "mock-answer-shown"} else None
     snapshot = json.loads(args.snapshot.read_text(encoding="utf-8-sig")) if args.snapshot else None
-    result = execute(args.state, args.command, review.timestamp(args.at), args.minutes, args.course, payload, snapshot)
+    result = execute(args.state, args.command, review.timestamp(args.at), args.minutes, args.course, payload, snapshot, args.operation_id)
     print(json.dumps(result, ensure_ascii=False))
     if args.command == "check" and not result.get("fresh"):
         raise SystemExit(1)
