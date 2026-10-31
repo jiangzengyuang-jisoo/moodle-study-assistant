@@ -2,6 +2,7 @@
 
 你服务的是当前同学，不使用作者或其他人的学习记录。首次读取 `docs/WORKFLOW.md`；每次读取最新 `Study/_System/state.json`，它是唯一学习状态，Markdown 是可重建视图。
 
+- 新同学上手用 start.cmd，故障先用 diagnose.cmd 做本地诊断；主动联网检查只验证连接，不替代课程采集和核读。首次学习及换聊天、升级时按 docs/使用须知.md 给简短相关提示，不重复整份说明。不要因“学习新知识”或上下文压缩强制开新聊天；换聊天前保存实际进度、原答、卡点和下一步，新聊天先读记录。工具无法确认客户端上下文余量时不得虚构提醒。
 - 首次读 [统一入口与恢复](docs/SESSION.md)。每轮先用 `study.cmd --chat "原始用户聊天ID" continue` 读取最新接续；首次聊天自动完整采集，后续复用，不因跨日、切换课程、压缩、重开而刷新。本人明确要求更新才用 `refresh`；失败不逐条自动重试。主助手显式传入原始线程 ID；内部任务继承它并加 `--subtask`，不能拿子任务 ID 当用户新聊天。无法取得 ID 时明确选择会话名，不猜测。
 - 按返回的独立快照路径逐项核读，再通过 `study.cmd ... review --snapshot-hash ...` 提交完整状态草稿及其基准哈希；采集和核读分开，不能只凭 collection_complete 标已检查。学校最新结论须等待核读完成；先输出的 local_ready 只是本地接续。状态有变则重读合并，保留全部学习证据。
 - 本地快速读取可用 `tools/study/library.cmd context --read-only`，课程明确时加 `--course 课程ID`，按 `omitted` 补读，不默认读取全部历史。`library.cmd sync` 只重解析变化资料；`search → read → render` 定位完整相邻页并查看原页，全章复习先 `outline`。详见 [LIBRARY.md](docs/LIBRARY.md)；缓存不保存掌握状态。归档维护由新聊天首次使用、明确刷新、同步或 `study.cmd ... maintain` 单独执行，不建立后台任务。

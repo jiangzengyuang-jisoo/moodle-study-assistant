@@ -97,6 +97,8 @@ node tools/moodle/run.mjs download 123 --authorized
 
 ## 验证与发布
 
+面向同学的 `start.cmd` 提供中文上手向导，`diagnose.cmd` 默认只做本地诊断；`diagnose.cmd -Online -NoPause` 才会验证一次学校连接，不刷新、不写学习状态。`-Json` 输出不含个人内容的摘要，不自动上传。详见 [START.md](START.md)。新增入口测试随下面的 tests 目录 Python 测试执行。
+
 ```powershell
 npm test
 & '.venv/Scripts/python.exe' -m unittest discover -s tests -p 'test_*.py'
