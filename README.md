@@ -16,7 +16,9 @@
 
 在本仓库页面点 **Code → Download ZIP**，把压缩包完整解压到一个固定文件夹，例如 `D:\MoodleStudy`。
 
-然后在 ChatGPT 中添加或打开这个本地项目，选择**能直接看到 `README.md`、`AGENTS.md` 和 `start.cmd` 的那层文件夹**。按提示允许它访问这个项目。
+在 ChatGPT 桌面版中，打开 **ChatGPT 下拉菜单 → Codex**，再将 **Work in** 设为 **This computer（本机）**（[官方入口说明](https://learn.chatgpt.com/docs/environments/modes)）。
+
+然后添加或打开本地项目，选择**能直接看到 `README.md`、`AGENTS.md` 和 `start.cmd` 的那层文件夹**。按提示允许它访问这个项目。
 
 ### 3. 复制下面这段话，交给 ChatGPT
 
@@ -44,7 +46,9 @@
 
 **你主要负责三件事：**确认必要的安装权限、在学校网页里登录、选择自己的课程。环境检查、依赖安装和项目配置可以交给 ChatGPT；遇到它无法操作的窗口，它会告诉你该点哪里。
 
-默认连接 HKU Moodle。其他学校请先告诉 ChatGPT 学校的 Moodle 首页地址；能否使用取决于学校开放的接口和权限，目前主要在 HKU 场景验证。
+默认连接 HKU Moodle，核心 API 采集已在 HKU 实际使用。其他学校请先告诉 ChatGPT 学校的 Moodle 首页地址；能否使用取决于学校开放的接口和权限。
+
+**浏览器登录辅助仍属实验功能：**已做模拟回调验证，但真实学校登录（含单点登录 SSO、多重验证 MFA）和新电脑完整联网安装仍待验证。连接失败时，请参考[备用连接方式](docs/新手使用指南.md#连接失败或已有官方-token)。
 
 ### 怎样算准备好了？
 
