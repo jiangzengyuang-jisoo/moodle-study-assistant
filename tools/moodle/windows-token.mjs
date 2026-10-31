@@ -10,7 +10,10 @@ export function decryptWindowsToken(ciphertext) {
     '$null,[Security.Cryptography.DataProtectionScope]::CurrentUser)))'], {
     encoding: 'utf8', windowsHide: true, input: ciphertext.toString('base64'),
   });
-  if (result.status !== 0 || !/^[a-zA-Z0-9]+$/.test(result.stdout ?? ''))
-    throw new Error('请先运行 connect.cmd；Token 只能由保存它的 Windows 账户使用');
+  if (result.status !== 0 || !/^[a-zA-Z0-9]+$/.test(result.stdout ?? '')) {
+    const error = new Error('请先运行 connect.cmd；Token 只能由保存它的 Windows 账户使用');
+    error.code = 'STUDY_TOKEN_DECRYPT_FAILED';
+    throw error;
+  }
   return result.stdout;
 }

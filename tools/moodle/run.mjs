@@ -91,4 +91,8 @@ async function main() {
   if (mode === 'mcp') { const { serve } = await import('./server.mjs'); await serve(client); return; }
   throw new Error('用法：run.mjs init | check | courses | refresh | mcp | download <module-id> [...] --authorized');
 }
-main().catch(error => { console.error(error.message); process.exitCode = 1; });
+main().catch(error => {
+  // Stable, allowlisted code for diagnostics; never expose arbitrary properties.
+  console.error(error.code === 'STUDY_TOKEN_DECRYPT_FAILED' ? `${error.code}: ${error.message}` : error.message);
+  process.exitCode = 1;
+});

@@ -11,43 +11,9 @@ $env:PYTHONDONTWRITEBYTECODE = '1'
 $entryRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location -LiteralPath $entryRoot
 
-# Bootstrap requires only Windows PowerShell. Do not print interpreter errors:
-# paths, launcher state and user-supplied environment data are not diagnostics.
-$entryCandidates = @()
-$entryLocalPython = Join-Path $entryRoot '.venv/Scripts/python.exe'
-if (Test-Path -LiteralPath $entryLocalPython) {
-    $entryCandidates += @{Command = $entryLocalPython; Prefix = @()}
-}
-foreach ($entryName in @('py', 'python')) {
-    $entryCommand = Get-Command $entryName -CommandType Application -ErrorAction SilentlyContinue
-    if ($entryCommand) {
-        $entryPrefix = @()
-        if ($entryName -eq 'py') { $entryPrefix = @('-3') }
-        $entryCandidates += @{Command = $entryCommand.Source; Prefix = $entryPrefix}
-    }
-}
-$entryPython = $null
-foreach ($entryCandidate in $entryCandidates) {
-    try {
-        $entryPrefix = $entryCandidate.Prefix
-        # Windows app-execution aliases may not be usable interpreters.
-        $entryInfo = New-Object System.Diagnostics.ProcessStartInfo
-        $entryInfo.FileName = $entryCandidate.Command
-        $entryInfo.Arguments = (($entryPrefix + @('-B', '-c', '"import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)"')) -join ' ')
-        $entryInfo.UseShellExecute = $false
-        $entryInfo.CreateNoWindow = $true
-        $entryInfo.RedirectStandardOutput = $true
-        $entryInfo.RedirectStandardError = $true
-        $entryProcess = [System.Diagnostics.Process]::Start($entryInfo)
-        if (-not $entryProcess.WaitForExit(10000)) {
-            $entryProcess.Kill()
-        } elseif ($entryProcess.ExitCode -eq 0) {
-            $entryPython = $entryCandidate
-        }
-        $entryProcess.Dispose()
-        if ($entryPython) { break }
-    } catch { }
-}
+# Setup uses this same resolver; interpreter selection must not diverge.
+. (Join-Path $PSScriptRoot 'python-runtime.ps1')
+$entryPython = Find-StudyPython -Root $entryRoot
 if (-not $entryPython) {
     $entryMessage = '未找到可用的 Python 3.11 或更新版本。请从 https://www.python.org/downloads/windows/ 安装并勾选 Add Python to PATH，再重新打开 start.cmd。'
     if ($Json) {

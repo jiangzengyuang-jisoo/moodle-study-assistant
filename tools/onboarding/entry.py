@@ -69,7 +69,8 @@ def online_result(code, stdout, stderr):
         return item('online', 'error', '学校授权无效或已过期。', '选择“重新连接学校”；已有学习记录保留。')
     if any(key in error for key in ('accessexception', 'accesscontrol', 'webservice_access_exception', 'nopermissions')):
         return item('online', 'error', '学校未允许此次 API 访问。', '核对学校地址和移动服务权限；必要时联系学校 IT，不绕过限制。')
-    if any(key in error.lower() for key in ('decrypt', 'dpapi', 'unprotect')):
+    if ('STUDY_TOKEN_DECRYPT_FAILED' in error or 'Token 只能由保存它的 Windows 账户使用' in error
+            or any(key in error.lower() for key in ('decrypt', 'dpapi', 'unprotect'))):
         return item('online', 'error', '当前 Windows 账户无法解密已保存的授权。', '在这台电脑、这个 Windows 账户下重新连接；不要复制凭据。')
     if code == 124 or 'network request failed' in error:
         return item('online', 'error', '网络、超时或学校响应异常，本次未验证成功。', '检查网络和学校网站，稍后主动重试；本工具不自动重试。')
@@ -81,6 +82,9 @@ class App:
         self.root = Path(root).resolve()
         self.probe = run_probe
         self.locate = locate
+        self._last_online = None
+        self._online_scope = None
+        self._pip_repair_failed = False
 
     @property
     def python(self):
@@ -114,6 +118,14 @@ class App:
         add('python_packages', 'error' if py_broken else 'ok' if py_ok else 'missing',
             '项目 Python 解释器损坏或版本过低。' if py_broken else '项目 Python 环境及核心依赖可用。' if py_ok else '项目 Python 环境或依赖尚未就绪。',
             '让 AI 修复项目环境，保留 Study、授权与配置；不要反复初始化。' if py_broken else '' if py_ok else '选择“安装或更新依赖”；不删除已有学习目录。')
+        pip_ok = False
+        if self.python.is_file() and not py_broken:
+            pip_ok = self.probe([self.python, '-B', '-m', 'pip', '--version'], self.root)[0] == 0
+        if pip_ok:
+            self._pip_repair_failed = False
+        add('pip', 'error' if self._pip_repair_failed else 'ok' if pip_ok else 'missing',
+            'pip 内置修复未成功，需要单独修复项目环境。' if self._pip_repair_failed else '项目 pip 安装工具可用。' if pip_ok else '项目 pip 安装工具尚未就绪。',
+            '让 AI 修复 .venv，保留学习档案；不要反复执行同一步。' if self._pip_repair_failed else '' if pip_ok else '选择安装时会先尝试使用 Python 内置 ensurepip 恢复，不联网、不删除学习记录。')
         node_packages = False
         if node_ok:
             code, _, _ = self.probe([node, '--input-type=module', '-e',
@@ -164,12 +176,37 @@ class App:
                     '停止初始化和写入，先备份并让 AI 核对文件；不要删除后重建。')
         if config and state and config['timezone'] != state['timezone']:
             add('timezone', 'error', '配置与学习档案的时区不一致。', '让 AI 核对原日期含义后统一设置，不自动平移旧记录。')
+        elif py_ok and (config or state):
+            zones = sorted({value['timezone'] for value in (config, state) if value is not None})
+            # Validate actual settings with the same interpreter/database used by
+            # the study tools. Values are arguments, never interpolated as code.
+            code, _, _ = self.probe([self.python, '-B', '-c',
+                'import sys; from zoneinfo import ZoneInfo, ZoneInfoNotFoundError\n'
+                'try:\n for key in sys.argv[1:]: ZoneInfo(key)\n'
+                'except (ValueError, ZoneInfoNotFoundError): sys.exit(2)', *zones], self.root)
+            if code == 0:
+                add('timezone', 'ok', '实际配置的学习时区可用。')
+            elif code == 2:
+                add('timezone', 'error', '配置的学习时区名称无效或当前环境无法提供该时区。', '核对 IANA 时区名称和 tzdata；不要自动平移已有日期。')
+            else:
+                add('timezone', 'error', '本次无法完成学习时区检查。', '先核对项目 Python 环境，再重新运行本地诊断。')
 
         credential = self.root / '.private/moodle-token.dpapi'
         try:
-            credential_ok = credential.is_file() and credential.stat().st_size > 0
+            credential_stat = credential.stat() if credential.is_file() else None
+            credential_ok = credential_stat is not None and credential_stat.st_size > 0
+            credential_generation = ((credential_stat.st_dev, credential_stat.st_ino, credential_stat.st_size,
+                                      credential_stat.st_mtime_ns, credential_stat.st_ctime_ns)
+                                     if credential_stat else None)
         except OSError:
             credential_ok = False
+            credential_generation = None
+        # Session-only connection evidence. Do not decrypt/read credentials just
+        # to retain a diagnosis; successful auth replaces this file atomically.
+        scope = (config.get('moodle_url') if config is not None else None, credential_generation)
+        if scope != self._online_scope:
+            self._last_online = None
+            self._online_scope = scope
         add('credential', 'unknown' if credential_ok else 'missing',
             '已发现本机加密授权；有效性尚未联网验证。' if credential_ok else '尚未保存学校授权。',
             '可主动选择“联网检查”，仅验证连接。' if credential_ok else '选择“重新连接学校”，本人完成登录验证。')
@@ -182,11 +219,19 @@ class App:
                   'checked_at': datetime.now(timezone.utc).isoformat(),
                   'mode': 'online' if online else 'local', 'checks': checks}
         if online:
-            prerequisites = node_ok and node_packages and py_ok and config and state and credential_ok
+            prerequisites = (node_ok and node_packages and py_ok and config and state and credential_ok
+                             and not any(row['id'] == 'timezone' and row['status'] == 'error' for row in checks))
             if prerequisites:
-                checks.append(online_result(*self.probe([node, 'tools/moodle/run.mjs', 'check'], self.root, timeout=45)))
+                row = online_result(*self.probe([node, 'tools/moodle/run.mjs', 'check'], self.root, timeout=45))
+                row.update(checked_at=result['checked_at'], reused=False)
+                self._last_online = dict(row)
+                checks.append(row)
             else:
                 add('online', 'skipped', '尚不具备连接检查条件，没有联网。', '先处理环境、配置、学习档案和学校授权问题。')
+        elif self._last_online:
+            row = dict(self._last_online)
+            row.update(message='本次向导此前检查：' + row['message'], reused=True)
+            checks.append(row)
         result['next_action'] = next_action(result)
         return result
 
@@ -263,12 +308,13 @@ class App:
         """Actions are selected by the user, use existing writers, and never retry."""
         current = self.inspect()
         checks = {row['id']: row for row in current['checks']}
-        if any(checks.get(k, {}).get('status') == 'error' for k in ('config', 'state', 'timezone', 'python_packages')):
-            return False, '配置或学习档案异常，已停止操作；先备份并核对，不能用初始化覆盖。'
+        if any(checks.get(k, {}).get('status') == 'error' for k in ('config', 'state', 'timezone', 'python_packages', 'pip')):
+            return False, '环境、配置或学习档案异常，已停止操作；先核对并修复，保留学习档案。'
         if any(checks[k]['status'] != 'ok' for k in ('node', 'npm')):
             return False, '请先安装 Node.js 和 npm，再重新打开入口。'
         if action == 'setup':
-            args = [powershell(), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(self.root / 'setup.ps1')]
+            args = [powershell(), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(self.root / 'setup.ps1'),
+                    '-PythonExecutable', sys.executable]
         else:
             if any(checks[k]['status'] != 'ok' for k in ('python_packages', 'node_packages', 'config', 'state')):
                 return False, '请先完成安装并处理本地诊断中的问题。'
@@ -285,6 +331,9 @@ class App:
             code = subprocess.call(args, cwd=self.root, env={**os.environ, 'PYTHONUTF8': '1'})
         except OSError:
             code = 1
+        if action == 'setup' and code == 3:
+            self._pip_repair_failed = True
+            return False, 'pip 内置恢复失败。请先让 AI 修复 .venv，保留学习记录；本次向导不再重复建议安装。'
         if code:
             return False, '此步骤未完成。请查看上方提示，选 2 做本地诊断；学校连接问题可选 3 联网检查。修复后可继续，不会自动重试。'
         return True, '此步骤已返回，正在重新检查实际完成情况；取消操作不视为完成。'
@@ -296,11 +345,11 @@ def powershell():
 
 def next_action(report):
     statuses = {row['id']: row['status'] for row in report['checks']}
-    if any(statuses.get(k) == 'error' for k in ('config', 'state', 'timezone', 'python_packages')):
+    if any(statuses.get(k) == 'error' for k in ('config', 'state', 'timezone', 'python_packages', 'pip')):
         return 'repair'
     if any(statuses.get(k) != 'ok' for k in ('node', 'npm')):
         return 'install_runtime'
-    if any(statuses.get(k) != 'ok' for k in ('python_packages', 'node_packages', 'config', 'state')) or statuses.get('client') == 'missing':
+    if any(statuses.get(k) != 'ok' for k in ('python_packages', 'pip', 'node_packages', 'config', 'state')) or statuses.get('client') == 'missing':
         return 'setup'
     if statuses.get('credential') == 'missing':
         return 'connect'
@@ -328,7 +377,7 @@ def guide(app, ask=input, output=print):
     report = app.inspect()
     while True:
         action = report['next_action']
-        labels = {'repair': '先修复配置或档案', 'install_runtime': '先安装 Node.js / npm', 'setup': '安装或更新依赖',
+        labels = {'repair': '先修复环境、配置或档案', 'install_runtime': '先安装 Node.js / npm', 'setup': '安装或更新依赖',
                   'connect': '连接学校', 'courses': '选择课程', 'handoff': '进入 AI 学习（不重复安装或刷新）',
                   'connection_help': '处理学校连接问题；已有本地资料仍可复习'}
         output('\n下一步：' + labels[action])

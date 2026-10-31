@@ -189,6 +189,136 @@ class OnboardingTests(unittest.TestCase):
         self.app.probe = self.fake_probe
         self.assertEqual('handoff', self.app.inspect(online=True)['next_action'])
 
+    def fail_connection(self):
+        def offline(args, root, timeout=20):
+            if args[-1] == 'check':
+                self.calls.append(list(args))
+                return 1, '', 'Moodle API failed: invalidtoken'
+            return self.fake_probe(args, root, timeout)
+        self.app.probe = offline
+        return self.app.inspect(online=True)
+
+    def test_local_diagnosis_retains_known_connection_failure_without_network(self):
+        self.prepared()
+        before = self.tree()
+        original = self.fail_connection()
+        answers = iter(['2', '4', '2', '1', '0'])
+        output = []
+        entry.guide(self.app, ask=lambda _: next(answers), output=output.append)
+        report = self.app.inspect()
+        self.assertEqual('connection_help', report['next_action'])
+        self.assertTrue(self.checks(report)['online']['reused'])
+        self.assertEqual(self.checks(original)['online']['checked_at'], self.checks(report)['online']['checked_at'])
+        self.assertNotIn(entry.HANDOFF, output)
+        self.assertEqual(1, sum(c[-1] == 'check' for c in self.calls))
+        self.assertEqual(before, self.tree())
+
+    def test_failed_or_cancelled_reconnection_does_not_clear_failure(self):
+        self.prepared()
+        self.fail_connection()
+        answers = iter(['5', '0', '2', '0'])
+        with patch.object(self.app, 'act') as action:
+            entry.guide(self.app, ask=lambda _: next(answers), output=lambda _: None)
+            action.assert_not_called()
+        with patch.object(entry.subprocess, 'call', return_value=1):
+            self.assertFalse(self.app.act('edge')[0])
+        self.assertEqual('connection_help', self.app.inspect()['next_action'])
+
+    def test_config_and_credential_changes_invalidate_cached_connection_result(self):
+        self.prepared()
+        self.fail_connection()
+        # An ordinary learning update must not erase connection evidence.
+        path = self.root / 'Study/_System/state.json'
+        state = read(path); state['revision'] += 1; self.write('Study/_System/state.json', state)
+        self.assertEqual('connection_help', self.app.inspect()['next_action'])
+        self.write('config.local.json', {'moodle_url': 'https://changed.example', 'timezone': 'Asia/Hong_Kong'})
+        self.assertNotIn('online', self.checks(self.app.inspect()))
+        self.fail_connection()
+        (self.root / '.private/moodle-token.dpapi').write_bytes(b'new-synthetic-generation')
+        report = self.app.inspect()
+        self.assertNotIn('online', self.checks(report))
+        self.assertEqual('unknown', self.checks(report)['credential']['status'])
+
+    def test_successful_recheck_replaces_failure_and_local_reuse_is_labelled(self):
+        self.prepared()
+        self.fail_connection()
+        self.app.probe = self.fake_probe
+        online = self.app.inspect(online=True)
+        local = self.app.inspect()
+        self.assertEqual('handoff', local['next_action'])
+        self.assertFalse(self.checks(online)['online']['reused'])
+        self.assertTrue(self.checks(local)['online']['reused'])
+        self.assertIn('此前检查', self.checks(local)['online']['message'])
+        self.assertEqual(self.checks(online)['online']['checked_at'], self.checks(local)['online']['checked_at'])
+
+    def test_actual_timezone_validation_blocks_matching_invalid_names(self):
+        self.prepared()
+        def real_timezone(args, root, timeout=20):
+            if 'ZoneInfo(key)' in str(args):
+                return entry.probe([sys.executable, *args[1:]], root, timeout)
+            return self.fake_probe(args, root, timeout)
+        self.app.probe = real_timezone
+        for zone in ('Asia/HongkongTypo', '', '../outside', 'SECRET_INVALID_ZONE'):
+            with self.subTest(zone=zone):
+                self.write('config.local.json', {'moodle_url': 'https://synthetic.example', 'timezone': zone})
+                state = read(self.root / 'Study/_System/state.json'); state['timezone'] = zone
+                self.write('Study/_System/state.json', state)
+                before = self.tree()
+                report = self.app.inspect(online=True)
+                self.assertEqual('repair', report['next_action'])
+                self.assertEqual('error', self.checks(report)['timezone']['status'])
+                self.assertEqual('skipped', self.checks(report)['online']['status'])
+                self.assertNotIn('SECRET_INVALID_ZONE', json.dumps(report))
+                with patch.object(entry.subprocess, 'call') as child:
+                    self.assertFalse(self.app.act('setup')[0])
+                    child.assert_not_called()
+                self.assertEqual(before, self.tree())
+        for zone in ('UTC', 'Asia/Hong_Kong', 'Europe/London'):
+            self.write('config.local.json', {'moodle_url': 'https://synthetic.example', 'timezone': zone})
+            state['timezone'] = zone; self.write('Study/_System/state.json', state)
+            self.assertEqual('ok', self.checks(self.app.inspect())['timezone']['status'])
+
+    def test_timezone_probe_failure_is_not_reported_as_ready(self):
+        self.prepared()
+        def fail_timezone(args, root, timeout=20):
+            if 'ZoneInfo(key)' in str(args):
+                return 124, '', 'diagnostic_timeout'
+            return self.fake_probe(args, root, timeout)
+        self.app.probe = fail_timezone
+        self.assertEqual('repair', self.app.inspect()['next_action'])
+
+    def test_pip_repair_failure_stops_recommended_install_loop_until_repaired(self):
+        self.prepared()
+        def no_pip(args, root, timeout=20):
+            if args[-3:] == ['-m', 'pip', '--version']:
+                return 1, '', 'No module named pip'
+            return self.fake_probe(args, root, timeout)
+        self.app.probe = no_pip
+        self.assertEqual('setup', self.app.inspect()['next_action'])
+        with patch.object(entry.subprocess, 'call', return_value=3) as child:
+            self.assertFalse(self.app.act('setup')[0])
+            self.assertEqual('repair', self.app.inspect()['next_action'])
+            self.assertFalse(self.app.act('setup')[0])
+            self.assertEqual(1, child.call_count)
+        self.app.probe = self.fake_probe
+        self.assertEqual('handoff', self.app.inspect()['next_action'])
+
+    @unittest.skipUnless(os.name == 'nt' and shutil.which('node'), 'Windows Node/DPAPI')
+    def test_real_dpapi_error_is_classified_without_credential_output(self):
+        code = '''import {decryptWindowsToken} from './tools/moodle/windows-token.mjs';
+try { decryptWindowsToken(Buffer.from('synthetic-invalid-ciphertext')); }
+catch(error) { console.error(error.code + ': ' + error.message); process.exitCode = 1; }'''
+        result = subprocess.run([shutil.which('node'), '--input-type=module', '-e', code], cwd=ROOT,
+                                capture_output=True, encoding='utf-8', timeout=30)
+        self.assertEqual(1, result.returncode)
+        self.assertIn('STUDY_TOKEN_DECRYPT_FAILED', result.stderr)
+        row = entry.online_result(result.returncode, result.stdout, result.stderr)
+        self.assertIn('解密', row['message'])
+        self.assertIn('重新连接', row['next_step'])
+        self.assertNotIn('synthetic-invalid-ciphertext', json.dumps(row))
+        # Older installed Node entrypoints still emit the known Chinese text.
+        self.assertIn('解密', entry.online_result(1, '', '请先运行 connect.cmd；Token 只能由保存它的 Windows 账户使用')['message'])
+
     def test_broken_interpreter_needs_repair_not_repeated_setup(self):
         self.prepared()
         def broken(args, root, timeout=20):
@@ -255,7 +385,7 @@ class OnboardingTests(unittest.TestCase):
                 self.assertEqual(suffix, child.call_args.args[0][-2:])
                 self.assertEqual(self.root, child.call_args.kwargs['cwd'])
             self.assertTrue(self.app.act('setup')[0])
-            self.assertEqual(str(self.root / 'setup.ps1'), child.call_args.args[0][-1])
+            self.assertEqual([str(self.root / 'setup.ps1'), '-PythonExecutable', sys.executable], child.call_args.args[0][-3:])
         self.assertEqual(before, self.tree())
 
     def test_snapshot_collected_reviewed_failed_and_interrupted_are_distinct(self):
@@ -317,6 +447,7 @@ class OnboardingTests(unittest.TestCase):
         target = self.root / 'tools/onboarding/start.ps1'
         target.parent.mkdir(parents=True)
         shutil.copyfile(ROOT / 'tools/onboarding/start.ps1', target)
+        shutil.copyfile(ROOT / 'tools/onboarding/python-runtime.ps1', target.with_name('python-runtime.ps1'))
         before = self.tree()
         result = subprocess.run([entry.powershell(), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(target),
                                  '-Mode', 'Diagnose', '-Json', '-NoPause'], env={**os.environ, 'PATH': ''},
@@ -330,7 +461,7 @@ class OnboardingTests(unittest.TestCase):
     def test_real_powershell_and_python_diagnose_blank_root_never_initialize(self):
         target = self.root / 'tools/onboarding'
         target.mkdir(parents=True)
-        for name in ('start.ps1', 'entry.py'):
+        for name in ('start.ps1', 'entry.py', 'python-runtime.ps1'):
             shutil.copyfile(ROOT / 'tools/onboarding' / name, target / name)
         before = self.tree()
         result = subprocess.run([entry.powershell(), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(target / 'start.ps1'),
@@ -346,7 +477,7 @@ class OnboardingTests(unittest.TestCase):
     def test_actual_cmd_launchers_show_diagnostic_and_menu_without_writes(self):
         target = self.root / 'tools/onboarding'
         target.mkdir(parents=True)
-        for name in ('start.ps1', 'entry.py'):
+        for name in ('start.ps1', 'entry.py', 'python-runtime.ps1'):
             shutil.copyfile(ROOT / 'tools/onboarding' / name, target / name)
         for name in ('start.cmd', 'diagnose.cmd'):
             shutil.copyfile(ROOT / name, self.root / name)
