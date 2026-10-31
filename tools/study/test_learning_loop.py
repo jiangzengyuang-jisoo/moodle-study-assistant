@@ -196,6 +196,46 @@ class LearningLoopTests(unittest.TestCase):
         self.assertEqual(result["committed_minutes"], 17)
         self.assertEqual(loop.prepare(state, AT)["budget_minutes"], 15)
 
+    def test_actual_overrun_defers_only_questions_that_no_longer_fit(self):
+        for actual, expected in ((8, ["answered", "pending", "deferred"]),
+                                 (12, ["answered", "deferred", "deferred"]),
+                                 (17, ["answered", "deferred", "deferred"])):
+            with self.subTest(actual=actual):
+                state = fixture(3)
+                package = loop.prepare(state, AT)
+                result = loop.record_attempt(state, attempt(package, actual_minutes=actual))
+                session = state["review_sessions"][0]
+                self.assertEqual([i["status"] for i in session["items"]], expected)
+                self.assertEqual(result["actual_minutes_known"], actual)
+                self.assertEqual(result["committed_minutes"], actual + (5 if actual == 8 else 0))
+                self.assertEqual(state["review_attempts"][0]["actual_minutes"], actual)
+                repeated = loop.prepare(state, AT, 30)
+                self.assertEqual(repeated["budget_minutes"], 15)
+                self.assertEqual([i["status"] for i in repeated["items"]], expected)
+                self.assertEqual(len(state["review_queue"][0]["fsrs"]["history"]), 1)
+
+    def test_prepare_rebalances_saved_actuals_without_budget_reduction(self):
+        state = fixture(3)
+        loop.prepare(state, AT)
+        state["review_sessions"][0]["items"][0].update(status="answered", actual_minutes=12)
+        package = loop.prepare(state, AT, 15)
+        self.assertEqual([i["status"] for i in package["items"]], ["answered", "deferred", "deferred"])
+        self.assertEqual(package["committed_minutes"], 12)
+
+    def test_late_actual_overrun_rebalances_only_the_answer_day(self):
+        state = fixture(3)
+        yesterday = loop.prepare(state, AT)
+        today = AT + timedelta(days=1)
+        loop.prepare(state, today)
+        loop.record_attempt(state, attempt(yesterday, at=today, actual_minutes=12))
+        self.assertEqual(loop._budget(state["review_sessions"][0])["committed_minutes"], 0)
+        current = state["review_sessions"][1]
+        self.assertEqual([i["status"] for i in current["items"]], ["answered", "deferred", "deferred"])
+        self.assertEqual(loop._budget(current)["committed_minutes"], 12)
+        next_day = loop.prepare(state, today + timedelta(days=1))
+        self.assertTrue(any(i["review_id"] == "R1" and i["variant_id"] == "V0" and
+                            i["status"] == "pending" for i in next_day["items"]))
+
     def test_budget_reduction_defers_unstarted_work_and_does_not_reactivate(self):
         state = fixture(3)
         loop.prepare(state, AT, 15)

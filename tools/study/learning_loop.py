@@ -115,9 +115,8 @@ def _session_for(state, now, minutes=15):
 
 
 def _reduce_budget(session, minutes, now):
-    """A later capacity reduction may defer unstarted work, never erase actuals."""
-    if minutes >= session["budget_minutes"]:
-        return
+    """Fit unstarted work around actual time without raising the daily limit."""
+    minutes = min(minutes, session["budget_minutes"])
     session["budget_minutes"] = minutes
     fixed = sum((item.get("actual_minutes") if item.get("actual_minutes") is not None
                  else item["reserved_minutes"]) for item in session["items"]
@@ -131,7 +130,7 @@ def _reduce_budget(session, minutes, now):
         else:
             item.update(status="deferred", budget_exempt=True,
                         deferred_at=now.astimezone(study_time.local_zone()).isoformat(),
-                        deferred_reason="今日预算减量；未作答，不记失败")
+                        deferred_reason="今日剩余预算不足；未作答，不记失败")
 
 
 @study_time.state_timezone
@@ -349,6 +348,7 @@ def record_attempt(state, payload):
                     budget_exempt=not charged, budget_session_id=budget_session["id"],
                     answered_at=attempt["reviewed_at"], answer_shown_at=attempt["reviewed_at"],
                     answer_shown_evidence="已记录作答后的核对反馈")
+    _reduce_budget(budget_session, budget_session["budget_minutes"], now)
     return {"status": "recorded", "review_id": item["review_id"],
             "fsrs_rated": request["independent"], "next_review_at": result.get("next_review_at"),
             "needs_new_variant": True, "mastery_updated": False, **_budget(budget_session)}
@@ -426,7 +426,7 @@ def render_today_review(state, now):
         elif item["status"] == "carried_forward":
             lines += [f"已承接到后续日包：{item['course_id']} · {item['title']}。", ""]
         elif item["status"] == "deferred":
-            lines += [f"今日减量暂缓：{item['course_id']} · {item['title']}。未作答，不记失败。", ""]
+            lines += [f"今日预算不足暂缓：{item['course_id']} · {item['title']}。未作答，不记失败。", ""]
         else:
             lines += [f"已记录：{item['course_id']} · {item['title']}。"]
             if item["next_review_at"]:

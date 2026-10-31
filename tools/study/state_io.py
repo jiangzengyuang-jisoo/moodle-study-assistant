@@ -228,7 +228,8 @@ def validate_draft(current, draft):
     if not isinstance(draft, dict) or set(current) - set(draft):
         raise ValueError('必须提交完整状态，不能遗漏已有字段')
     for name in ('courses', 'materials', 'mistakes', 'review_queue', 'review_attempts',
-                 'learning_feedback', 'mock_attempts', 'review_sessions', 'mock_exams'):
+                 'learning_feedback', 'mock_attempts', 'review_sessions', 'mock_exams',
+                 'tasks', 'deadlines', 'discussion_notes'):
         previous, following = current.get(name, []), draft.get(name, [])
         if not isinstance(previous, list):
             continue  # Legacy formats are left to their existing migration tools.

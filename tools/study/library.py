@@ -458,7 +458,7 @@ def query_terms(query):
 
 def is_solution(row):
     name=norm(' '.join(str(row.get(k) or '') for k in ['filename','relative_path','title','kind','category'])).replace('_',' ')
-    return row.get('contains_solutions') is True or bool(re.search(r'\bsolutions?\b|\banswers?\b|答案|解答',name))
+    return row.get('contains_solutions') is True or bool(re.search(r'\bsolutions?\b|\bsols?\b|\banswers?\b|答案|解答',name))
 
 
 def page_topics(row,page):

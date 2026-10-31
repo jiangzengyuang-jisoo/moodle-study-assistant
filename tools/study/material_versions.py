@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 from urllib.parse import urlparse, parse_qs
 
-from library import DEFAULT_STATE, Library, build_lock
+from library import DEFAULT_STATE, Library, build_lock, is_solution
 from learning_library import versions
 
 
@@ -32,11 +32,28 @@ def configure(path, days=30):
         return {"configured": True, "policy": policy, "state_written": True}
 
 
+def _reuse_identical(path, incoming, material_id):
+    """Caller holds the workspace lock; retain identity and only strengthen protection."""
+    before = path.read_bytes()
+    state = json.loads(before.decode("utf-8-sig"))
+    existing = next((m for m in state.get("materials", []) if m["id"] == material_id
+                     and versions.current(m) and m.get("sha256") == incoming["sha256"]), None)
+    if existing is None:
+        raise ValueError("Identical material changed; reread before installing")
+    versions.verify(path.parent.parent, existing)
+    changed = incoming.get("contains_solutions") is True and existing.get("contains_solutions") is not True
+    if changed:
+        existing["contains_solutions"] = True
+        versions._commit(path, before, state)
+    return {"status": "identical", "material_id": existing["id"],
+            "relative_path": existing["relative_path"], "state_written": changed}
+
+
 @locked
 def install_download(path, data):
     """Only consume an explicitly authorized download already staged inside Study."""
     path = Path(path).resolve()
-    versions.cleanup(path)
+    cleanup = versions.cleanup(path)
     state = json.loads(path.read_text(encoding="utf-8-sig"))
     source = data["source"]
     module = source.get("module_id")
@@ -56,18 +73,28 @@ def install_download(path, data):
            "title": source.get("title", filename), "category": source.get("category", "Other"),
            "kind": "Moodle course file", "relative_path": data["relative_path"],
            "sha256": data["sha256"], "bytes": data.get("bytes"), "page_map": [],
-           "contains_solutions": None, "moodle_file_sources": [file_source]}
+           "contains_solutions": source.get("contains_solutions")
+               if isinstance(source.get("contains_solutions"), bool) else None,
+           "moodle_file_sources": [file_source]}
+    if is_solution(row):
+        row["contains_solutions"] = True
     staged = versions.safe(path.parent.parent, row["relative_path"])
     if "_Inbox" not in staged.relative_to(path.parent.parent).parts:
         raise ValueError("Downloads must be staged in _Inbox before promotion")
     identical = next((m for m in state.get("materials", []) if versions.current(m)
                       and m.get("sha256") == row["sha256"] and versions.keys(m) & versions.keys(row)), None)
     if identical:
-        versions.verify(path.parent.parent, identical)
-        return {"status": "identical", "material_id": identical["id"], "relative_path": identical["relative_path"]}
-    if any(m["id"] == row["id"] for m in state.get("materials", [])):
-        row["id"] += "-" + versions.uuid.uuid4().hex[:10]
-    result = versions.promote(path, row, data.get("old_id"))
+        result = _reuse_identical(path, row, identical["id"])
+    else:
+        if any(m["id"] == row["id"] for m in state.get("materials", [])):
+            row["id"] += "-" + versions.uuid.uuid4().hex[:10]
+        result = versions.promote(path, row, data.get("old_id"))
+        if result["status"] == "identical":
+            result = _reuse_identical(path, row, result["material_id"])
+    result["state_written"] = bool(result.get("state_written") or cleanup.get("deleted"))
+    if result["status"] == "identical":
+        # Cached text still uses fresh registry labels in Library.fresh_rows.
+        return result
     Library(path).sync(row["course_id"])
     final = json.loads(path.read_text(encoding="utf-8-sig"))
     result["relative_path"] = next(m["relative_path"] for m in final["materials"] if m["id"] == result["material_id"])

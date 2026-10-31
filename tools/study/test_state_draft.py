@@ -30,6 +30,14 @@ class DraftTests(unittest.TestCase):
             'mock_attempts': [{'id': 'MA', 'answer': 'first mock answer'}],
             'review_sessions': [{'session_id': 'S', 'items': [{'id': 'I', 'status': 'pending'}]}],
             'mock_exams': [{'id': 'EX', 'questions': [{'id': 'Q', 'prompt': 'original question'}]}],
+            'tasks': [{'id': 'T1', 'course_id': 'C', 'title': 'Homework', 'status': 'In progress',
+                       'remaining_workload_minutes': 20, 'deadline_id': 'D1',
+                       'source': {'url': 'https://school.example/mod/assign/view.php?id=1'}}],
+            'deadlines': [{'id': 'D1', 'task_id': 'T1', 'date': '2026-11-01', 'time': None,
+                           'source': {'post_id': 10}}],
+            'discussion_notes': [{'id': 'N1', 'course_id': 'C', 'author_role': 'teacher',
+                                  'content': 'Original teacher instruction', 'status': 'pending',
+                                  'source': {'post_id': 10}}],
         }
         atomic(self.path, self.state)
 
@@ -42,11 +50,48 @@ class DraftTests(unittest.TestCase):
 
     def test_id_only_records_cannot_erase_any_protected_collection(self):
         for name in ('courses', 'materials', 'mistakes', 'review_queue', 'review_attempts',
-                     'learning_feedback', 'mock_attempts', 'review_sessions', 'mock_exams'):
+                     'learning_feedback', 'mock_attempts', 'review_sessions', 'mock_exams',
+                     'tasks', 'deadlines', 'discussion_notes'):
             with self.subTest(collection=name):
                 draft = deepcopy(self.state)
                 row = draft[name][0]
                 draft[name][0] = {k: v for k, v in row.items() if k in {'id', 'attempt_id', 'feedback_id', 'session_id'}}
+                self.reject(draft)
+
+    def test_task_deadline_and_discussion_collections_cannot_be_cleared(self):
+        for name in ('tasks', 'deadlines', 'discussion_notes'):
+            for replacement in ([], None):
+                with self.subTest(collection=name, replacement=replacement):
+                    draft = deepcopy(self.state)
+                    draft[name] = replacement
+                    self.reject(draft)
+
+    def test_task_completion_deadline_change_and_appended_notes_remain_allowed(self):
+        draft = deepcopy(self.state)
+        draft['tasks'][0].update(status='Completed', submission_status='submitted',
+                                 remaining_workload_minutes=0)
+        draft['tasks'].append({'id': 'T2', 'course_id': 'C', 'status': None})
+        draft['deadlines'][0].update(date='2026-11-03', time='23:59')
+        draft['deadlines'][0]['source']['extension_post_id'] = 11
+        draft['deadlines'].append({'id': 'D2', 'task_id': 'T2', 'date': '2026-11-07'})
+        draft['discussion_notes'][0]['status'] = 'reviewed'
+        draft['discussion_notes'][0]['corrections'] = [{'post_id': 11, 'detail': 'Teacher extended the deadline'}]
+        draft['discussion_notes'].append({'id': 'N2', 'course_id': 'C', 'content': 'New instruction',
+                                         'source': {'post_id': 11}})
+        bridge(self.path, 'replace', {'expected': self.state, 'state': draft})
+        saved = read(self.path)
+        self.assertEqual(saved['tasks'][0]['status'], 'Completed')
+        self.assertEqual(saved['tasks'][0]['remaining_workload_minutes'], 0)
+        self.assertEqual(saved['deadlines'][0]['date'], '2026-11-03')
+        self.assertEqual(saved['discussion_notes'][0]['content'], 'Original teacher instruction')
+        self.assertEqual(saved['review_attempts'], self.state['review_attempts'])
+        self.assertEqual(read(self.path.with_name('state.previous.json')), self.state)
+
+    def test_task_deadline_and_discussion_sources_cannot_be_rewritten(self):
+        for name in ('tasks', 'deadlines', 'discussion_notes'):
+            with self.subTest(collection=name):
+                draft = deepcopy(self.state)
+                draft[name][0]['source'] = {'post_id': 999}
                 self.reject(draft)
 
     def test_clear_nested_progress_and_remove_occurrence_are_rejected(self):
