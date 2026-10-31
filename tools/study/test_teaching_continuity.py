@@ -112,7 +112,7 @@ class TeachingContinuityTests(unittest.TestCase):
         initial, draft = state(), state()
         for sample in (initial, draft):
             sample['courses'][0]['teaching_cursor']['checks'][0].update(
-                independent=True, assisted=False, answer_exposed=False, at='2026-01-03')
+                independent=True, assisted=False, answer_exposed=False, at='2026-01-03', correct=True)
         row = {'id': 'e1', 'topic': 'FOB', 'level': 'independent', 'passed': False,
                'source': {'kind': 'observed_attempt', 'record_path': '/courses/0/teaching_cursor/checks/0'},
                'conditions': {'independent': True, 'assisted': False, 'answer_exposed': False}}

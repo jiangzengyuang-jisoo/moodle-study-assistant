@@ -16,7 +16,7 @@ import tempfile
 import threading
 import time
 
-from cursor_evidence import PENDING_KEYS, validate_cursor_transition, validate_cursor_history
+from cursor_evidence import PENDING_KEYS, validate_cursor_transition, validate_cursor_history, legacy_history_migration
 from teaching_evidence import validate_course_evidence
 
 _held = threading.local()
@@ -93,6 +93,11 @@ def digest(value):
     return hashlib.sha256(data).hexdigest()
 
 
+def same_json(first, second):
+    """JSON observations preserve types: Python equates 0/False and 1/True."""
+    return digest(first) == digest(second)
+
+
 def read(path):
     return json.loads(Path(path).read_text(encoding='utf-8-sig'))
 
@@ -119,6 +124,8 @@ def _identity(row):
 
 _EVIDENCE_FIELDS = {'fsrs', 'source', 'sources', 'original_question', 'user_answer',
                     'user_answer_or_method', 'user_attempt', 'answer', 'evidence'}
+_ANSWER_FIELDS = {'user_answer', 'user_answer_or_method', 'user_attempt', 'answer',
+                  'submitted_answer', 'response', 'response_text'}
 _IMMUTABLE_COLLECTIONS = {'review_attempts', 'learning_feedback', 'mock_attempts'}
 _COURSE_UPDATES = {'moodle_course_ids', 'assignment_focus', 'current_topic', 'orientation'}
 _CURSOR_ROUTING = {'pages', 'slides', 'material_id', 'task_id', 'work_unit_id', 'next_step',
@@ -142,7 +149,7 @@ def _source_enrichment(previous, following):
                 return False
             remaining.pop(match)
         return True
-    return previous == following
+    return same_json(previous, following)
 
 
 def _preserve_details(previous, following, location):
@@ -166,6 +173,10 @@ def _preserve_details(previous, following, location):
         for key, value in previous.items():
             if key in routing:
                 continue  # Attempt preservation was checked at the cursor root.
+            if cursor_root and key == 'history' and legacy_history_migration(previous, following):
+                # The old dictionary and active snapshot were verified exactly.
+                # No other dict-to-list conversion gets this exemption.
+                continue
             # School selection/focus legitimately changes without erasing progress.
             if location.startswith('courses[') and location.endswith(']') and key in _COURSE_UPDATES:
                 continue
@@ -173,7 +184,9 @@ def _preserve_details(previous, following, location):
                 if not _source_enrichment(value, following[key]):
                     raise ValueError('既有来源证据不能删除或改写：' + location + '.' + key)
                 continue
-            if key in _EVIDENCE_FIELDS and value not in (None, '', [], {}) and following[key] != value:
+            protected = (key in _ANSWER_FIELDS and value is not None) or (
+                key in _EVIDENCE_FIELDS and value not in (None, '', [], {}))
+            if protected and not same_json(following[key], value):
                 raise ValueError('既有学习证据不可由完整草稿改写，请用专用工具或追加更正：' + location + '.' + key)
             _preserve_details(value, following[key], location + '.' + key)
     elif isinstance(previous, list):
@@ -196,7 +209,7 @@ def _preserve_details(previous, following, location):
                 if identity not in indexed:
                     raise ValueError('完整草稿遗漏已有学习记录：' + location)
                 new = indexed[identity]
-                if location in _IMMUTABLE_COLLECTIONS and new != row:
+                if location in _IMMUTABLE_COLLECTIONS and not same_json(new, row):
                     raise ValueError('历史学习事件不能由完整草稿改写：' + location)
                 _preserve_details(row, new, location + '[' + identity[1] + ']')
         else:
@@ -232,6 +245,8 @@ def validate_draft(current, draft):
             for row in previous:
                 if isinstance(row, dict) and row.get('sha256') and indexed[_identity(row)].get('sha256') != row['sha256']:
                     raise ValueError('资料版本哈希不可改写，请使用资料版本工具')
+    from evidence_bindings import bind_source_changes
+    bind_source_changes(current, draft)
 
 
 def atomic(path, value):
@@ -259,13 +274,13 @@ def bridge(path, mode, payload):
     if mode != 'replace':
         raise ValueError('Unknown state operation')
     original = path.read_bytes()
-    if json.loads(original.decode('utf-8-sig')) != payload['expected']:
+    if not same_json(json.loads(original.decode('utf-8-sig')), payload['expected']):
         raise ValueError('学习状态已更新，请重读后重试；未覆盖任何记录')
-    if payload['state'].get('exam_profiles', []) != payload['expected'].get('exam_profiles', []):
+    if not same_json(payload['state'].get('exam_profiles', []), payload['expected'].get('exam_profiles', [])):
         raise ValueError('考试要求必须通过绑定本轮快照的 daily.py exam-profile/exam-sync 或会话核读入口更新')
     validate_draft(payload['expected'], payload['state'])
     for key in ('operation_receipts', 'refresh_receipts'):
-        if payload['state'].get(key) != payload['expected'].get(key):
+        if not same_json(payload['state'].get(key), payload['expected'].get(key)):
             raise ValueError('操作回执由工具维护，不能直接修改')
     state = payload['state']
     state['revision'] = payload['expected'].get('revision', 0) + 1

@@ -488,14 +488,20 @@ def main():
     p=sub.add_parser('render'); p.add_argument('material_id'); p.add_argument('--unit',type=int,required=True); p.add_argument('--dpi',type=int,default=130); p.add_argument('--include-solutions',action='store_true'); p.add_argument('--include-archived',action='store_true')
     p=sub.add_parser('context'); p.add_argument('--read-only',action='store_true'); p.add_argument('--course'); p.add_argument('--detail',action='store_true')
     p=sub.add_parser('evidence'); p.add_argument('--course',required=True); p.add_argument('--query',required=True); p.add_argument('--limit',type=int,default=8)
+    p=sub.add_parser('evidence-source'); p.add_argument('--course',required=True); p.add_argument('--observation',required=True)
     p=sub.add_parser('detail'); p.add_argument('collection'); p.add_argument('record_id')
     args=parser.parse_args(); lib=Library(args.state,args.cache_dir)
-    if args.command=='evidence':
+    if args.command in {'evidence', 'evidence-source'}:
         # Evidence lookup is strictly read-only, including no maintenance or
         # timing-log writes. Legacy notes remain locators, never mastery ratings.
         sys.dont_write_bytecode = True
-        from learning_library.evidence import search_evidence
-        print(json.dumps(search_evidence(lib.state(),args.course,args.query,args.limit),ensure_ascii=False,indent=2))
+        if args.command == 'evidence':
+            from learning_library.evidence import search_evidence
+            result = search_evidence(lib.state(),args.course,args.query,args.limit)
+        else:
+            from evidence_bindings import resolve_observation
+            result = resolve_observation(lib.state(),args.course,args.observation,include_record=True)
+        print(json.dumps(result,ensure_ascii=False,indent=2))
         return
     from state_io import timed
     with timed(args.state, "library_" + args.command):

@@ -16,6 +16,7 @@ import re
 from typing import Any
 
 from cursor_evidence import PENDING_KEYS
+from course_links import record_course_ids
 
 
 _COLLECTIONS = (
@@ -179,6 +180,9 @@ def _rows(state: dict, collection: str, course_id: str) -> list[tuple[int, dict]
     values = state.get(collection) or []
     if not isinstance(values, list):
         return []
+    if collection == 'review_attempts':
+        return [(i, row) for i, row in enumerate(values)
+                if course_id in record_course_ids(state, row, collection)]
     return [(i, row) for i, row in enumerate(values) if _related(row, course_id)]
 
 

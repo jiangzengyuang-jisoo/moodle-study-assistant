@@ -98,6 +98,7 @@ class TeachingProvenanceTests(unittest.TestCase):
 
     def delayed(self):
         initial, row = fixture(), observation()
+        initial['courses'][0]['teaching_cursor']['checks'][0].update(answered_at='2026-01-03', correct=True)
         initial['courses'][0]['topic_evidence'] = [
             {'id': 'earlier', 'topic': 'A', 'level': 'explained',
              'source': {'kind': 'user_report'}, 'at': '2026-01-02'}]

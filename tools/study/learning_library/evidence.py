@@ -9,6 +9,8 @@ import json
 import re
 import unicodedata
 
+from course_links import record_course_ids, review_attempt_context
+
 
 _COURSE_FIELDS = ('topic_evidence', 'assistant_notes', 'teaching_cursor',
                   'teaching_history', 'history', 'learning_progress',
@@ -39,15 +41,6 @@ def _course(state, requested):
     if len(found) != 1:
         raise ValueError('Course is unknown or ambiguous: ' + requested)
     return found[0]
-
-
-def _belongs(row, course_id):
-    if not isinstance(row, dict):
-        return False
-    if row.get('course_id') is not None:
-        return row['course_id'] == course_id
-    values = row.get('course_ids')
-    return isinstance(values, list) and course_id in values
 
 
 def _own_text(value):
@@ -150,22 +143,33 @@ def search_evidence(state, course_id, query, limit=8):
     index, course = _course(state, course_id)
     canonical_id = course['id']
     terms = list(dict.fromkeys([_norm(query), *_norm(query).split(' ')]))
-    roots = [(f'/courses/{index}/{key}', course[key], key == 'topic_evidence')
+    roots = [(f'/courses/{index}/{key}', course[key], key == 'topic_evidence', None)
              for key in _COURSE_FIELDS if key in course]
     for collection in _COLLECTIONS:
         rows = state.get(collection) or []
         if isinstance(rows, list):
-            roots.extend((f'/{collection}/{i}', row, False) for i, row in reversed(list(enumerate(rows)))
-                         if _belongs(row, canonical_id))
+            for i, row in reversed(list(enumerate(rows))):
+                if canonical_id not in record_course_ids(state, row, collection):
+                    continue
+                linked = review_attempt_context(state, row) if collection == 'review_attempts' else None
+                roots.append((f'/{collection}/{i}', row, False, linked))
     matches, total, used = [], 0, 0
-    for base, records, structured in roots:
+    for base, records, structured, linked in roots:
         for path, record in _walk(records, base, canonical_id):
-            if not _contains(record, terms):
+            linked_match = (path == base and linked is not None
+                            and _contains({'text': list(linked['search_text'])}, terms))
+            if not _contains(record, terms) and not linked_match:
                 continue
             total += 1
             # Only a direct topic_evidence row can supply a recorded level.
             is_event = structured and path.count('/') == base.count('/') + 1
             preview = _preview(record, path, is_event)
+            if is_event and record.get('source', {}).get('kind') == 'observed_attempt':
+                binding = course.get('evidence_bindings', {}).get(record.get('id'), {})
+                preview['source_binding_status'] = binding.get('status', 'unresolved_legacy')
+                preview['source_detail_usage'] = 'library.cmd evidence-source --course ' + canonical_id + ' --observation ' + str(record.get('id'))
+            if linked_match:
+                preview['linked_question_paths'] = list(linked['linked_paths'])
             size = len(json.dumps(preview, ensure_ascii=False))
             if len(matches) < limit and used + size <= 6000:
                 matches.append(preview)
@@ -180,4 +184,4 @@ def search_evidence(state, course_id, query, limit=8):
             'status': 'candidates_found' if total else 'no_matching_record',
             'learning_conclusion': 'not_assessed', 'state_written': False,
             'note': '未查到记录不等于没学过；命中仅定位证据。旧笔记不自动推断等级，已讲解不等于独立掌握；按路径补读并核对本人纠正。',
-            'detail_usage': 'tools/study/library.cmd detail path /PATH (may expose answers; use for internal evidence review)'}
+            'detail_usage': 'tools/study/library.cmd detail path /PATH; observed_attempt uses evidence-source --course ID --observation ID (may expose answers; internal review only)'}

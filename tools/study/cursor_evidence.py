@@ -14,6 +14,7 @@ _ATTEMPT_MARKERS = {'answered_at', 'submitted_at', 'attempted_at'}
 _ASSESSMENT_KEYS = {'assessment', 'feedback', 'fsrs_rating'}
 _ATTEMPT_STATUSES = {'answered', 'submitted', 'graded', 'correct', 'incorrect',
                      'partially_answered', 'partially_answered_correct', 'completed'}
+_EVALUATION_STATUSES = {'correct', 'incorrect', 'partially_answered_correct'}
 _LIVE_ROUTING = {'status', 'stage', 'next_step', 'updated_at'}
 _SOLUTION_KEYS = {'answer_key', 'answer_keys', 'correct_answer', 'correct_answers',
                   'expected_answer', 'expected_answers', 'solution', 'solutions',
@@ -59,7 +60,11 @@ def _preserves(previous, following, *, live=False, top=True):
         if not isinstance(following, dict):
             return False
         routing = _LIVE_ROUTING if live and top and _has_attempt(previous, include_status=False) else set()
-        return all(key in following and _preserves(value, following[key], live=live, top=False)
+        if isinstance(previous.get('status'), str) and previous['status'] in _EVALUATION_STATUSES:
+            routing = routing - {'status'}  # A recorded verdict is evidence, not a next-action flag.
+        return all(key in following and (
+                       _same(value, following[key]) if key in _ANSWER_KEYS and value is not None
+                       else _preserves(value, following[key], live=live, top=False))
                    for key, value in previous.items()
                    if key not in routing)
     if isinstance(previous, list):
@@ -110,23 +115,40 @@ def active_snapshot(cursor):
     return {key: value for key, value in cursor.items() if key not in {'checks', 'history'}}
 
 
+def _same(first, second):
+    return json.dumps(first, sort_keys=True, ensure_ascii=False, allow_nan=False) == json.dumps(
+        second, sort_keys=True, ensure_ascii=False, allow_nan=False)
+
+
+def legacy_history_migration(previous, following):
+    """The only supported dictionary-to-list upgrade preserves both old objects."""
+    if not isinstance(previous, dict) or not isinstance(following, dict):
+        return False
+    old, new = previous.get('history'), following.get('history')
+    return (isinstance(old, dict) and isinstance(new, list) and len(new) >= 2
+            and _same(new[0], old) and _same(new[1], active_snapshot(previous)))
+
+
 def validate_cursor_history(previous, following):
     """A chapter switch retains the previous position; history is never active."""
     if not isinstance(following, dict):
         return False
     history = following.get('history', [])
     old_history = previous.get('history', [])
-    same = lambda a, b: json.dumps(a, sort_keys=True, ensure_ascii=False) == json.dumps(b, sort_keys=True, ensure_ascii=False)
-    switched = any(previous.get(key) not in (None, '') and previous.get(key) != following.get(key)
+    switched = any(previous.get(key) not in (None, '') and not _same(previous.get(key), following.get(key))
                    for key in ('topic', 'chapter'))
+    if isinstance(old_history, dict) and isinstance(history, list):
+        if legacy_history_migration(previous, following):
+            return True
+        raise ValueError('旧字典历史升级需在列表首项完整保留旧 history，再完整追加旧活动游标；不能丢失原记录')
     if not isinstance(history, list) or not isinstance(old_history, list):
-        if not switched and same(history, old_history):
+        if not switched and _same(history, old_history):
             return False  # Preserve an unchanged legacy shape, never migrate it.
         raise ValueError('teaching_cursor.history 必须是追加式列表')
-    if len(history) < len(old_history) or not same(history[:len(old_history)], old_history):
+    if len(history) < len(old_history) or not _same(history[:len(old_history)], old_history):
         raise ValueError('旧教学位置只能追加，不能删除或改写')
     snapshot = active_snapshot(previous)
-    archived = any(type(row) is dict and same(row, snapshot) for row in history[len(old_history):])
+    archived = any(type(row) is dict and _same(row, snapshot) for row in history[len(old_history):])
     if switched and not archived:
         raise ValueError('切换教学主题前，请把旧游标（除 checks/history）完整追加到 teaching_cursor.history；旧章待复习另存 review_backlog')
     return archived
