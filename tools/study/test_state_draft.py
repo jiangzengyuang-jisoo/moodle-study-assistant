@@ -81,6 +81,9 @@ class DraftTests(unittest.TestCase):
         draft['courses'][0]['moodle_course_ids'] = []
         draft['courses'][0]['assignment_focus'] = {'task_ids': ['T2'], 'topic': 'new'}
         draft['courses'][0]['current_topic'] = 'Chapter 2'
+        old_cursor = self.state['courses'][0]['teaching_cursor']
+        draft['courses'][0]['teaching_cursor']['history'] = [
+            deepcopy({k: v for k, v in old_cursor.items() if k not in {'checks', 'history'}})]
         draft['courses'][0]['teaching_cursor']['topic'] = 'Chapter 2'
         draft['courses'][0]['teaching_cursor']['pages'] = [7, 8]
         draft['courses'][0]['teaching_cursor']['pending_question'] = None

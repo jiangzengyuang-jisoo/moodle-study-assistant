@@ -36,11 +36,11 @@ _ANSWER_KEYS = {
 }
 _TIME_KEYS = ("updated_at", "answered_at", "saved_at", "recorded_at", "at", "date", "created_at")
 _CURRENT_KEYS = (
-    "material_id", "pages", "task_id", "work_unit_id", "topic", "stage", "next_step",
+    "material_id", "pages", "task_id", "work_unit_id", "chapter", "topic", "stage", "next_step",
     "updated_at", "missing_material", "coverage_note",
 )
 _EVIDENCE_KEYS = (
-    "id", "type", "entry_type", "stage", "status", "at", "date", "recorded_at", "answered_at",
+    "id", "topic", "chapter", "material_id", "type", "entry_type", "stage", "status", "at", "date", "recorded_at", "answered_at",
     "conditions", "scaffolding", "assisted", "independent", "answer_exposed",
     "answer_previously_exposed", "hints_used", "mastery_verified", "mastery_inferred",
     "mastery_scope", "mastery_limits", "fsrs_rating", "fsrs_rated", "actual_minutes",
@@ -98,6 +98,19 @@ def _walk(value: Any, path: str = "", inherited: float = 0.0):
     elif isinstance(value, list):
         for i, item in enumerate(value):
             yield from _walk(item, path + "/" + str(i), inherited)
+
+
+def _walk_active(value: Any, path: str = "", inherited: float = 0.0):
+    """Archived prompts/next steps cannot compete with the current position."""
+    if isinstance(value, dict):
+        stamp = _stamp(value, inherited)
+        yield path, value, stamp
+        for key, item in value.items():
+            if key not in {'checks', 'history', 'review_backlog'}:
+                yield from _walk_active(item, path + '/' + _escape(key), stamp)
+    elif isinstance(value, list):
+        for i, item in enumerate(value):
+            yield from _walk_active(item, path + '/' + str(i), inherited)
 
 
 def _safe(value: Any) -> Any:
@@ -229,7 +242,7 @@ def _continuity(cursor: Any, base_path: str, projection: _Projection) -> Any:
     handoffs = []
     continuations = []
     evidence = []
-    for path, node, stamp in _walk(cursor, base_path):
+    for path, node, stamp in _walk_active(cursor, base_path):
         leaf = path.rsplit("/", 1)[-1]
         if leaf in ("session_handoff", "handoff"):
             handoffs.append((stamp, path, node))
@@ -238,6 +251,8 @@ def _continuity(cursor: Any, base_path: str, projection: _Projection) -> Any:
                 pending.append({"path": path + "/" + key, "record": _pending(node[key])})
         if "next_step" in node or "next_check" in node:
             continuations.append((stamp, path, node))
+    # Historical attempts remain evidence, but never active questions/handoffs.
+    for path, node, stamp in _walk(cursor, base_path):
         if any(key in node for key in ("answer", "user_answer", "user_attempt", "answered_at", "conditions", "scaffolding", "assisted", "independent")):
             evidence.append((stamp, path, node))
     if handoffs:
@@ -253,7 +268,8 @@ def _continuity(cursor: Any, base_path: str, projection: _Projection) -> Any:
         _, path, node = max(evidence, key=lambda row: row[0])
         # Preserve explicit assistance/independence and assessment limits.  Never
         # manufacture an independent flag from absence of a hint record.
-        result["latest_attempt_context"] = {"path": path, "record": _pick(node, _EVIDENCE_KEYS), "full_attempt_available": True}
+        result["latest_attempt_context"] = {"path": path, "record": _pick(node, _EVIDENCE_KEYS), "full_attempt_available": True,
+                                            "scope_note": "Historical evidence only; verify its topic and conditions before applying it to the current lesson."}
     return result
 
 
@@ -295,6 +311,28 @@ def build_context(state: dict, course_id: str | None = None, detail: bool = Fals
     project = _Projection()
     sections = result["sections"]
     sections["course"] = {"id": course_id, "name": course.get("name"), "current_topic": deepcopy(course.get("current_topic")), "assignment_focus": project.mapping(course.get("assignment_focus"), base + "/assignment_focus", ("target", "required_chapters", "task_ids", "meaning", "api_checked_at", "mapping_updated_at")), "orientation": project.mapping(course.get("orientation"), base + "/orientation", ("core_question", "prerequisites", "required_workflow", "resource_hierarchy", "study_approach", "scope_note", "exam_focus"), 1500), "assistant_notes": project.notes(course.get("assistant_notes"), base + "/assistant_notes"), "teaching_cursor": _continuity(course.get("teaching_cursor"), base + "/teaching_cursor", project), "learning_progress": project.mapping(course.get("learning_progress"), base + "/learning_progress", ("current_chapter", "last_completed_chapter", "chapter_progress_status", "teaching_continuity", "mastery_verified", "required_chapters"))}
+    sections['course']['continuity_policy'] = {
+        'current_position': base + '/teaching_cursor',
+        'history_lookup': 'evidence --course ' + course_id + ' --query TOPIC',
+        'missing_evidence': '未查到记录不等于未学过；判断缺口前查跨章节记录及其原文。',
+        'coverage_and_mastery': '覆盖核对和学习表现分开；用户自报讲过不证明独立掌握。',
+        'material_upload': '先按用户当前意图核对材料，不因上传作业自动重讲或出检查题。',
+    }
+    for field, keys in (
+        ('topic_evidence', ('id', 'topic', 'chapter', 'level', 'at', 'passed', 'conditions', 'corrects')),
+        ('coverage_records', ('id', 'scope', 'status', 'at', 'corrects')),
+        ('review_backlog', ('id', 'topic', 'chapter', 'status', 'next_step')),
+    ):
+        rows = course.get(field)
+        if rows is not None:
+            # Bounded routing metadata only. Full observations retain original
+            # answers/sources in state and are reached through detail pointers.
+            selected = rows[-5:] if isinstance(rows, list) else []
+            offset = len(rows) - len(selected) if isinstance(rows, list) else 0
+            sections['course'][field] = [project.mapping(row, base + '/' + field + '/' + str(offset + i), keys, 800)
+                                         for i, row in enumerate(selected) if isinstance(row, dict)]
+            project.omit(base + '/' + field, 'learning_history_metadata_only',
+                         total=len(rows) if isinstance(rows, list) else None)
     # Current submitted/completed tasks remain explicitly visible; never reopen
     # group work by inferring from one person's platform record.
     focus_ids = set((course.get("assignment_focus") or {}).get("task_ids") or []) if isinstance(course.get("assignment_focus"), dict) else set()

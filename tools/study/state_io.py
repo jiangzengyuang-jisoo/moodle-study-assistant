@@ -16,7 +16,8 @@ import tempfile
 import threading
 import time
 
-from cursor_evidence import PENDING_KEYS, validate_cursor_transition
+from cursor_evidence import PENDING_KEYS, validate_cursor_transition, validate_cursor_history
+from teaching_evidence import validate_course_evidence
 
 _held = threading.local()
 
@@ -148,9 +149,13 @@ def _preserve_details(previous, following, location):
     """Ordinary drafts may enrich records, never silently truncate evidence."""
     if isinstance(previous, dict):
         cursor_root = location.endswith('.teaching_cursor')
+        archived = False
         if cursor_root:
             validate_cursor_transition(previous, following)
+            archived = validate_cursor_history(previous, following)
         routing = set(_CURSOR_ROUTING) if cursor_root else set()
+        if archived:
+            routing.update(set(previous) - {'checks', 'history'})
         # The root transition check covers nested handoffs too. Archived checks
         # remain ordinary protected records and never receive this exemption.
         if '.teaching_cursor' in location and '.checks' not in location:
@@ -217,6 +222,11 @@ def validate_draft(current, draft):
         if not isinstance(following, list):
             raise ValueError('不能替换已有学习记录集合：' + name)
         _preserve_details(previous, following, name)
+        if name == 'courses':
+            old_courses = {row.get('id'): row for row in previous if isinstance(row, dict)}
+            for course in following:
+                if isinstance(course, dict):
+                    validate_course_evidence(old_courses.get(course.get('id'), {}), course, state=draft)
         if name == 'materials':
             indexed = {_identity(row): row for row in following if isinstance(row, dict)}
             for row in previous:

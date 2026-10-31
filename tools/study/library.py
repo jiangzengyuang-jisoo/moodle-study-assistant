@@ -487,8 +487,16 @@ def main():
     p=sub.add_parser('outline'); p.add_argument('--course',required=True); p.add_argument('--include-solutions',action='store_true')
     p=sub.add_parser('render'); p.add_argument('material_id'); p.add_argument('--unit',type=int,required=True); p.add_argument('--dpi',type=int,default=130); p.add_argument('--include-solutions',action='store_true'); p.add_argument('--include-archived',action='store_true')
     p=sub.add_parser('context'); p.add_argument('--read-only',action='store_true'); p.add_argument('--course'); p.add_argument('--detail',action='store_true')
+    p=sub.add_parser('evidence'); p.add_argument('--course',required=True); p.add_argument('--query',required=True); p.add_argument('--limit',type=int,default=8)
     p=sub.add_parser('detail'); p.add_argument('collection'); p.add_argument('record_id')
     args=parser.parse_args(); lib=Library(args.state,args.cache_dir)
+    if args.command=='evidence':
+        # Evidence lookup is strictly read-only, including no maintenance or
+        # timing-log writes. Legacy notes remain locators, never mastery ratings.
+        sys.dont_write_bytecode = True
+        from learning_library.evidence import search_evidence
+        print(json.dumps(search_evidence(lib.state(),args.course,args.query,args.limit),ensure_ascii=False,indent=2))
+        return
     from state_io import timed
     with timed(args.state, "library_" + args.command):
         maintenance = {}
@@ -521,6 +529,8 @@ def main():
 
 
 if __name__=='__main__':
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
     try: main()
     except Exception as exc:
         print(json.dumps({'error':str(exc),'type':type(exc).__name__},ensure_ascii=False),file=sys.stderr)

@@ -5,6 +5,8 @@ must leave the complete old record in this same cursor's durable ``checks`` list
 No arbitrary-field or cross-course search can satisfy that requirement.
 """
 
+import json
+
 PENDING_KEYS = ('pending_question', 'pending_check', 'pending_questions', 'pending_checks')
 _ANSWER_KEYS = {'answer', 'user_answer', 'user_answer_or_method', 'user_attempt',
                 'submitted_answer', 'response', 'response_text'}
@@ -37,7 +39,7 @@ def _pending(cursor):
     """Read aliases exactly where the context projector accepts them, minus history."""
     if isinstance(cursor, dict):
         for key, value in cursor.items():
-            if key == 'checks':
+            if key in {'checks', 'history', 'review_backlog'}:
                 continue
             if key in PENDING_KEYS:
                 if value is not None:
@@ -101,3 +103,30 @@ def validate_cursor_transition(previous, following):
             history.pop(match)
             continue
         raise ValueError('当前题的作答或题源将丢失；请先完整追加到同课程 teaching_cursor.checks 再换题')
+
+
+def active_snapshot(cursor):
+    """Archive routing once, without recursively copying durable histories."""
+    return {key: value for key, value in cursor.items() if key not in {'checks', 'history'}}
+
+
+def validate_cursor_history(previous, following):
+    """A chapter switch retains the previous position; history is never active."""
+    if not isinstance(following, dict):
+        return False
+    history = following.get('history', [])
+    old_history = previous.get('history', [])
+    same = lambda a, b: json.dumps(a, sort_keys=True, ensure_ascii=False) == json.dumps(b, sort_keys=True, ensure_ascii=False)
+    switched = any(previous.get(key) not in (None, '') and previous.get(key) != following.get(key)
+                   for key in ('topic', 'chapter'))
+    if not isinstance(history, list) or not isinstance(old_history, list):
+        if not switched and same(history, old_history):
+            return False  # Preserve an unchanged legacy shape, never migrate it.
+        raise ValueError('teaching_cursor.history 必须是追加式列表')
+    if len(history) < len(old_history) or not same(history[:len(old_history)], old_history):
+        raise ValueError('旧教学位置只能追加，不能删除或改写')
+    snapshot = active_snapshot(previous)
+    archived = any(type(row) is dict and same(row, snapshot) for row in history[len(old_history):])
+    if switched and not archived:
+        raise ValueError('切换教学主题前，请把旧游标（除 checks/history）完整追加到 teaching_cursor.history；旧章待复习另存 review_backlog')
+    return archived
