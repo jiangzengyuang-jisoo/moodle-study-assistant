@@ -133,6 +133,7 @@ class Session:
             return {'phase': 'running', 'automatic_retry': False}
 
     def collect(self, snapshot_path):
+        from connection_errors import safe_connection_error
         node = os.environ.get('STUDY_NODE') or shutil.which('node')
         if not node:
             raise ValueError('未找到 Node；请先运行 setup.cmd')
@@ -140,6 +141,9 @@ class Session:
                                  '--output', str(snapshot_path), '--request', str(snapshot_path.with_name('request.json'))], cwd=self.root,
                                 capture_output=True, timeout=300)
         if result.returncode not in (0, 2) or not snapshot_path.exists():
+            detail = safe_connection_error(result.stderr)
+            if detail:
+                raise ValueError(f'{detail[0]}: {detail[1]} {detail[2]} 旧学习记录保留；需明确重试。')
             raise ValueError('学校检查失败；请检查连接后明确重试，旧学习记录保留')
 
     def start(self, explicit=False, subtask=False, collector=None):

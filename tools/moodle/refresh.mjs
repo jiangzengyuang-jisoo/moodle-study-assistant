@@ -1,4 +1,5 @@
 // Evidence collection only. An assistant reviews changes before promoting a baseline.
+import {connectionDiagnostic} from './connection-errors.mjs';
 export function redactEvidence(value, token) {
   if (typeof value === 'string') return (token ? value.replaceAll(token, '[REDACTED]') : value)
     .replace(/([?&](?:amp;)?(?:token|wstoken|sesskey)=)[^&"'\s<>]+/gi, '$1[REDACTED]')
@@ -63,7 +64,11 @@ export async function collectRefresh(client, state, { concurrency = 4 } = {}) {
     submissions: [], attempts: [], errors: [], scope_limits: [], files_downloaded: 0, reviewed: false };
   const api = boundedCalls(client, concurrency);
   const safe = async (scope, work) => {
-    try { return await work(); } catch (e) { report.errors.push({ scope, error: String(e?.message ?? e) }); return null; }
+    try { return await work(); } catch (e) {
+      const diagnostic = connectionDiagnostic(e);
+      report.errors.push({scope, error: diagnostic?.message ?? String(e?.message ?? e), ...(diagnostic ?? {})});
+      return null;
+    }
   };
   const pageMap = new Map(state.courses.flatMap(c => (c.moodle_course_ids ?? []).map(id => [id, c.id])));
   if (!pageMap.size || [...pageMap.keys()].some(id => !Number.isInteger(id) || id <= 0))

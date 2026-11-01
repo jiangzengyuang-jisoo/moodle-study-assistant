@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from '
 import { join } from 'node:path';
 import { MoodleClient } from 'moodle-mcp/dist/moodle-client.js';
 import { redactEvidence } from './refresh.mjs';
+import {connectionError, classifyTransportError} from './connection-errors.mjs';
 
 export function normalizeSite(value) {
   const url = new URL(value);
@@ -29,7 +30,8 @@ export function initialize(root) {
       study_root: 'Study', created_at: new Date().toISOString(), settings: {
         brief_send_authorized: false, study_capacity_target: 0.8,
         study_capacity_range: [0.7, 0.85], review_minutes_range: [15, 30],
-        moodle_refresh_policy: {mode: 'conversation_start_or_explicit_request', conversation_boundary: 'new_chat_thread',
+        moodle_refresh_policy: {mode: 'first_learning_turn_or_explicit_request', conversation_boundary: 'new_chat_thread',
+          unrelated_tasks: 'skip_learning_entry', maintenance: 'diagnosis_only',
           automatic_interval_minutes: null, scheduled_background_run: false,
           refresh_on_course_switch: false, refresh_on_date_change: false,
           refresh_on_context_compaction: false, refresh_on_reopen_existing_conversation: false},
@@ -64,16 +66,20 @@ export class ReadOnlyClient extends MoodleClient {
     if (['wstoken', 'wsfunction', 'moodlewsrestformat'].some(key => key in params)) throw new Error('Reserved API parameter');
     const body = new URLSearchParams({wstoken: this.token, wsfunction: method, moodlewsrestformat: 'json',
       ...Object.fromEntries(Object.entries(params).map(([k,v]) => [k, String(v)]))});
-    let data;
+    let data, response;
     try {
-      const response = await this.transport(`${this.baseUrl}/webservice/rest/server.php`, {
+      response = await this.transport(`${this.baseUrl}/webservice/rest/server.php`, {
         method: 'POST', body, redirect: 'error', signal: AbortSignal.timeout(30000),
       });
-      if (!response.ok) throw new Error('HTTP failure');
-      data = await response.json();
-    } catch { throw new Error('Moodle network request failed (timeout, HTTP, redirect or invalid response)'); }
+    } catch (error) { throw classifyTransportError(error); }
+    if (!response.ok) throw connectionError([401, 403].includes(response.status) ? 'STUDY_ACCESS' : 'STUDY_HTTP');
+    try { data = await response.json(); }
+    catch (error) { throw error instanceof SyntaxError ? connectionError('STUDY_RESPONSE') : classifyTransportError(error); }
+    if (!data || typeof data !== 'object') throw connectionError('STUDY_RESPONSE');
     if (data.exception || data.error) {
       const code = String(data.errorcode ?? 'unknown').replace(/[^a-z_]/gi, '').slice(0, 80);
+      if (['invalidtoken', 'expiredtoken'].includes(code)) throw connectionError('STUDY_AUTH');
+      if (['accessexception', 'accesscontrol', 'webservice_access_exception', 'nopermissions'].includes(code)) throw connectionError('STUDY_ACCESS');
       throw new Error(`Moodle API failed: ${code}`);
     }
     return redactEvidence(data, this.token);

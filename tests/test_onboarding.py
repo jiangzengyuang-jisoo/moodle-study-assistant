@@ -22,6 +22,18 @@ from state_io import atomic, digest, read
 
 
 class OnboardingTests(unittest.TestCase):
+    def test_structured_connection_failures_use_static_safe_guidance(self):
+        for code, expected in [('STUDY_DNS', '域名'), ('STUDY_TIMEOUT', '超时'),
+                               ('STUDY_TLS', '证书'), ('STUDY_ACCESS', '拒绝'),
+                               ('STUDY_AUTH', '过期'), ('STUDY_RESPONSE', '响应'),
+                               ('STUDY_TOKEN_DECRYPT_FAILED', '执行环境')]:
+            with self.subTest(code=code):
+                error = json.dumps({'connection_error': code, 'message': 'SECRET', 'next_step': 'SECRET'})
+                result = entry.online_result(1, 'SECRET', error)
+                self.assertIn(expected, result['message'])
+                self.assertNotIn('SECRET', json.dumps(result))
+                self.assertEqual('error', result['status'])
+
     def setUp(self):
         (ROOT / 'tmp').mkdir(exist_ok=True)
         self.temp = tempfile.TemporaryDirectory(prefix='上手 测试 ', dir=ROOT / 'tmp')

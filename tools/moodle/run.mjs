@@ -1,4 +1,5 @@
 import {decryptWindowsToken} from './windows-token.mjs';
+import {connectionDiagnostic} from './connection-errors.mjs';
 import {loadCollectionRequest, bindCollection} from './collection-request.mjs';
 import { saveState, python } from './state-bridge.mjs';
 import { readFileSync, existsSync } from 'node:fs';
@@ -93,6 +94,7 @@ async function main() {
 }
 main().catch(error => {
   // Stable, allowlisted code for diagnostics; never expose arbitrary properties.
-  console.error(error.code === 'STUDY_TOKEN_DECRYPT_FAILED' ? `${error.code}: ${error.message}` : error.message);
+  const diagnostic = connectionDiagnostic(error);
+  console.error(diagnostic ? JSON.stringify(diagnostic) : error.message);
   process.exitCode = 1;
 });

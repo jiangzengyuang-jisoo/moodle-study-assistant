@@ -22,7 +22,7 @@ TIPS = '''学习时请记住：
 1. 同题追问和同一知识点练习留在原聊天；换课程或独立任务可在同一项目里新建聊天。
 2. 上下文压缩不等于记录丢失，不必因压缩马上重开；接续不准时先重读记录与原题。
 3. 换聊天前保存实际进度、原答、卡点和下一步，确认保存成功；关键作答不要等到聊天快满才保存。
-4. 新聊天先让 AI 读取本项目记录。新聊天会检查一次 Moodle，小概念不必每次另开聊天。
+4. 新聊天首次进入学习时先读取记录并检查一次 Moodle；无关问答跳过，维修只做必要诊断。
 5. 同聊天追问复用上次检查；要看老师刚发的内容，明确说“刷新 Moodle”。没有后台监控。
 6. 课件自己放入 Study/_Inbox，或明确授权下载指定资料；核对完整题设、原页、公式与图表。
 7. 看过答案、提示后答对不算独立掌握；告诉 AI 哪些是你独立完成的，保留原答。
@@ -65,13 +65,20 @@ def online_result(code, stdout, stderr):
     if code == 0:
         return item('online', 'ok', '本次 Moodle API 连接验证成功。', '只验证连接，未采集或核读课程内容。')
     error = stdout + '\n' + stderr
+    study_tools = str(Path(__file__).resolve().parents[1] / 'study')
+    if study_tools not in sys.path:
+        sys.path.insert(0, study_tools)
+    from connection_errors import safe_connection_error
+    detail = safe_connection_error(error)
+    if detail:
+        return item('online', 'error', detail[1], detail[2])
     if 'invalidtoken' in error or 'expiredtoken' in error:
         return item('online', 'error', '学校授权无效或已过期。', '选择“重新连接学校”；已有学习记录保留。')
     if any(key in error for key in ('accessexception', 'accesscontrol', 'webservice_access_exception', 'nopermissions')):
         return item('online', 'error', '学校未允许此次 API 访问。', '核对学校地址和移动服务权限；必要时联系学校 IT，不绕过限制。')
     if ('STUDY_TOKEN_DECRYPT_FAILED' in error or 'Token 只能由保存它的 Windows 账户使用' in error
             or any(key in error.lower() for key in ('decrypt', 'dpapi', 'unprotect'))):
-        return item('online', 'error', '当前 Windows 账户无法解密已保存的授权。', '在这台电脑、这个 Windows 账户下重新连接；不要复制凭据。')
+        return item('online', 'error', '当前 Windows 账户无法解密已保存的授权。', '先核对原 Windows 用户及执行环境；确认需要重新授权后再选择“重新连接学校”，不复制凭据。')
     if code == 124 or 'network request failed' in error:
         return item('online', 'error', '网络、超时或学校响应异常，本次未验证成功。', '检查网络和学校网站，稍后主动重试；本工具不自动重试。')
     return item('online', 'error', '本次连接检查未完成，原因尚不能确定。', '先解决本地诊断问题；仍失败再重新连接或向维护者提供此摘要。')
