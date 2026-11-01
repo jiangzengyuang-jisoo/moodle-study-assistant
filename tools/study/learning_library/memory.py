@@ -24,7 +24,14 @@ def correction_rows(state, course_id):
     result = []
     for i, row in enumerate(course.get('memory_corrections', [])):
         matches = locations.get(row['target_sha256'], [])
-        result.append({**deepcopy(row), 'path': f'/courses/{index}/memory_corrections/{i}',
+        path = f'/courses/{index}/memory_corrections/{i}'
+        snapshot_status = ('preserved' if record_hash(row['target_snapshot']) == row['target_sha256']
+                           else 'invalid') if 'target_snapshot' in row else 'unavailable_legacy'
+        # Original snapshots may include answers. Only explicit detail reads
+        # expose them; they are not current learning records or new evidence.
+        summary = {key: deepcopy(value) for key, value in row.items() if key != 'target_snapshot'}
+        result.append({**summary, 'path': path, 'snapshot_status': snapshot_status,
+                       'snapshot_path': path + '/target_snapshot' if snapshot_status == 'preserved' else None,
                        'current_target_path': matches[0] if len(matches) == 1 else None,
                        'target_status': 'located' if len(matches) == 1 else 'ambiguous' if matches else 'changed_or_missing'})
     return result
@@ -51,6 +58,7 @@ def correction_context(course, course_path):
 
 
 def inspect_memory(state, course_id, query=None, limit=8):
+    from learning_library.context import _Projection, _continuity, read_detail
     if type(limit) is not int or not 1 <= limit <= 20:
         raise ValueError('Memory limit must be between 1 and 20')
     index, course = _course(state, course_id)
@@ -59,17 +67,23 @@ def inspect_memory(state, course_id, query=None, limit=8):
         value = course.get(field)
         if value is None:
             continue
-        if isinstance(value, dict):
-            preview = {key: deepcopy(value[key]) for key in
-                       ('topic', 'stage', 'next_step', 'material_id', 'pages', 'updated_at',
-                        'current_chapter', 'chapter_progress_status') if key in value}
-        else:
-            preview = value
         path = f'/courses/{index}/{field}'
+        root_record = {'path': path, 'record_sha256': record_hash(value)}
+        projection = _Projection()
+        if field == 'teaching_cursor' and isinstance(value, dict):
+            continuation = _continuity(value, path, projection).get('latest_continuation')
+            if continuation:
+                path = continuation['path']
+                value = read_detail(state, 'path', path)['record']
+        preview = projection.mapping(value, path,
+                                     ('topic', 'stage', 'next_step', 'next_check', 'material_id',
+                                      'pages', 'updated_at', 'at', 'date', 'current_chapter',
+                                      'chapter_progress_status'))
         if len(json.dumps(preview, ensure_ascii=False)) > 1400:
             preview = {'omitted': True, 'detail_path': path}
         claims.append({'field': field, 'value': preview, 'path': path,
-                       'record_sha256': record_hash(value), 'interpretation': 'recorded_not_reverified'})
+                       'record_sha256': record_hash(value), 'root_record': root_record,
+                       'omitted': projection.omitted, 'interpretation': 'recorded_not_reverified'})
     all_rows = correction_rows(state, course['id'])
     visible, used = [], 0
     for row in reversed(all_rows):
@@ -115,6 +129,7 @@ def apply_correction(state, course_id, payload):
     draft = deepcopy(state)
     draft['courses'][index].setdefault('memory_corrections', []).append({
         'id': payload['id'], 'target_path': path, 'target_sha256': payload['target_sha256'],
+        'target_snapshot': deepcopy(candidates[path]),
         'statement': payload['statement'], 'kind': 'user_correction',
         'verification': 'user_reported_not_independently_verified',
         'recorded_at': datetime.now(timezone.utc).isoformat(),
@@ -132,3 +147,14 @@ def validate_preserved(current, draft):
         following = updated.get(course.get('id'), {}).get('memory_corrections', [])
         if not isinstance(following, list) or record_hash(following[:len(previous)]) != record_hash(previous):
             raise ValueError('记忆纠正只能追加，不能改写或删除历史；请追加新的说明')
+    previous_courses = {c.get('id'): c for c in current.get('courses', []) if isinstance(c, dict)}
+    for course_id, course in updated.items():
+        rows = course.get('memory_corrections', [])
+        if not isinstance(rows, list):
+            raise ValueError('记忆纠正必须保存为记录列表')
+        offset = len(previous_courses.get(course_id, {}).get('memory_corrections', []))
+        for row in rows[offset:]:
+            if not isinstance(row, dict):
+                raise ValueError('记忆纠正必须是完整记录')
+            if 'target_snapshot' in row and record_hash(row['target_snapshot']) != row.get('target_sha256'):
+                raise ValueError('记忆纠正的原记录快照与内容指纹不符')

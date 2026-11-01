@@ -46,11 +46,15 @@ def norm(value):
     return re.sub(r'\s+', ' ', unicodedata.normalize('NFKC', value).casefold().replace('_', ' ')).strip()
 
 
-def contains(text, term):
+def _term_pattern(term):
     # Latin abbreviations must not match substrings such as FOBish or metadata IDs.
     if re.fullmatch(r'[a-z0-9][a-z0-9 -]*', term):
-        return bool(re.search(r'(?<![a-z0-9])' + re.escape(term) + r'(?![a-z0-9])', text))
-    return term in text
+        return r'(?<![a-z0-9])' + re.escape(term) + r'(?![a-z0-9])'
+    return re.escape(term)
+
+
+def contains(text, term):
+    return bool(term and re.search(_term_pattern(term), text))
 
 
 def plan(query, custom=()):
@@ -58,19 +62,29 @@ def plan(query, custom=()):
         raise ValueError('memory_aliases must be a list of at most 50 alias groups')
     for group in custom:
         if not isinstance(group, (list, tuple)) or not 2 <= len(group) <= 8 or any(
-                not isinstance(term, str) or not term.strip() or len(term) > 80 for term in group):
+                not isinstance(term, str) or len(term) > 80 or not norm(term) for term in group):
             raise ValueError('Each memory alias group needs 2-8 nonempty terms, each at most 80 characters')
     query = norm(query)
+    if not query:
+        raise ValueError('Evidence query must remain nonempty after normalization')
     groups = [tuple(norm(t) for t in group) for group in (*ALIASES, *custom)]
-    triggers = {term for group in groups for term in group if contains(query, term)}
-    specific = {term for term in triggers if not any(term != other and term in other for other in triggers)}
-    aliases = list(dict.fromkeys(term for group in groups if specific.intersection(group) for term in group))
-    words = [word for word in re.findall(r'[a-z0-9]+|[\u3400-\u9fff]+', query)
+    spans = [(hit.start(), hit.end(), term)
+             for term in dict.fromkeys(term for group in groups for term in group)
+             for hit in re.finditer(_term_pattern(term), query)]
+    # Resolve overlapping aliases at each occurrence, leftmost and longest first.
+    # "gross profit and gross profit margin" still requests both concepts.
+    triggers, covered_until, remainder = set(), 0, list(query)
+    for start, end, term in sorted(spans, key=lambda span: (span[0], -span[1])):
+        if start < covered_until:
+            continue
+        triggers.add(term)
+        remainder[start:end] = ' ' * (end - start)
+        covered_until = end
+    aliases = list(dict.fromkeys(term for group in groups if triggers.intersection(group) for term in group))
+    # Only consume words inside recognized phrases. Uncovered concepts remain
+    # searchable without retrieving generic "value" records for an MVT query.
+    words = [word for word in re.findall(r'[a-z0-9]+|[\u3400-\u9fff]+', ''.join(remainder))
              if len(word) > 1 and word not in STOP]
-    # A recognized phrase should not also retrieve every record containing one
-    # generic word (e.g. "value" from "mean value theorem").
-    if aliases:
-        words = []
     return {'phrase': query, 'aliases': aliases, 'words': list(dict.fromkeys(words)),
             'mode': 'bilingual_aliases' if aliases else 'literal_terms'}
 

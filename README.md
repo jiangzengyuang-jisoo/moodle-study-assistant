@@ -159,7 +159,7 @@ Ask the assistant to back up and preserve `Study/`, configuration, credentials, 
 
 | Date | Change |
 | --- | --- |
-| [2026-11-02](CHANGELOG.md#2026-11-02) | Inspect saved course memory, retrieve bilingual topic history, and append traceable user corrections |
+| [2026-11-02](CHANGELOG.md#2026-11-02) | Inspect and correct memory; audit fixes cover current progress, linked corrections, preserved sources, and mixed-topic queries |
 | [2026-11-01](CHANGELOG.md#2026-11-01) | English and Chinese READMEs explain the course library and study continuity; narrower startup scope and clearer Moodle diagnostics |
 | [2026-10-31](CHANGELOG.md#2026-10-31) | Stronger learning-record protection, cross-chapter continuity, and Chinese setup diagnostics |
 

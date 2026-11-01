@@ -43,10 +43,12 @@ def _course(state, requested):
     return found[0]
 
 
-def _own_text(value):
+def _own_text(value, path=''):
     """A record's direct scalar fields; nested records get their own pointers."""
     if isinstance(value, dict):
-        for item in value.values():
+        for key, item in value.items():
+            if key == 'target_snapshot' and re.fullmatch(r'/courses/[0-9]+/memory_corrections/[0-9]+', path):
+                continue
             if isinstance(item, str):
                 yield item
             elif isinstance(item, list):
@@ -63,6 +65,10 @@ def _walk(value, path, course_id):
             return
         yield path, value
         for key, child in value.items():
+            if key == 'target_snapshot' and re.fullmatch(r'/courses/[0-9]+/memory_corrections/[0-9]+', path):
+                # Correction snapshots preserve old evidence; they are not live
+                # records to match or relocate a correction onto again.
+                continue
             if isinstance(child, (dict, list)):
                 yield from _walk(child, path + '/' + _escape(key), course_id)
     elif isinstance(value, list):
@@ -150,6 +156,59 @@ def record_roots(state, index, course):
     return roots
 
 
+def _attach_topic_corrections(index, course, matches):
+    """Link every visible observation to its corrections before ranking limits.
+
+    Reverse links are built from all same-course observations, including rows
+    whose text does not match the query. Links never select a winning level.
+    """
+    base = f'/courses/{index}/topic_evidence'
+    rows = course.get('topic_evidence', [])
+    if not isinstance(rows, list):
+        return
+    events = {base + '/' + str(i): row for i, row in enumerate(rows)
+              if isinstance(row, dict) and row.get('course_id') in (None, course['id'])
+              and (not isinstance(row.get('course_ids'), list) or course['id'] in row['course_ids'])}
+    reverse = {}
+    for path, row in events.items():
+        targets = row.get('corrects', [])
+        targets = [targets] if isinstance(targets, str) else targets if isinstance(targets, list) else []
+        for target in targets:
+            if isinstance(target, str) and target:
+                reverse.setdefault(target, set()).add(path)
+    if not reverse:
+        return
+    resolved = {}
+    for preview in matches:
+        if not preview['path'].startswith(base + '/'):
+            continue
+        event_path = base + '/' + preview['path'][len(base) + 1:].split('/')[0]
+        record_id = events.get(event_path, {}).get('id')
+        if not isinstance(record_id, str) or not record_id:
+            continue
+        if event_path not in resolved:
+            pending, seen_ids, links = [record_id], set(), set()
+            while pending:
+                current = pending.pop()
+                if current in seen_ids:
+                    continue
+                seen_ids.add(current)
+                for path in reverse.get(current, ()):
+                    if path == event_path:
+                        continue
+                    links.add(path)
+                    next_id = events[path].get('id')
+                    if isinstance(next_id, str) and next_id:
+                        pending.append(next_id)
+            resolved[event_path] = sorted(links, key=lambda path: int(path.rsplit('/', 1)[1]), reverse=True)
+        paths = resolved[event_path]
+        if paths:
+            preview['correction_review_required'] = True
+            preview['topic_corrections'] = {
+                'count': len(paths), 'paths': paths[:8], 'truncated': len(paths) > 8,
+                'all_records_path': base, 'relation': 'direct_or_chained_corrects'}
+
+
 def search_evidence(state, course_id, query, limit=8):
     """Rank source locators by exact phrase, explicit aliases, then keywords."""
     from learning_library.recall import plan, match
@@ -163,7 +222,7 @@ def search_evidence(state, course_id, query, limit=8):
     candidates = []
     for base, records, structured, linked in record_roots(state, index, course):
         for path, record in _walk(records, base, canonical_id):
-            score, reason = match(_own_text(record), query_plan)
+            score, reason = match(_own_text(record, path), query_plan)
             linked_score, linked_reason = match(linked['search_text'], query_plan) if path == base and linked else (0, None)
             if not score and not linked_score:
                 continue
@@ -188,6 +247,7 @@ def search_evidence(state, course_id, query, limit=8):
             title_score, _ = match(headings, query_plan)
             candidates.append((score + (10 if title_score else 0), preview))
     candidates.sort(key=lambda item: item[0], reverse=True)  # stable within equal relevance
+    _attach_topic_corrections(index, course, [row for _, row in candidates])
     if course.get('memory_corrections'):
         from learning_library.memory import attach_corrections
         attach_corrections(state, canonical_id, [row for _, row in candidates])
