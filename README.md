@@ -171,7 +171,7 @@ Ask the assistant to back up and preserve `Study/`, configuration, credentials, 
 
 | Date | Change |
 | --- | --- |
-| [2026-11-02](CHANGELOG.md#2026-11-02) | Inspect and correct memory; optional DeepSeek Harness desktop support with stable chat identity, profile-safe MCP/skill wiring, and a new guide |
+| [2026-11-02](CHANGELOG.md#2026-11-02) | Inspect and correct memory; optional DeepSeek Harness desktop support with stable chat identity, validated profile-safe MCP/skill wiring, and a new guide |
 | [2026-11-01](CHANGELOG.md#2026-11-01) | English and Chinese READMEs explain the course library and study continuity; narrower startup scope and clearer Moodle diagnostics |
 | [2026-10-31](CHANGELOG.md#2026-10-31) | Stronger learning-record protection, cross-chapter continuity, and Chinese setup diagnostics |
 

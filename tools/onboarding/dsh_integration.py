@@ -1,4 +1,4 @@
-"""DeepSeek Harness (DSH) integration: read-only status and additive config merge.
+"""DeepSeek Harness (DSH) integration: structural status and validated merge.
 
 The public project keeps working in Codex: this module never changes the Codex
 entry point and never touches ``Study/``, ``.private/``, course material or
@@ -9,11 +9,15 @@ two entries into the user's DSH profile patch:
 * a skill provider override that adds this deployment's ``skills/`` directory so
   the bundled teaching skill appears in the DSH skill catalog.
 
-``install`` is idempotent and additive: it keeps every existing line, writes a
-timestamped backup before changing the file, and wraps its own additions in
-markers so a rerun replaces only that block. Existing entries that would clash
-(a different ``moodle_study`` server or a user ``skill-filesystem`` override)
-are reported instead of overwritten.
+Configuration handling is structural: the profile patch is parsed as a YAML
+document and inspected entry by entry, so comments, commented-out examples and
+unrelated text never count as configuration. ``install`` merges additively,
+keeps every existing entry, writes a timestamped backup, and validates the
+complete final document before replacing the original file. A failed parse or
+failed validation leaves the original file untouched.
+
+The reported status distinguishes "configuration is correct" from "the running
+client has loaded it": only a restarted client can prove runtime loading.
 """
 
 import argparse
@@ -25,6 +29,11 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+try:
+    import yaml
+except ImportError:  # bootstrap diagnostics before setup installs dependencies
+    yaml = None
+
 ROOT = Path(__file__).resolve().parents[2]
 STUDY_TOOLS = Path(__file__).resolve().parents[1] / 'study'
 if str(STUDY_TOOLS) not in sys.path:
@@ -35,8 +44,53 @@ import chat_identity  # noqa: E402  (needs the path insertion above)
 BEGIN = '# >>> moodle-study-assistant DSH integration (generated) >>>'
 END = '# <<< moodle-study-assistant DSH integration (generated) <<<'
 SERVER_NAME = 'moodle_study'
-BLOCK_RE = re.compile(re.escape(BEGIN) + r'.*?' + re.escape(END), re.DOTALL)
-MODEL_ROW_RE = re.compile(r'-\s+id:\s*agent-default-model\b(?P<body>(?:\n\s+.*)*)')
+MCP_CLIENT = '@deepseek-ai/dsh-mcp-client'
+SKILL_PROVIDER = '@deepseek-ai/dsh-skill-filesystem'
+BLOCK_RE = re.compile(re.escape(BEGIN) + r'.*?' + re.escape(END) + r'\n?', re.DOTALL)
+EMPTY_FLOW_LIST = re.compile(r'^[ \t]*\[\][ \t]*(?:#.*)?$')
+
+RUNTIME_NOTE = '配置正确本身不证明运行时已加载；需要重启 DeepSeek Harness 后在新聊天中实际确认。'
+
+_JS_TAG = 'tag:yaml.org,2002:js'
+
+
+def _make_loader():
+    """Safe YAML loader that accepts DSH's ``!!js`` expressions and other tags."""
+    class DshSafeLoader(yaml.SafeLoader):
+        pass
+
+    def js_value(loader, node):
+        return {'__dsh_js__': loader.construct_scalar(node)}
+
+    DshSafeLoader.add_constructor(_JS_TAG, js_value)
+    DshSafeLoader.add_constructor('!js', js_value)
+
+    def unknown_tag(loader, suffix, node):
+        if isinstance(node, yaml.ScalarNode):
+            value = loader.construct_scalar(node)
+        elif isinstance(node, yaml.SequenceNode):
+            value = loader.construct_sequence(node, deep=True)
+        else:
+            value = loader.construct_mapping(node, deep=True)
+        return {'__dsh_tag__': suffix, 'value': value}
+
+    DshSafeLoader.add_multi_constructor('!', unknown_tag)
+    DshSafeLoader.add_multi_constructor('tag:yaml.org,2002:', unknown_tag)
+    return DshSafeLoader
+
+
+def _yaml_loader():
+    global _LOADER
+    if _LOADER is None:
+        _LOADER = _make_loader()
+    return _LOADER
+
+
+_LOADER = None
+
+
+class PatchError(ValueError):
+    """The profile patch cannot be safely read, merged or validated."""
 
 
 def dsh_home(env=None):
@@ -58,7 +112,6 @@ def patch_path(env=None):
 
 
 def _state_stem():
-    """Directories created by DSH-style managed temp areas may be transient."""
     return datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
 
 
@@ -72,187 +125,475 @@ def _yaml_quote(value):
     return "'" + text + "'"
 
 
-def _mcp_matches(text, project):
-    """Return ('configured'|'conflict'|'missing', matching server names)."""
-    servers = re.findall(r'serverName:\s*([A-Za-z0-9_-]+)', text)
-    expected = (Path(project) / 'tools/moodle/run.mjs').resolve()
-    run_paths = re.findall(r'''['"]([^'"]*run\.mjs)['"]''', text)
-    matching = False
-    for candidate in run_paths:
-        try:
-            if Path(candidate).expanduser().resolve() == expected:
-                matching = True
-                break
-        except (OSError, ValueError):
+def _require_yaml():
+    if yaml is None:
+        raise PatchError('缺少 YAML 解析依赖（PyYAML）；请先完成安装（setup）。')
+
+
+def _load_document(text, label='profile patch'):
+    _require_yaml()
+    try:
+        data = yaml.load(text, Loader=_yaml_loader()) if text.strip() else []
+    except yaml.YAMLError as error:
+        raise PatchError('%s 不是有效 YAML：%s' % (label, _yaml_error_summary(error)))
+    if data is None:
+        data = []
+    if not isinstance(data, list):
+        raise PatchError('%s 的顶层不是 YAML 列表，未做任何修改；请手动合并。' % label)
+    return data
+
+
+def _yaml_error_summary(error):
+    mark = getattr(error, 'problem_mark', None)
+    problem = getattr(error, 'problem', None) or 'syntax'
+    if mark is not None:
+        return '%s（行 %d，列 %d）' % (str(problem)[:120], mark.line + 1, mark.column + 1)
+    return str(problem)[:120]
+
+
+def _walk_dicts(value):
+    """Yield every mapping inside a parsed patch, including nested insert lists."""
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _walk_dicts(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_dicts(child)
+
+
+def _mcp_entries(data):
+    entries = []
+    for item in _walk_dicts(data):
+        if item.get('name') != MCP_CLIENT:
             continue
-    if matching and SERVER_NAME in servers:
-        return 'configured', servers
-    if SERVER_NAME in servers or any(path.lower().endswith('moodle') for path in run_paths):
-        return 'conflict', servers
+        config = item.get('config')
+        if not isinstance(config, dict):
+            continue
+        if config.get('serverName') != SERVER_NAME:
+            continue
+        entries.append(config)
+    return entries
+
+
+def _entry_path_matches(config, project):
+    args = config.get('args')
+    if not isinstance(args, list) or len(args) < 2 or args[0] != str(args[0]):
+        return False
+    if str(args[1]) != 'mcp':
+        return False
+    try:
+        return Path(str(args[0])).expanduser().resolve() == (Path(project) / 'tools/moodle/run.mjs').resolve()
+    except (OSError, ValueError):
+        return False
+
+
+def _mcp_status(data, project):
+    configs = _mcp_entries(data)
+    matching = [config for config in configs if _entry_path_matches(config, project)]
+    commands = {str(config.get('command')) for config in configs if config.get('command')}
+    status = {
+        'status': 'missing',
+        'entry_count': len(configs),
+        'path_matches': bool(matching),
+        'command_available': False,
+        'warnings': [],
+    }
     if matching:
-        return 'configured', servers
-    return 'missing', servers
+        status['status'] = 'configured'
+        status['command_available'] = any(_command_available(str(config.get('command') or '')) for config in matching)
+        if not status['command_available']:
+            status['warnings'].append('MCP 启动命令在当前环境不可用；运行时可能无法启动服务器。')
+    elif configs:
+        status['status'] = 'conflict'
+        status['warnings'].append('已有同名 MCP 服务配置，但未指向当前项目；不会覆盖。')
+    return status
 
 
-def _skills_configured(text, project):
+def _command_available(command):
+    if not command.strip():
+        return False
+    candidate = Path(os.path.expanduser(command))
+    if candidate.is_absolute():
+        return candidate.is_file()
+    return shutil.which(command) is not None
+
+
+def _skill_status(data, project):
     expected = (Path(project) / 'skills').resolve()
-    for candidate in re.findall(r'''['"]([^'"]*skills)['"]''', text):
-        try:
-            if Path(candidate).expanduser().resolve() == expected:
-                return True
-        except (OSError, ValueError):
+    overrides = []
+    for item in _walk_dicts(data):
+        if item.get('id') != 'skill-filesystem' and item.get('name') != SKILL_PROVIDER:
             continue
-    return False
+        config = item.get('config')
+        if isinstance(config, dict):
+            overrides.append(config)
+    status = {'status': 'missing', 'override_count': len(overrides),
+              'expected_dir': expected.as_posix(), 'warnings': []}
+    if not expected.is_dir():
+        status['warnings'].append('当前项目的 skills 目录不存在。')
+    for config in overrides:
+        dirs = config.get('customSkillDirs')
+        if not isinstance(dirs, list):
+            continue
+        for value in dirs:
+            if not isinstance(value, str):
+                continue
+            try:
+                if Path(value).expanduser().resolve() == expected:
+                    status['status'] = 'configured'
+                    return status
+            except (OSError, ValueError):
+                continue
+    if overrides:
+        status['warnings'].append('已有 skill-filesystem 覆盖但未包含当前项目 skills 目录；不会覆盖。')
+    return status
 
 
-def _model_config(text):
-    match = MODEL_ROW_RE.search(text)
-    if not match:
-        return {}
-    body = match.group('body') or ''
-    provider = re.search(r'provider:\s*([^\s#]+)', body)
-    model = re.search(r'model:\s*([^\s#]+)', body)
-    return {key: value.group(1) for key, value in
-            (('provider', provider), ('model', model)) if value}
+def _model_status(data):
+    for item in _walk_dicts(data):
+        if item.get('id') != 'agent-default-model':
+            continue
+        config = item.get('config')
+        if not isinstance(config, dict):
+            continue
+        result = {}
+        for key in ('provider', 'model', 'reasoningEffort'):
+            if isinstance(config.get(key), str):
+                result[key] = config[key]
+        return result
+    return {}
+
+
+def _runtime_status(env):
+    environment = os.environ if env is None else env
+    inside = bool((environment.get('DSH_SESSION_ID') or '').strip())
+    return {'in_harness_chat': inside, 'loaded': 'unverified', 'note': RUNTIME_NOTE}
 
 
 def inspect(project=None, env=None):
     """Return a shareable status snapshot; never reads credentials or records."""
     environment = os.environ if env is None else env
     root = Path(project or ROOT).resolve()
-    home = dsh_home(environment)
-    profile = profile_dir(environment)
-    patch = profile / 'cordis.patch.yml'
-    detected = patch.exists() or home.exists() or bool((environment.get('DSH_SESSION_ID') or '').strip())
+    folder = profile_dir(environment)
+    patch = folder / 'cordis.patch.yml'
+    detected = patch.exists() or dsh_home(environment).exists() or bool((environment.get('DSH_SESSION_ID') or '').strip())
     result = {
         'detected': detected,
-        'dsh_home': home.as_posix(),
-        'profile_dir': profile.as_posix(),
+        'dsh_home': dsh_home(environment).as_posix(),
+        'profile_dir': folder.as_posix(),
         'patch_path': patch.as_posix(),
         'patch_exists': patch.exists(),
         'project_root': root.as_posix(),
-        'mcp': {'status': 'missing', 'servers': []},
+        'patch_parse': 'unavailable' if yaml is None else 'missing',
+        'configuration_ok': False,
+        'runtime_loaded': 'unverified',
+        'runtime': _runtime_status(environment),
+        'mcp': {'status': 'missing', 'entry_count': 0, 'path_matches': False},
         'skills': {'status': 'missing', 'expected_dir': (root / 'skills').as_posix()},
         'model': {},
         'chat': chat_identity.describe(environment),
-        'restart_required': False,
         'warnings': [],
     }
+    if yaml is None:
+        result['warnings'].append('缺少 YAML 解析依赖（PyYAML）；完成安装后可检查 DSH 配置。')
+        return result
     if not detected:
         result['warnings'].append('未检测到 DeepSeek Harness 配置目录；项目仍可用 Codex 入口。')
         return result
     if not patch.exists():
+        result['patch_parse'] = 'missing'
         result['warnings'].append('尚未建立 DSH profile patch；运行 install 会创建最小配置。')
         return result
     try:
-        text = patch.read_text(encoding='utf-8')
-    except OSError:
-        result['warnings'].append('无法读取 DSH profile patch；未做任何修改。')
+        text = patch.read_text(encoding='utf-8-sig')
+        data = _load_document(text)
+    except (OSError, PatchError) as error:
+        result['patch_parse'] = 'invalid'
+        result['warnings'].append('无法解析 DSH profile patch：%s；未做任何修改。' % str(error))
         return result
-    mcp_status, servers = _mcp_matches(text, root)
-    result['mcp'].update(status=mcp_status, servers=servers)
-    result['skills']['status'] = 'configured' if _skills_configured(text, root) else 'missing'
-    result['model'] = _model_config(text)
-    if mcp_status == 'conflict':
-        result['warnings'].append('已有同名 MCP 服务配置未指向当前项目；install 不会覆盖，请按 docs/DSH.md 手动核对。')
-    if result['skills']['status'] == 'missing':
-        result['warnings'].append('当前项目的 skills 目录尚未加入 DSH 技能扫描根；运行 install 后会加入并需要重启。')
+    result['patch_parse'] = 'ok'
+    result['mcp'] = _mcp_status(data, root)
+    result['skills'] = _skill_status(data, root)
+    result['model'] = _model_status(data)
+    result['configuration_ok'] = (result['mcp']['status'] == 'configured'
+                                  and result['skills']['status'] == 'configured')
+    for part in (result['mcp'], result['skills']):
+        result['warnings'].extend(part.get('warnings', []))
     return result
 
 
-def _build_block(project, add_mcp=True, add_skills=True):
+def _strip_generated(text):
+    """Remove a previously generated block; returns (text, had_block)."""
+    if BEGIN not in text:
+        return text, False
+    cleaned = BLOCK_RE.sub('', text)
+    if BEGIN in cleaned:
+        raise PatchError('生成的配置段标记重复或未闭合，未做任何修改；请手动清理。')
+    return cleaned, True
+
+
+def _normalise_empty_list(text, data):
+    """Turn a standalone legal ``[]`` document into comments + space for entries."""
+    if data:
+        return text
+    lines = text.split('\n')
+    kept = []
+    for line in lines:
+        if EMPTY_FLOW_LIST.match(line):
+            comment = line.split('#', 1)[1].strip() if '#' in line else ''
+            if comment:
+                kept.append('# ' + comment)
+            continue
+        kept.append(line)
+    return '\n'.join(kept)
+
+
+def _build_entries(project, add_mcp=True, add_skills=True):
+    """Return the YAML data entries the generated block represents."""
     root = Path(project).resolve()
-    lines = [BEGIN,
-             '# 由 tools/onboarding/dsh_integration.py install 生成；重跑只更新本段，其他配置保留。',
-             '# 删除本段即可回滚。']
+    entries = []
+    if add_mcp:
+        entries.append({
+            'insert': [{
+                'id': 'moodle-study',
+                'name': MCP_CLIENT,
+                'config': {
+                    'serverName': SERVER_NAME,
+                    'transport': 'stdio',
+                    'command': _node_command(),
+                    'args': [(root / 'tools/moodle/run.mjs').as_posix(), 'mcp'],
+                    'env': {},
+                    'cwd': root.as_posix(),
+                    'failOnStartupError': True,
+                },
+            }],
+        })
+    if add_skills:
+        entries.append({
+            'id': 'skill-filesystem',
+            'name': SKILL_PROVIDER,
+            'config': {'customSkillDirs': [(root / 'skills').as_posix()]},
+        })
+    return entries
+
+
+def _render_block(project, add_mcp=True, add_skills=True, plain=False):
+    """Render the generated block as text; validated by the caller.
+
+    ``plain`` omits the generated-block markers so an adopted entry stays an
+    ordinary user-visible configuration entry (it is not stripped on rerun).
+    """
+    lines = []
+    if not plain:
+        lines += [BEGIN,
+                  '# 由 tools/onboarding/dsh_integration.py install 生成；重跑只更新本段，其他配置保留。',
+                  '# 删除本段即可回滚。']
     if add_mcp:
         lines += [
             '- insert:',
             '    - id: moodle-study',
-            "      name: '@deepseek-ai/dsh-mcp-client'",
+            "      name: '%s'" % MCP_CLIENT,
             '      config:',
-            '        serverName: moodle_study',
+            '        serverName: %s' % SERVER_NAME,
             '        transport: stdio',
             '        command: ' + _yaml_quote(_node_command()),
             '        args:',
-            '          - ' + _yaml_quote((root / 'tools/moodle/run.mjs').as_posix()),
+            '          - ' + _yaml_quote((Path(project) / 'tools/moodle/run.mjs').as_posix()),
             "          - 'mcp'",
             '        env: {}',
-            '        cwd: ' + _yaml_quote(root.as_posix()),
+            '        cwd: ' + _yaml_quote(Path(project).as_posix()),
             '        failOnStartupError: true',
         ]
     if add_skills:
         lines += [
             '- id: skill-filesystem',
-            "  name: '@deepseek-ai/dsh-skill-filesystem'",
+            "  name: '%s'" % SKILL_PROVIDER,
             '  config:',
             '    customSkillDirs:',
-            '      - ' + _yaml_quote((root / 'skills').as_posix()),
+            '      - ' + _yaml_quote((Path(project) / 'skills').as_posix()),
         ]
-    lines.append(END)
+    if not plain:
+        lines.append(END)
     return '\n'.join(lines) + '\n'
 
+def _compose(base_text, project, add_mcp, add_skills):
+    """Compose and fully validate the final document; never writes anything."""
+    base_text, _ = _strip_generated(base_text)
+    base_data = _load_document(base_text, '移除生成段后的 profile patch')
+    normalised = _normalise_empty_list(base_text, base_data)
+    block = _render_block(project, add_mcp=add_mcp, add_skills=add_skills)
+    generated = _load_document(block, '生成的配置段')
+    if not isinstance(generated, list) or len(generated) != (int(add_mcp) + int(add_skills)):
+        raise PatchError('生成的配置段结构异常，未做任何修改。')
+    if normalised.strip():
+        new_text = normalised.rstrip('\n') + '\n\n' + block
+    else:
+        new_text = block
+    if not new_text.endswith('\n'):
+        new_text += '\n'
+    final_data = _load_document(new_text, '合并后的 profile patch')
+    expected = base_data + generated
+    if final_data != expected:
+        raise PatchError('合并后的 profile 结构与预期不一致，未做任何修改。')
+    if add_mcp:
+        if [config for config in _mcp_entries(final_data) if _entry_path_matches(config, project)] == []:
+            raise PatchError('合并后仍未发现指向当前项目的 MCP 条目，未做任何修改。')
+    if add_skills and _skill_status(final_data, project)['status'] != 'configured':
+        raise PatchError('合并后仍未发现当前项目的技能目录配置，未做任何修改。')
+    return new_text, base_data, generated
 
-def install(project=None, env=None, dry_run=False):
-    """Additively merge the DSH entries, preserving all existing configuration."""
+
+def _adopt_existing_mcp(base_text, base_data, project):
+    """Repoint an existing generated-style moodle MCP entry to this project.
+
+    Only used with ``--update-existing`` and only when the existing entry is a
+    DSH MCP client for the same server name whose argument is another
+    ``tools/moodle/run.mjs`` deployment. The old path token is replaced
+    textually; a folded scalar path is handled by replacing the whole
+    ``- insert:`` entry block. The full result is re-parsed and validated by the
+    caller afterwards.
+    """
+    current = (Path(project) / 'tools/moodle/run.mjs').resolve()
+    changed = 0
+    for config in _mcp_entries(base_data):
+        args = config.get('args')
+        if not isinstance(args, list) or len(args) < 2 or str(args[1]) != 'mcp':
+            continue
+        old = str(args[0])
+        if not old.replace('\\', '/').endswith('/tools/moodle/run.mjs'):
+            continue
+        try:
+            if Path(old).expanduser().resolve() == current:
+                continue
+        except (OSError, ValueError):
+            continue
+        occurrences = base_text.count(old)
+        if occurrences:
+            base_text = base_text.replace(old, current.as_posix())
+            changed += occurrences
+    if changed:
+        return base_text, changed
+    # Fallback for a folded/quoted long path: replace the whole insert entry.
+    lines = base_text.split('\n')
+    server_lines = [index for index, line in enumerate(lines)
+                    if re.match(r'\s*serverName:\s*' + re.escape(SERVER_NAME) + r'\s*$', line)]
+    if len(server_lines) != 1:
+        return base_text, 0
+    index = server_lines[0]
+    start = index
+    while start - 1 >= 0 and (lines[start - 1].startswith((' ', '\t')) or not lines[start - 1].strip()):
+        start -= 1
+    if start > 0 and re.match(r'-\s+insert:\s*$', lines[start - 1]):
+        start -= 1
+    elif not re.match(r'-\s+(insert|id):', lines[start].strip()):
+        return base_text, 0
+    end = index + 1
+    while end < len(lines) and not re.match(r'^-\s', lines[end]):
+        end += 1
+    block = _render_block(project, add_mcp=True, add_skills=False, plain=True).rstrip('\n').split('\n')
+    new_lines = lines[:start] + block + lines[end:]
+    return '\n'.join(new_lines), 1
+
+
+def install(project=None, env=None, dry_run=False, update_existing=False):
+    """Additively merge the DSH entries; validate before replacing the file."""
     environment = os.environ if env is None else env
     root = Path(project or ROOT).resolve()
-    profile = profile_dir(environment)
-    patch = profile / 'cordis.patch.yml'
+    folder = profile_dir(environment)
+    patch = folder / 'cordis.patch.yml'
     base = {
         'project_root': root.as_posix(),
         'patch_path': patch.as_posix(),
         'backup': None,
+        'validated': False,
         'warnings': [],
         'restart_required': False,
-        'next_steps': ['修改 profile 配置后需重启 DeepSeek Harness 桌面版，新建聊天才会加载技能与 MCP。'],
+        'next_steps': ['修改 profile 配置后需重启 DeepSeek Harness 桌面版；新聊天才会加载技能与 MCP。'],
     }
     status = inspect(root, environment)
     if not status['detected']:
         base.update(status='skipped', reason='未检测到 DeepSeek Harness；项目仍可用 Codex 入口，未写入任何配置。')
         return base
-    if not profile.exists():
+    if yaml is None:
+        base.update(status='error', reason='缺少 YAML 解析依赖（PyYAML）；未修改任何配置。请先完成安装。')
+        return base
+    if not folder.exists():
         base.update(status='skipped', reason='未找到 DSH profile 目录；请先启动过一次 DeepSeek Harness。')
         return base
     try:
-        original = patch.read_text(encoding='utf-8') if patch.exists() else ''
+        original = patch.read_text(encoding='utf-8-sig') if patch.exists() else ''
     except OSError:
         base.update(status='skipped', reason='无法读取现有 DSH profile patch；未覆盖任何配置。')
         return base
+    had_bom = patch.exists() and patch.read_bytes().startswith(b'\xef\xbb\xbf')
 
-    outside = BLOCK_RE.sub('', original)
-    outside_servers = re.findall(r'serverName:\s*([A-Za-z0-9_-]+)', outside)
-    add_mcp = SERVER_NAME not in outside_servers
-    add_skills = not re.search(r'-\s+id:\s*skill-filesystem\b', outside)
-    if not add_mcp:
-        base['warnings'].append('已有同名 MCP 服务配置（未在生成段内），未覆盖；如它未指向当前项目，请按 docs/DSH.md 手动调整。')
-    if not add_skills:
-        base['warnings'].append('已有用户自定义 skill-filesystem 配置，未覆盖；请手动把当前项目 skills 目录加入 customSkillDirs。')
-    block = _build_block(root, add_mcp=add_mcp, add_skills=add_skills)
-    if not add_mcp and not add_skills:
-        base.update(status='skipped', reason='现有配置与生成内容冲突，未修改；请按 docs/DSH.md 手动合并。')
+    try:
+        base_text, _ = _strip_generated(original)
+        base_data = _load_document(base_text, '现有 profile patch')
+        if update_existing:
+            base_text, replaced = _adopt_existing_mcp(base_text, base_data, root)
+            if replaced:
+                base_data = _load_document(base_text, '更新现有 MCP 条目后的 profile patch')
+                base['warnings'].append('已将现有 moodle_study MCP 条目的 run.mjs 路径更新为当前项目（只改该路径）。')
+        existing_mcp = _mcp_entries(base_data)
+        matching_mcp = [config for config in existing_mcp if _entry_path_matches(config, root)]
+        if matching_mcp:
+            add_mcp = False
+            base['warnings'].append('已有指向当前项目的 moodle_study MCP 条目；未重复添加。')
+        elif existing_mcp:
+            add_mcp = False
+            base['warnings'].append('已有同名 MCP 服务配置，但未指向当前项目；未覆盖。'
+                                    '确认这是旧部署后可用 --update-existing 只更新该路径。')
+        else:
+            add_mcp = True
+        add_skills = _skill_status(base_data, root)['status'] != 'configured'
+        if not add_skills:
+            base['warnings'].append('已有用户自定义 skill-filesystem 配置包含当前项目目录；未重复添加。')
+        elif any(item.get('id') == 'skill-filesystem' for item in _walk_dicts(base_data)):
+            add_skills = False
+            base['warnings'].append('已有用户自定义 skill-filesystem 配置但未包含当前项目 skills 目录；'
+                                    '未覆盖，请按 docs/DSH.md 手动合并。')
+        if not add_mcp and not add_skills:
+            base.update(status='unchanged' if not update_existing else 'unchanged',
+                        reason='现有配置已满足要求，未修改文件。')
+            return base
+        new_text, base_data, generated = _compose(base_text, root, add_mcp=add_mcp, add_skills=add_skills)
+    except PatchError as error:
+        base.update(status='error', reason=str(error))
         return base
 
-    new_text = (BLOCK_RE.sub('', original).rstrip('\n') + '\n\n' + block) if original.strip() else block
-    if new_text == original:
-        base.update(status='unchanged')
-        return base
     base['mcp_added'] = add_mcp
     base['skills_added'] = add_skills
     base['restart_required'] = True
+    if patch.exists() and new_text.rstrip('\n') == original.rstrip('\n'):
+        base.update(status='unchanged', reason='现有配置与生成内容一致，未修改文件。')
+        return base
     if dry_run:
-        base.update(status='dry-run', content=new_text)
+        base.update(status='dry-run', validated=True, content=new_text)
         return base
     try:
         if patch.exists():
-            target = patch.with_name(patch.name + '.bak-' + _state_stem())
-            target.write_bytes(patch.read_bytes())
-            base['backup'] = target.as_posix()
+            backup = patch.with_name(patch.name + '.bak-' + _state_stem())
+            backup.write_bytes(patch.read_bytes())
+            base['backup'] = backup.as_posix()
         temporary = patch.with_name(patch.name + '.tmp')
-        temporary.write_text(new_text, encoding='utf-8', newline='\n')
+        temporary.write_text(('\ufeff' if had_bom else '') + new_text, encoding='utf-8', newline='\n')
+        # Validate the exact bytes that will replace the original file.
+        written = temporary.read_text(encoding='utf-8-sig')
+        final_data = _load_document(written, '临时目标文件')
+        if final_data != (base_data + generated):
+            raise PatchError('临时目标文件的复核结构与预期不一致，保留原文件。')
         os.replace(temporary, patch)
-    except OSError as error:
-        base.update(status='error', reason='写入 DSH profile patch 失败：%s。原配置未删除。' % type(error).__name__)
+        base['validated'] = True
+    except (OSError, PatchError) as error:
+        try:
+            temporary = patch.with_name(patch.name + '.tmp')
+            if temporary.exists():
+                temporary.unlink()
+        except OSError:
+            pass
+        base.update(status='error', reason='写入或校验 DSH profile patch 失败：%s。原文件未替换。' % str(error)[:160])
         return base
     base.update(status='installed')
     return base
@@ -281,14 +622,16 @@ def main(argv=None):
     parser.add_argument('command', choices=['status', 'install', 'print'])
     parser.add_argument('--project', type=Path, default=ROOT, help='本次用于 DSH 的项目根目录')
     parser.add_argument('--dry-run', action='store_true', help='只显示将要写入的内容，不修改文件')
+    parser.add_argument('--update-existing', action='store_true',
+                        help='仅把现有同名 moodle_study MCP 条目的 run.mjs 路径更新为当前项目')
     parser.add_argument('--json', action='store_true', help='输出 JSON')
     args = parser.parse_args(argv)
     if args.command == 'status':
         result = inspect(args.project)
     elif args.command == 'install':
-        result = install(args.project, dry_run=args.dry_run)
+        result = install(args.project, dry_run=args.dry_run, update_existing=args.update_existing)
     else:
-        result = {'status': 'print', 'content': _build_block(args.project),
+        result = {'status': 'print', 'content': _render_block(args.project),
                   'patch_path': patch_path().as_posix()}
     if args.json or args.command != 'install':
         print(json.dumps(result, ensure_ascii=False, indent=2))

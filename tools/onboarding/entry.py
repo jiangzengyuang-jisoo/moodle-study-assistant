@@ -300,9 +300,18 @@ class App:
         if not status['detected']:
             add('dsh', 'ok', '未检测到 DeepSeek Harness；Codex 本地项目入口不受影响。')
             return 'not-detected'
-        configured = status['mcp']['status'] == 'configured' and status['skills']['status'] == 'configured'
+        if status.get('patch_parse') == 'unavailable':
+            add('dsh', 'warning', 'DeepSeek Harness 配置检查需要未安装的 YAML 解析依赖。',
+                '完成安装（setup）后再运行本地诊断；本次没有修改任何配置。')
+            return 'warning'
+        if status.get('patch_parse') == 'invalid':
+            add('dsh', 'warning', 'DeepSeek Harness profile 配置无法解析，未做任何修改。',
+                '按 docs/DSH.md 核对 profile patch；不要删除现有配置来重试安装。')
+            return 'warning'
+        configured = bool(status.get('configuration_ok'))
         if configured:
-            add('dsh', 'ok', 'DeepSeek Harness 的 MCP 与技能配置已指向当前项目；加载情况以重启后的聊天为准。',
+            add('dsh', 'ok', 'DeepSeek Harness 的 MCP 服务与技能目录配置已指向当前项目；'
+                              '配置正确不等于已加载，需重启后在新聊天中实际确认。',
                 '' if chat['auto_resolvable'] else '当前会话标识不能直接当原始聊天 ID；内部任务显式传入主聊天 ID 并加 --subtask。')
             return 'ok'
         if status['mcp']['status'] == 'conflict':

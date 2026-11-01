@@ -31,10 +31,17 @@
 
 或在普通终端手动运行同一命令（DSH 已启动过、存在 `~/.dsh/profiles/desktop` 即可）。该命令：
 
-- 只追加两段配置：MCP stdio 客户端 + 技能目录 `customSkillDirs`；
+- 用 PyYAML 解析现有 profile patch（`setup` 会安装该依赖），按**实际配置结构**处理：注释、注释掉的示例都不算配置；支持现有配置中的 `!!js` 表达式；顶层合法的空列表 `[]` 会被正确归一化，不会拼出无效 YAML；
+- 只追加两段条目：MCP stdio 客户端 + 技能目录 `customSkillDirs`；
 - 保留用户已有配置的每一行，写入前生成 `cordis.patch.yml.bak-<UTC时间>` 备份；
 - 用 `# >>> ... >>>` / `# <<< ... <<<` 标记自己的段落，**重复运行只更新本段**（幂等）；
-- 若已存在同名 `moodle_study` MCP 或用户自定义 `skill-filesystem` 覆盖，**不覆盖**，只提示手动核对；
+- 写入前把合并结果完整解析并校验（顶层结构、条目内容、路径指向），任何解析或校验失败都**保留原文件不替换**；
+- 若已存在同名 `moodle_study` MCP 或用户自定义 `skill-filesystem` 覆盖，默认**不覆盖**。确认旧条目是本项目的旧部署时，可只在原文件中更新该条目的 `run.mjs` 路径（支持跨行折叠路径，整段替换该项目条目）：
+
+```powershell
+& '.venv/Scripts/python.exe' tools/onboarding/dsh_integration.py install --update-existing
+```
+
 - 不读取、不写入任何学习数据、凭据或 Cookie。
 
 也可以运行 `setup.ps1`：检测到 DSH 环境（`DSH_SESSION_ID`/`DSH_HOME`）时会自动执行上述合并；在普通终端双击 `setup.cmd` 时不会改动 DSH 配置。
@@ -65,7 +72,12 @@
 & '.venv/Scripts/python.exe' tools/study/chat_identity.py
 ```
 
-诊断中 `dsh`/`client` 两项应显示“已指向当前项目”；若提示同名 MCP 冲突或技能目录未加入，按状态 JSON 的 `warnings` 与上文手动处理。`client` 检查同时兼容原 Codex 的 `.codex/config.toml`，两种客户端任一可用即可。
+诊断中 `dsh`/`client` 的分工：
+
+- `dsh` 行只报告**配置结构**：MCP 条目是否指向本项目的 `tools/moodle/run.mjs`、技能目录是否加入 `customSkillDirs`、现有配置是否冲突/无法解析；`status --json` 里的 `configuration_ok` 表示配置正确，`runtime_loaded` 固定为 `unverified`——**配置检测不等于运行成功**。
+- `client` 行表示当前项目至少有一种可用客户端配置（Codex 的 `.codex/config.toml` 或 DSH profile），同样不代表运行时已加载；是否真正加载需重启后在新聊天中实际确认。
+- 若 profile patch 无法解析或缺少 YAML 依赖，诊断只给 warning 并明确“未修改任何配置”，不会报成“配置正确”。
+- 已有同名 MCP 冲突、技能目录未加入、profile 无法解析时，按 `status --json` 的 `warnings` 与上文手动处理。
 
 ## 3. 聊天身份规则（与 Codex 一致）
 

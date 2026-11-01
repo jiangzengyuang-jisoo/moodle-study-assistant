@@ -416,6 +416,37 @@ catch(error) { console.error(error.code + ': ' + error.message); process.exitCod
         self.assertEqual('warning', self.checks(report)['dsh']['status'])
         self.assertEqual(before, self.tree())
 
+    def test_dsh_comment_only_configuration_is_not_trusted(self):
+        self.prepared()
+        (self.root / '.codex/config.toml').unlink()
+        home = Path(self.temp.name) / 'dsh-home'
+        profile = home / 'profiles/desktop'
+        profile.mkdir(parents=True)
+        slash = lambda path: str(path).replace('\\', '/')
+        profile.joinpath('cordis.patch.yml').write_text(
+            '# serverName: moodle_study\n'
+            "# args: ['" + slash(self.root / 'tools/moodle/run.mjs') + "', 'mcp']\n"
+            '# customSkillDirs: ["' + slash(self.root / 'skills') + '"]\n', encoding='utf-8')
+        (self.root / 'skills').mkdir(exist_ok=True)
+        before = self.tree()
+        report = self._dsh_app(home).inspect()
+        self.assertEqual('missing', self.checks(report)['client']['status'])
+        self.assertEqual('missing', self.checks(report)['dsh']['status'])
+        self.assertEqual(before, self.tree())
+
+    def test_dsh_invalid_profile_is_reported_without_writing(self):
+        self.prepared()
+        (self.root / '.codex/config.toml').unlink()
+        home = Path(self.temp.name) / 'dsh-home'
+        profile = home / 'profiles/desktop'
+        profile.mkdir(parents=True)
+        profile.joinpath('cordis.patch.yml').write_text('x: [unclosed\n', encoding='utf-8')
+        before = self.tree()
+        report = self._dsh_app(home).inspect()
+        self.assertEqual('warning', self.checks(report)['client']['status'])
+        self.assertEqual('warning', self.checks(report)['dsh']['status'])
+        self.assertEqual(before, self.tree())
+
     def test_menu_tips_handoff_and_exit_never_install_or_refresh(self):
         self.prepared()
         answers = iter(['4', '1', '0'])

@@ -108,7 +108,7 @@ node tools/moodle/run.mjs download 123 --authorized
 & '.venv/Scripts/python.exe' tools/study/chat_identity.py
 ```
 
-`install` 用 `# >>> ... >>>` 标记段幂等更新，重复运行只改本段；遇到同名 `moodle_study` MCP 或用户自定义 `skill-filesystem` 覆盖时不覆盖，只提示手动合并。修改后需重启 DSH 才加载。`study.cmd`/`session.py` 的 `--chat` 可省略：按“显式 `--chat` → 环境变量 `STUDY_CHAT_ID`（与本人约定的会话名）→ DSH 主聊天 `DSH_SESSION_ID`”解析；DSH 内部子会话的裸 UUID 会被拒绝，子任务必须显式传主聊天 ID 并加 `--subtask`。完整说明见 [DSH.md](DSH.md)。
+`install` 以**实际 YAML 结构**处理 profile patch（依赖 PyYAML，由 setup 安装）：注释不算配置，合法的空列表 `[]` 会被正常归一化；写入前完整解析并校验合并结果，解析或校验失败时保留原文件不替换；用 `# >>> ... >>>` 标记段幂等更新，重复运行只改本段。遇到同名 `moodle_study` MCP 或用户自定义 `skill-filesystem` 覆盖时默认不覆盖，只提示手动合并；确认旧条目是本项目旧部署时，可用 `install --update-existing` 只更新该条目的 `run.mjs` 路径。`status --json` 的 `configuration_ok` 只表示配置结构正确，`runtime_loaded` 恒为 `unverified`——配置检测不等于运行成功，必须重启 DSH 后在新聊天实际确认。修改后需重启 DSH 才加载。`study.cmd`/`session.py` 的 `--chat` 可省略：按“显式 `--chat` → 环境变量 `STUDY_CHAT_ID`（与本人约定的会话名）→ DSH 主聊天 `DSH_SESSION_ID`”解析；DSH 内部子会话的裸 UUID 会被拒绝，子任务必须显式传主聊天 ID 并加 `--subtask`。完整说明见 [DSH.md](DSH.md)。
 
 在受限 shell（例如 DSH 自己的沙箱）里，`node --test` 与部分 Python `tempfile` 测试可能因管道/临时目录权限失败；完整回归请在真实终端执行。
 
