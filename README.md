@@ -1,142 +1,174 @@
 # Moodle Study Assistant
 
-**让 ChatGPT 帮你整理 Moodle 作业和通知，结合自己的课件学习，并接着上次的进度继续。**
+**Study with your course materials, your instructor's requirements, and a record of what you have actually learned.**
 
-目前按 **Windows 10/11 + ChatGPT 桌面版的 Codex 本地项目模式**提供使用说明与支持。你不需要先学编程，也不用自己研究每条安装命令：打开项目后，把下面的指令交给 ChatGPT，让它检查环境、安装依赖并带你完成设置。
+**English** · [简体中文](README.zh-CN.md)
 
-## 第一次用：让 ChatGPT 帮你安装
+[Why use it?](#why-use-it) · [Study examples](#study-examples) · [Get started](#get-started) · [FAQ and privacy](#faq-and-privacy) · [Updates](#recent-updates)
 
-### 1. 准备 ChatGPT 桌面版
+A personal course workspace used through a **Codex chat**. Keep slides, handouts, exercises, and learning records on your computer. Connect Moodle to bring in assignment requirements, deadlines, announcements, and discussions, then use that context for explanations, practice, and exam preparation.
 
-按 [OpenAI 官方 Windows 指南](https://learn.chatgpt.com/docs/app/windows)安装桌面版，并登录你的 ChatGPT 账号。你需要能使用 **Codex 本地项目**，让它读取项目文件并运行安装命令；可用功能以你的账号和工作区权限为准。
+Designed for students following university courses over a semester. The documented setup is **Windows 10/11 + Codex local project mode in the ChatGPT desktop app**. You study in the chat; there is no separate web app to deploy.
 
-这里后续说的“ChatGPT”，都指这个能操作本地项目的入口。仅在普通聊天窗口粘贴仓库链接，还不足以完成电脑上的安装。
+## Why use it?
 
-### 2. 下载项目，并在 ChatGPT 中打开
+### A course library you can keep using
 
-在本仓库页面点 **Code → Download ZIP**，把压缩包完整解压到一个固定文件夹，例如 `D:\MoodleStudy`。
+Add your course files and ask the assistant to organize them. It can search registered materials by course, read surrounding pages, and check original figures and formulas when needed. Explanations can be traced to a file and page or slide, so you can compare them with what your instructor actually taught.
 
-在 ChatGPT 桌面版中，打开 **ChatGPT 下拉菜单 → Codex**，再将 **Work in** 设为 **This computer（本机）**（[官方入口说明](https://learn.chatgpt.com/docs/environments/modes)）。
+The library supports PDF, PPTX, DOCX, HTML, text, and images. Updated materials can become the current version while older notes and mistakes retain their original references. Parsing and OCR still need verification against the source. [How the library works](docs/LIBRARY.md).
 
-然后添加或打开本地项目，选择**能直接看到 `README.md`、`AGENTS.md` 和 `start.cmd` 的那层文件夹**。按提示允许它访问这个项目。
+### Learning grounded in your own course
 
-### 3. 复制下面这段话，交给 ChatGPT
+The assistant is instructed to use your instructor's terminology and methods, check current assignment requirements, and prepare revision around the exam scope that has actually been published. Missing material or unconfirmed requirements should remain explicit gaps.
 
-```text
-我是第一次使用这个 Moodle 学习助手，请直接帮我完成安装和首次设置。
+**The goal is to stay aligned with your course. This cannot guarantee that every answer is correct or within the syllabus.** An assignment does not define the entire exam scope, and the model still needs to read and verify the sources. [Exam preparation rules](docs/EXAM_PREP.md).
 
-先读取项目的 AGENTS.md、docs/WORKFLOW.md、docs/SESSION.md 和安装说明，检查当前环境。
-如果你还不能读取这个文件夹或运行本地命令，先告诉我该在哪里打开项目。
+### Progress that survives a new chat
 
-请检查并安装本项目所需的环境与依赖；缺少系统组件时使用官方来源。
-需要我确认安装、点击界面或重开应用时，简短告诉我下一步。
-如果已有学习档案，先保留并接续，不要重新建空档案覆盖它。
+Keep actual answers, mistakes, sticking points, and the next study step in your project. In another chat in the same workspace, the assistant can read those records and resume. It distinguishes hearing an explanation, completing an assignment, answering with hints, and solving a new problem independently.
 
-请带我连接自己的 Moodle。学校账号、密码和验证码由我在学校网页里输入，
-不要让我把这些信息或 Token 发进聊天，也不要读取 .private 中的凭据。
-向我展示课程名称，让我选择需要跟踪的课程。
+Practice starts with examples when needed, then gradually removes help. Independent answers and later retests guide review; reading a solution does not count as mastery. [Tutoring approach](docs/TUTORING.md).
 
-按项目的统一入口完成首次课程采集，再核读作业、截止日期和通知。
-先问我哪些作业已完成、学到哪里、实际有多少时间，再给第一份学习安排。
-课件由我提供，不自动下载；不替我提交作业、答题、发帖或发邮件。
+### Plans connected to coursework
 
-最后告诉我：安装是否完成、哪些信息已核对、还有什么需要我处理。
-请直接执行能完成的步骤，使用简明中文，不要只给我一份安装教程。
-```
+Use Moodle requirements alongside your available time and recorded progress to decide what to study next. Ask for focused practice or a mock exam based on confirmed teacher requirements and the materials you have supplied. Generated papers are original practice, not predictions of the real exam.
 
-**你主要负责三件事：**确认必要的安装权限、在学校网页里登录、选择自己的课程。环境检查、依赖安装和项目配置可以交给 ChatGPT；遇到它无法操作的窗口，它会告诉你该点哪里。
+### What does this add to a one-off AI question?
 
-默认连接 HKU Moodle，核心 API 采集已在 HKU 实际使用。其他学校请先告诉 ChatGPT 学校的 Moodle 首页地址；能否使用取决于学校开放的接口和权限。
+| What you need to keep track of | What the workspace maintains |
+| --- | --- |
+| Which slides, exercises, and handouts belong to this course? | A reusable material index with source locations and version records |
+| What does the instructor require now? | Moodle evidence the assistant must read and verify before using |
+| Where did I stop, and what did I struggle with? | Saved study position, actual answers, mistakes, and next steps |
+| What should I revisit before the exam? | Review records connected to independent attempts and confirmed exam requirements |
 
-**浏览器登录辅助仍属实验功能：**已做模拟回调验证，但真实学校登录（含单点登录 SSO、多重验证 MFA）和新电脑完整联网安装仍待验证。连接失败时，请参考[备用连接方式](docs/新手使用指南.md#连接失败或已有官方-token)。
+You can provide this context manually in a chat. This project organizes it for repeated use across a course, reducing the background you need to reconstruct each time. A fresh installation starts empty: bring your own materials and connect your own school account.
 
-### 怎样算准备好了？
+## Study examples
 
-ChatGPT 应明确告诉你：本地工具是否能运行、是否连接到自己的学校、选中了哪些课程，以及首次采集和核读是否完成。**拿到课程数据之后，还需要核读，才能据此安排学习。**
+After setup, place your files in `Study/_Inbox/` and ask the assistant to organize them. Then use requests like these:
 
-如果中途报错，把不含密码和 Token 的报错文字发给 ChatGPT：
+| Goal | What to say |
+| --- | --- |
+| Understand this week's lecture | “Use my slides to explain this topic. Follow the instructor's method and identify the relevant pages.” |
+| Continue studying | “Read my records and continue from where I stopped. Check the point I struggled with last time.” |
+| Study with limited time | “I have 90 minutes today. Use my deadlines, coursework requirements, and progress to plan the session.” |
+| Review a weak area | “Give me 15 minutes of practice on my recorded mistakes. Wait for my answer before showing a solution.” |
+| Prepare for an exam | “Check the published scope and question types, then use my materials to prepare a practice paper. Tell me what is still unconfirmed.” |
+| Check for school updates | “Refresh Moodle and check whether assignment requirements or instructor announcements have changed.” |
 
-```text
-安装卡在这里了，请检查原因并继续完成。保留已有的学习档案、原始课件和资料引用，
-不要通过删除 Study 文件夹或重新建档来解决问题。需要我操作时再告诉我。
-```
+An example request combining materials, scope, and progress:
+
+> Use my lecture slides and the current assignment requirements to continue this chapter. Read where I stopped, explain one topic using the instructor's method, cite the relevant pages, then give me a new problem to attempt independently. Save my actual answer and the next step afterward.
+
+This is a sample prompt, not a transcript or a claim that a course has already been checked.
+
+Moodle is collected when a chat first enters course learning, review, or study planning; later turns reuse the checked evidence. Ask explicitly for a refresh to get newer information. Unrelated questions skip the study startup, and connection repair runs only necessary diagnostics. There is no background monitoring or scheduled refresh.
+
+## Get started
+
+### 1. Open a local Codex project
+
+Install the [ChatGPT desktop app for Windows](https://learn.chatgpt.com/docs/app/windows) and sign in. In the app, select **Codex** from the ChatGPT dropdown and choose **Work in → This computer**. See the [official environment guide](https://learn.chatgpt.com/docs/environments/modes); availability depends on your account and workspace permissions.
+
+Download this repository with **Code → Download ZIP**, extract it to a stable location such as `D:\MoodleStudy`, and open the folder containing `README.md`, `AGENTS.md`, and `start.cmd` as the local project. Allow access to that project when prompted. Pasting the repository link into an ordinary chat does not install it on your computer.
+
+### 2. Ask Codex to set it up
+
+You handle necessary permission prompts, school sign-in, and course selection; the assistant can inspect the environment and run the setup steps.
 
 <details>
-<summary>想自己操作，或需要详细排错？</summary>
+<summary>Copy this setup request into the project's chat</summary>
 
-解压后双击 `start.cmd`，按中文向导继续；`diagnose.cmd` 可做本地诊断。缺少基础环境时，入口会提示安装方法。
+```text
+Help me install and set up this Moodle Study Assistant.
 
-详细步骤见 [新手使用指南](docs/新手使用指南.md)和[上手入口与诊断](docs/START.md)。Node.js、Python、工具连接等细节都在里面，可以让 ChatGPT 按需读取。
+Read AGENTS.md, docs/WORKFLOW.md, docs/SESSION.md, and the setup documentation.
+Check the environment and install the required dependencies from official sources.
+If you cannot read this project or run local commands, tell me where to open it.
+Tell me when I need to approve installation, click a window, or restart the app.
+Preserve existing learning records; do not replace them with an empty profile.
+
+Help me connect my own Moodle account and choose my courses.
+I will enter my password and verification codes on the school's page myself.
+Do not ask me to paste credentials or tokens into chat or read .private contents.
+
+Use the unified study entry point to collect course information, then read and
+verify assignment requirements, deadlines, and announcements.
+Ask what I have completed, where I stopped, and how much time I have available.
+I will provide course materials; do not download files without my request.
+Do not submit assignments, answer school quizzes, post, or send email for me.
+
+Report what is ready, what has been checked, and what I still need to do.
+Carry out the available setup steps and explain them in plain English.
+```
 
 </details>
 
-## 装好以后，直接说你想做什么
+The default school is HKU Moodle, where the core API collection has been used. For another school, provide its Moodle home URL; compatibility depends on the APIs and permissions it offers.
 
-以后回到同一个项目聊天即可，不用每天重新安装或运行向导。
+**The browser sign-in helper is experimental.** Mock callbacks have been tested, but real school SSO/MFA and a complete online installation on a fresh computer still need validation. See the [fallback connection options](docs/新手使用指南.md#连接失败或已有官方-token) if sign-in fails.
 
-| 你想做的事 | 可以直接对 ChatGPT 说 |
-| --- | --- |
-| 安排今天的学习 | “结合已有记录安排今天的学习。我有 90 分钟，先做最紧急的。” |
-| 查看最新学校信息 | “刷新 Moodle，看看作业要求和老师通知有没有变化。” |
-| 学一章课件 | “从这份课件开始讲。我基础不太好，先示范，再让我自己做。” |
-| 复习薄弱点 | “开始 15 分钟复习，先别给答案，等我独立答完再核对。” |
-| 记录实际进度 | “这份作业已提交，今天用了 30 分钟，最后一道题还没理解。” |
-| 准备考试 | “按老师公布的范围和题型，用我的课件出一套模拟卷，先不给答案。” |
+### 3. Add your materials and start learning
 
-**准备课件：**把想用的资料放进项目的 `Study/_Inbox/` 文件夹，再告诉 ChatGPT“请整理这些资料，接着开始学习”。普通刷新只读取课程信息，不会自动下载课件；需要下载时，请明确指定课程和资料。
+Put your files in `Study/_Inbox/`, then ask the assistant to organize them and begin a topic. Ordinary Moodle refreshes do not download course files. To request a download, identify the course and specific material.
 
-**接着上次学：**同题追问继续留在原聊天；新聊天仍在这个项目中打开，先让 ChatGPT 读取已有记录。结束前可以说“保存今天的实际作答、卡点和下次从哪里继续”。换聊天或上下文压缩不会自动清空本地档案。
-
-每个聊天首次进入课程学习、复习或学习计划时检查一次 Moodle，后续复用已核验结果。项目介绍、工具比较和一般问答跳过学习启动；只维修连接时只做必要诊断。要中途获取最新信息，就明确说“刷新 Moodle”；没有定时刷新或后台提醒。
-
-## 这个助手会怎样陪你学？
-
-它会根据当前作业要求、课件和真实进度安排学习，保留英文术语，结合原页讲解。初学时先示范，练习时让你独立尝试；卡住后逐步给提示，答完再核对。
-
-“听懂了”“看过答案”“提交了作业”和“独立掌握”分别记录。错题、真实作答和复习安排会保存在自己的项目里，之后可以接着用；资料更新时保留旧题引用，不把历史表现直接当成新版内容的掌握证据。
-
-模拟卷依据老师实际公布的要求和你提供的材料编写。信息不完整时会说明缺口；它是练习工具，不是学校真题或成绩预测。
-
-## 先了解这几个常见问题
-
-**只有 ChatGPT 网页版或手机端可以吗？**
-
-本版的推荐流程需要 Windows 上的 ChatGPT 桌面版及 Codex 本地项目能力。网页版和手机端的普通聊天可以解释步骤，但本项目没有提供只在普通聊天窗口完成安装和运行的流程。
-
-**支持其他 AI 吗？需要额外买什么？**
-
-目前只按上述 ChatGPT 使用方式提供支持，其他客户端尚未作为本版上手流程验证。项目代码开源，不附带 ChatGPT 账号或订阅；可用功能、额度和费用以你的账号为准。通常可使用 [ChatGPT 账号登录](https://learn.chatgpt.com/docs/auth)，本教程不要求你另购 API Key。
-
-**已经用了一段时间，怎样升级？**
-
-把“请按项目升级说明更新，先备份并保留我的学习记录、课件和引用”交给 ChatGPT，按[保留学习记录的升级步骤](docs/新手使用指南.md#从旧版更新)处理。下载新版代码不会自动更新原文件夹，也不要用新的空白档案覆盖已有 `Study/`。
-
-**学习记录会上传到这个 GitHub 仓库吗？**
-
-个人数据保存在自己的电脑里；新安装从空白档案开始，不附作者的课程资料或记录。`Study/`、`.private/`、本机配置和工具设置已被 Git 忽略，正常代码提交不会包含它们。不要把自己用过的整个文件夹打包发给别人；给同学分享本仓库链接即可。
-
-ChatGPT 阅读的课程文本和学习内容可能发送给模型服务商，**本地保存不等于离线推理**。学校密码和验证码只在学校网页输入。详见[隐私说明](docs/PRIVACY.md)。
-
-## 最近更新
-
-| 日期 | 更新内容 |
-| --- | --- |
-| [2026-11-01](CHANGELOG.md#2026-11-01) | 无关问答跳过学习启动，细分 Moodle 连接故障；简化安装说明，完善记录保护与复习预算 |
-| [2026-10-31](CHANGELOG.md#2026-10-31) | 完善学习记录保护、跨章节接续和中文安装诊断 |
-| [2026-10-30](CHANGELOG.md#2026-10-30) | 日常使用新版资料，旧版归档并保留错题引用 |
-
-[查看完整更新日志](CHANGELOG.md)。已知的“模拟卷补录更早答案展示时间可能被忽略”问题仍未修复，涉及历史回填时需要核对独立作答资格。
+Setup is ready when the assistant has verified the local tools and school connection, confirmed your selected courses, and collected **and reviewed** the course information. A successful connection alone does not mean course content has been reviewed.
 
 <details>
-<summary>详细说明、开发与项目边界</summary>
+<summary>Manual setup or troubleshooting</summary>
 
-- [学习使用须知](docs/使用须知.md) · [教学方式](docs/TUTORING.md) · [考试与模拟卷](docs/EXAM_PREP.md)
-- [资料定位与缓存](docs/LIBRARY.md) · [资料版本管理](docs/MATERIAL_VERSIONS.md)
-- [项目规则](AGENTS.md) · [统一聊天入口](docs/SESSION.md) · [工具与验证命令](docs/TOOLS.md) · [技能入口](SKILL.md)
-- [开源组件说明](THIRD_PARTY_NOTICES.md) · [MIT License](LICENSE)
+Double-click `start.cmd` for the Chinese setup guide or `diagnose.cmd` for local diagnostics. Detailed commands and dependencies are in the [beginner guide](docs/新手使用指南.md) and [diagnostics guide](docs/START.md). The setup menu and most detailed documentation are currently in Chinese; this English README covers the primary workflow.
 
-工具不会替你提交作业、参加学校测验、发帖、修改学校完成状态或发邮件。学校接口无权限时会说明未完整更新；老师只在附件里发布的信息、扫描页和复杂公式仍需核对原页。
-
-本项目与 OpenAI、HKU、Moodle 或使用到的开源项目无官方隶属关系。
+If setup stalls, share the error text without passwords or tokens and ask the assistant to investigate while preserving your records, original files, and references. Do not delete `Study/` or rebuild an empty profile to fix a setup problem.
 
 </details>
+
+## FAQ and privacy
+
+**Can I use only the web or mobile app, another AI client, or another operating system?**
+
+The supported onboarding path is the Windows local Codex project described above. Browser-only/mobile-only setup, other AI clients, and other operating systems have not been validated for this workflow.
+
+**Do I need an API key or a separate subscription?**
+
+The code is open source and does not include an AI account or subscription. Account access, usage limits, and charges are separate. This guide does not require a separately purchased API key; see the [official sign-in documentation](https://learn.chatgpt.com/docs/auth).
+
+**Are my learning records uploaded to this GitHub repository?**
+
+Your materials and records are saved locally. `Study/`, credentials, and machine-specific configuration are excluded from normal Git commits. Share the repository link, not your used project folder. Material read by the assistant may be sent to its model provider: **local storage does not mean offline inference**. [Privacy details](docs/PRIVACY.md).
+
+**What does the assistant do on Moodle?**
+
+The tools are read-only. They do not submit work, answer school quizzes, post, change school completion status, or send email. Course downloads require an explicit request. Passwords and verification codes stay on the school's sign-in page.
+
+**What still needs checking?**
+
+Missing permissions, incomplete materials, scanned pages, and complex formulas require attention. Collection is separate from review; software validation cannot prove that an explanation is correct or that you have mastered a topic.
+
+A known issue remains: backdating an answer-exposure event for a mock exam can be ignored as a duplicate. Check historical exposure times before treating such an attempt as independent.
+
+**How do I upgrade without losing my work?**
+
+Ask the assistant to back up and preserve `Study/`, configuration, credentials, and source references before updating the code. Downloading a new copy does not update your existing folder. Follow the [upgrade guide](docs/新手使用指南.md#从旧版更新).
+
+## Recent updates
+
+| Date | Change |
+| --- | --- |
+| [2026-11-01](CHANGELOG.md#2026-11-01) | English and Chinese READMEs explain the course library and study continuity; narrower startup scope and clearer Moodle diagnostics |
+| [2026-10-31](CHANGELOG.md#2026-10-31) | Stronger learning-record protection, cross-chapter continuity, and Chinese setup diagnostics |
+| [2026-10-30](CHANGELOG.md#2026-10-30) | Current material versions for daily use, with archived versions and historical references preserved |
+
+The latest code change passed 471 offline tests. That does not validate real school login or every installation environment. See the [changelog](CHANGELOG.md) for validation details and known limitations.
+
+## Documentation and contributing
+
+Detailed guides are currently primarily in Chinese:
+
+[Study workflow](docs/使用须知.md) · [Tutoring](docs/TUTORING.md) · [Material library](docs/LIBRARY.md) · [Version management](docs/MATERIAL_VERSIONS.md) · [Exam preparation](docs/EXAM_PREP.md) · [Session recovery](docs/SESSION.md) · [Tools and tests](docs/TOOLS.md)
+
+For a bug report or improvement, [open an issue](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/issues). Describe the expected behavior, actual result, and reproduction steps without credentials, private course content, or learning records. Code changes should follow [AGENTS.md](AGENTS.md) and the checks in [docs/TOOLS.md](docs/TOOLS.md#验证与发布).
+
+Licensed under the [MIT License](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md) for dependencies. This project is not officially affiliated with OpenAI, HKU, or Moodle.
