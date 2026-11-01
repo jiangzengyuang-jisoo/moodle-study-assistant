@@ -227,6 +227,8 @@ def validate_draft(current, draft):
     """Reject accidentally partial replacements; deletion needs a separate workflow."""
     if not isinstance(draft, dict) or set(current) - set(draft):
         raise ValueError('必须提交完整状态，不能遗漏已有字段')
+    from learning_library.memory import validate_preserved
+    validate_preserved(current, draft)
     for name in ('courses', 'materials', 'mistakes', 'review_queue', 'review_attempts',
                  'learning_feedback', 'mock_attempts', 'review_sessions', 'mock_exams',
                  'tasks', 'deadlines', 'discussion_notes'):

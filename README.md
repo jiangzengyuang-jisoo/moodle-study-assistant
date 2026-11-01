@@ -30,6 +30,8 @@ Keep actual answers, mistakes, sticking points, and the next study step in your 
 
 Practice starts with examples when needed, then gradually removes help. Independent answers and later retests guide review; reading a solution does not count as mastery. [Tutoring approach](docs/TUTORING.md).
 
+Ask what the assistant remembers and what it is based on. Memory lookup supports explicit bilingual aliases across previous chapters; your corrections are appended with their source record preserved. This is local alias-based retrieval, not unrestricted semantic search. [Inspect and correct memory](docs/MEMORY.md).
+
 ### Plans connected to coursework
 
 Use Moodle requirements alongside your available time and recorded progress to decide what to study next. Ask for focused practice or a mock exam based on confirmed teacher requirements and the materials you have supplied. Generated papers are original practice, not predictions of the real exam.
@@ -157,11 +159,11 @@ Ask the assistant to back up and preserve `Study/`, configuration, credentials, 
 
 | Date | Change |
 | --- | --- |
+| [2026-11-02](CHANGELOG.md#2026-11-02) | Inspect saved course memory, retrieve bilingual topic history, and append traceable user corrections |
 | [2026-11-01](CHANGELOG.md#2026-11-01) | English and Chinese READMEs explain the course library and study continuity; narrower startup scope and clearer Moodle diagnostics |
 | [2026-10-31](CHANGELOG.md#2026-10-31) | Stronger learning-record protection, cross-chapter continuity, and Chinese setup diagnostics |
-| [2026-10-30](CHANGELOG.md#2026-10-30) | Current material versions for daily use, with archived versions and historical references preserved |
 
-The latest code change passed 471 offline tests. That does not validate real school login or every installation environment. See the [changelog](CHANGELOG.md) for validation details and known limitations.
+Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.md) for validation details and known limitations.
 
 ## Documentation and contributing
 

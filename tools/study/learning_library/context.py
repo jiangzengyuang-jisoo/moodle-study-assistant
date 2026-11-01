@@ -314,6 +314,9 @@ def build_context(state: dict, course_id: str | None = None, detail: bool = Fals
         return result
     project = _Projection()
     sections = result["sections"]
+    from learning_library.memory import correction_context
+    sections['memory_review'] = correction_context(course, base)
+    sections['memory_review']['query_usage'] = 'memory --course ' + course_id + ' --query TOPIC'
     sections["course"] = {"id": course_id, "name": course.get("name"), "current_topic": deepcopy(course.get("current_topic")), "assignment_focus": project.mapping(course.get("assignment_focus"), base + "/assignment_focus", ("target", "required_chapters", "task_ids", "meaning", "api_checked_at", "mapping_updated_at")), "orientation": project.mapping(course.get("orientation"), base + "/orientation", ("core_question", "prerequisites", "required_workflow", "resource_hierarchy", "study_approach", "scope_note", "exam_focus"), 1500), "assistant_notes": project.notes(course.get("assistant_notes"), base + "/assistant_notes"), "teaching_cursor": _continuity(course.get("teaching_cursor"), base + "/teaching_cursor", project), "learning_progress": project.mapping(course.get("learning_progress"), base + "/learning_progress", ("current_chapter", "last_completed_chapter", "chapter_progress_status", "teaching_continuity", "mastery_verified", "required_chapters"))}
     sections['course']['continuity_policy'] = {
         'current_position': base + '/teaching_cursor',

@@ -489,8 +489,21 @@ def main():
     p=sub.add_parser('context'); p.add_argument('--read-only',action='store_true'); p.add_argument('--course'); p.add_argument('--detail',action='store_true')
     p=sub.add_parser('evidence'); p.add_argument('--course',required=True); p.add_argument('--query',required=True); p.add_argument('--limit',type=int,default=8)
     p=sub.add_parser('evidence-source'); p.add_argument('--course',required=True); p.add_argument('--observation',required=True)
+    p=sub.add_parser('memory'); p.add_argument('--course',required=True); p.add_argument('--query'); p.add_argument('--limit',type=int,default=8)
+    p=sub.add_parser('memory-correct'); p.add_argument('--course',required=True)
     p=sub.add_parser('detail'); p.add_argument('collection'); p.add_argument('record_id')
     args=parser.parse_args(); lib=Library(args.state,args.cache_dir)
+    if args.command in {'memory', 'memory-correct'}:
+        sys.dont_write_bytecode = True
+        if args.command == 'memory':
+            from learning_library.memory import inspect_memory
+            result = inspect_memory(lib.state(),args.course,args.query,args.limit)
+        else:
+            from memory_store import save_correction
+            sys.stdin.reconfigure(encoding='utf-8')
+            result = save_correction(args.state,args.course,json.load(sys.stdin))
+        print(json.dumps(result,ensure_ascii=False,indent=2))
+        return
     if args.command in {'evidence', 'evidence-source'}:
         # Evidence lookup is strictly read-only, including no maintenance or
         # timing-log writes. Legacy notes remain locators, never mastery ratings.
