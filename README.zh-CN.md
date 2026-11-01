@@ -126,11 +126,23 @@
 
 </details>
 
+## 在 DeepSeek Harness 中使用（可选）
+
+同一项目也可以在 **DeepSeek Harness** 桌面版聊天里使用，上面的 Codex 用法保持不变：
+
+1. 先在本目录完成常规安装（`setup.cmd`）。
+2. 在 Harness 聊天中运行 `python tools/onboarding/dsh_integration.py install`（在 Harness 里运行 `setup` 也会自动合并）。它只向 Harness profile 追加一段 MCP stdio 配置和技能目录，保留已有配置并写备份；不读写学习记录和凭据。
+3. 重启 DeepSeek Harness，再以本文件夹作为工作区新建聊天。
+4. 不需要每条消息手写聊天 ID：会使用 Harness 的稳定会话 ID，同一聊天继续学习会复用已核验信息，真正的新聊天才采集一次；内部子任务必须由主助手显式传原始聊天 ID 并加 `--subtask`。
+5. 原页图片：`library.cmd render` 返回 PNG 路径，助手用 `read_image` 查看；PPTX/DOCX 没有页图，可用 `office-render` 技能或提供 PDF/截图。
+
+配置示例、诊断命令、身份规则和已知限制见 [DeepSeek Harness 使用说明](docs/DSH.md)。DSH 适配已在 Windows + DeepSeek V4.1 本机验证；其他客户端和操作系统仍未验证。
+
 ## 常见问题与隐私
 
 **只有网页版或手机端可以吗？支持其他 AI 客户端和系统吗？**
 
-当前支持上述 Windows 本地 Codex 项目流程。尚未验证仅靠网页版或手机端完成安装、其他 AI 客户端或其他操作系统的完整流程。
+当前支持上述 Windows 本地 Codex 项目流程，以及通过一次性 profile 合并接入的 DeepSeek Harness 桌面版。尚未验证仅靠网页版或手机端完成安装、其他 AI 客户端或其他操作系统的完整流程。
 
 **需要 API Key 或额外订阅吗？**
 
@@ -158,7 +170,7 @@
 
 | 日期 | 更新内容 |
 | --- | --- |
-| [2026-11-02](CHANGELOG.md#2026-11-02) | 查看和纠正记忆；审计修复最新位置、更正关联、来源保留及多概念查询 |
+| [2026-11-02](CHANGELOG.md#2026-11-02) | 查看和纠正记忆；可选接入 DeepSeek Harness 桌面版，稳定聊天身份、保留配置的 MCP/技能接线与新指南 |
 | [2026-11-01](CHANGELOG.md#2026-11-01) | 中英文 README 突出课程资料库与持续学习；缩小启动范围，细分 Moodle 连接诊断 |
 | [2026-10-31](CHANGELOG.md#2026-10-31) | 完善学习记录保护、跨章节接续和中文安装诊断 |
 
@@ -168,7 +180,7 @@
 
 详细文档目前主要为中文：
 
-[学习使用须知](docs/使用须知.md) · [教学方式](docs/TUTORING.md) · [资料库](docs/LIBRARY.md) · [版本管理](docs/MATERIAL_VERSIONS.md) · [考试准备](docs/EXAM_PREP.md) · [聊天接续与恢复](docs/SESSION.md) · [工具与测试](docs/TOOLS.md)
+[学习使用须知](docs/使用须知.md) · [教学方式](docs/TUTORING.md) · [资料库](docs/LIBRARY.md) · [版本管理](docs/MATERIAL_VERSIONS.md) · [考试准备](docs/EXAM_PREP.md) · [聊天接续与恢复](docs/SESSION.md) · [DeepSeek Harness 接入](docs/DSH.md) · [工具与测试](docs/TOOLS.md)
 
 发现问题或有改进建议，可以[提交 Issue](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/issues)。说明预期结果、实际表现和复现步骤，不附凭据、私有课程正文或个人学习记录。修改代码前请读 [AGENTS.md](AGENTS.md)，并按 [docs/TOOLS.md](docs/TOOLS.md#验证与发布) 完成检查。
 

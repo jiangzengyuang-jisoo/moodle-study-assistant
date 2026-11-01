@@ -95,6 +95,23 @@ node tools/moodle/run.mjs download 123 --authorized
 
 默认双侧极限会分别检查左右侧。化简相等仅指共同定义域，不自动证明两式定义域相同。只接受白名单数学表达式，不用 eval；这不是不受信任输入的资源隔离沙箱，特别复杂的符号运算仍可能耗时。保留题设，结果不替代证明审查；会计借贷和经济模型条件也需 AI 按老师方法核对。
 
+## DeepSeek Harness（DSH）
+
+```powershell
+# 只读状态：profile 位置、MCP/技能是否已指向当前项目、聊天身份类型
+& '.venv/Scripts/python.exe' tools/onboarding/dsh_integration.py status --json
+
+# 合并 DSH profile 配置：只追加 MCP 客户端与 customSkillDirs，保留已有配置并写备份
+& '.venv/Scripts/python.exe' tools/onboarding/dsh_integration.py install
+
+# 查看聊天身份解析结果（不写任何文件）
+& '.venv/Scripts/python.exe' tools/study/chat_identity.py
+```
+
+`install` 用 `# >>> ... >>>` 标记段幂等更新，重复运行只改本段；遇到同名 `moodle_study` MCP 或用户自定义 `skill-filesystem` 覆盖时不覆盖，只提示手动合并。修改后需重启 DSH 才加载。`study.cmd`/`session.py` 的 `--chat` 可省略：按“显式 `--chat` → 环境变量 `STUDY_CHAT_ID`（与本人约定的会话名）→ DSH 主聊天 `DSH_SESSION_ID`”解析；DSH 内部子会话的裸 UUID 会被拒绝，子任务必须显式传主聊天 ID 并加 `--subtask`。完整说明见 [DSH.md](DSH.md)。
+
+在受限 shell（例如 DSH 自己的沙箱）里，`node --test` 与部分 Python `tempfile` 测试可能因管道/临时目录权限失败；完整回归请在真实终端执行。
+
 ## 验证与发布
 
 面向同学的 `start.cmd` 提供中文上手向导，`diagnose.cmd` 默认只做本地诊断；`diagnose.cmd -Online -NoPause` 才会验证一次学校连接，不刷新、不写学习状态。`-Json` 输出不含个人内容的摘要，不自动上传。详见 [START.md](START.md)。新增入口测试随下面的 tests 目录 Python 测试执行。

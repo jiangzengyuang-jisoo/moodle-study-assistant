@@ -9,6 +9,7 @@ import subprocess
 import sys
 import uuid
 
+from chat_identity import ChatIdentityError, resolve_chat_id
 from state_io import atomic, digest, file_lock, read, workspace_lock, timed, validate_draft, prepare_state
 
 from snapshot_guard import file_sha, scope_details, validate_binding, validate_current_snapshot
@@ -289,16 +290,28 @@ class Session:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=ROOT)
-    parser.add_argument('--chat', required=True, help='原始用户聊天 ID；内部任务继承此 ID')
+    parser.add_argument('--chat', help='原始用户聊天 ID；缺省时按稳定会话标识解析（见 docs/SESSION.md）')
     parser.add_argument('--subtask', action='store_true')
-    parser.add_argument('command', choices=['continue', 'today', 'refresh', 'status', 'review', 'maintain', 'operation-id'])
+    parser.add_argument('command', choices=['continue', 'today', 'refresh', 'status', 'review', 'maintain', 'operation-id', 'chat-id'])
     parser.add_argument('--course')
     parser.add_argument('--snapshot-hash')
     args = parser.parse_args()
-    session = Session(args.root, args.chat)
+    try:
+        chat, chat_source = resolve_chat_id(args.chat)
+    except ChatIdentityError as error:
+        print(str(error), file=sys.stderr)
+        raise SystemExit(2)
+    if args.subtask and chat_source != 'argument':
+        # Delegated tasks must carry the original chat ID explicitly. Using the
+        # internally-derived session ID would start a second first collection.
+        print('内部任务必须显式传入原始聊天 ID 并加 --subtask；没有使用自动推断的会话标识。', file=sys.stderr)
+        raise SystemExit(2)
+    session = Session(args.root, chat)
     if args.subtask and args.command not in {'continue', 'status'}:
         raise ValueError('内部任务只允许读取接续和状态；写入交给原始聊天')
-    if args.command == 'status':
+    if args.command == 'chat-id':
+        output = {'chat_id': chat, 'chat_source': chat_source}
+    elif args.command == 'status':
         output = session.status()
     elif args.command == 'operation-id':
         # Allocate and persist before submitting any learning event.

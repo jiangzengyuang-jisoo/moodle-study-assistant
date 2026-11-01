@@ -1,0 +1,135 @@
+# 在 DeepSeek Harness（DSH）中使用
+
+本项目同时支持 Codex 本地项目和 DeepSeek Harness 桌面版。学习引擎、状态协议、Moodle 只读工具和证据规则完全相同；DSH 适配只增加**客户端接线**，不改学习逻辑，也不改变 Codex 用法。
+
+## 1. 已实测环境
+
+| 项目 | 实测值 |
+| --- | --- |
+| 客户端 | DeepSeek Harness 桌面版 `0.2.1-rc.5`（Windows） |
+| 运行时 | 自带 Node `24.21.0`、Python `3.12.14`；系统 Node `24.19.0`、Python `3.12.15` 亦可 |
+| 模型 | DeepSeek V4.1（DSH 中显示为 `deepseek-flash`），声明 `text`/`image` 输入；已实测 `read_image` 能读取原页 PNG/JPEG |
+| 会话标识 | DSH 为每次 shell 调用注入 `DSH_SESSION_ID`；主聊天形如 `session-<uuid>`，内部子会话为裸 UUID |
+| 规则加载 | 项目根 `AGENTS.md` 由 DSH 自动注入（`@deepseek-ai/dsh-agent-instructions`） |
+| 技能 | DSH 默认扫描根不含项目 `skills/`；需按下文加入一次 `customSkillDirs`，重启后进入技能目录 |
+| MCP | 通过 `@deepseek-ai/dsh-mcp-client`（stdio）托管本项目 `tools/moodle/run.mjs mcp`，只读工具 |
+| 图片输入 | 单边 ≤ 8192px、≤ 20MiB、≤ 64MP；PNG/JPEG/WebP/GIF；超出会在 `read_image` 处明确报错 |
+
+以上为 2026-11-02 在本机实测/代码核对结果。换机器、升级 DSH 或更换模型后需重新验证。
+
+## 2. 一次性安装
+
+前置：Node ≥ 22、Python ≥ 3.11；先在本项目目录运行过 `setup.cmd`（创建 `.venv`、`node_modules`、空白 `Study/`，已有学习档案会保留）。
+
+### 2.1 合并 DSH 配置
+
+在 **DSH 聊天里**运行（推荐，会自动识别 DSH 环境）：
+
+```powershell
+& '.venv/Scripts/python.exe' tools/onboarding/dsh_integration.py install
+```
+
+或在普通终端手动运行同一命令（DSH 已启动过、存在 `~/.dsh/profiles/desktop` 即可）。该命令：
+
+- 只追加两段配置：MCP stdio 客户端 + 技能目录 `customSkillDirs`；
+- 保留用户已有配置的每一行，写入前生成 `cordis.patch.yml.bak-<UTC时间>` 备份；
+- 用 `# >>> ... >>>` / `# <<< ... <<<` 标记自己的段落，**重复运行只更新本段**（幂等）；
+- 若已存在同名 `moodle_study` MCP 或用户自定义 `skill-filesystem` 覆盖，**不覆盖**，只提示手动核对；
+- 不读取、不写入任何学习数据、凭据或 Cookie。
+
+也可以运行 `setup.ps1`：检测到 DSH 环境（`DSH_SESSION_ID`/`DSH_HOME`）时会自动执行上述合并；在普通终端双击 `setup.cmd` 时不会改动 DSH 配置。
+
+<details>
+<summary>手动配置示例（脚本不可用时）</summary>
+
+把 [`templates/dsh/cordis.patch.example.yml`](../templates/dsh/cordis.patch.example.yml) 中的 `<PROJECT_ROOT>` 换成项目绝对路径（正斜杠），追加到 `~/.dsh/profiles/desktop/cordis.patch.yml` 末尾。不要删除或重排文件中已有条目。
+
+</details>
+
+### 2.2 重启并打开工作区
+
+1. 完全退出并重新启动 DeepSeek Harness（profile 配置在启动时加载）。
+2. 新建聊天时选择 **本项目文件夹**（含 `AGENTS.md`、`Study/`）作为工作区。DSH 的写入权限只覆盖会话工作区，因此后续真实学习请以这个目录为工作区；不要把“公开源码目录”和“学习部署目录”混用。
+3. 新聊天中可先问：“你用到了哪些项目规则和教学技能？”——正常回答应能说明已读取 `AGENTS.md`，并能加载 `self-study-tutor` 技能。
+
+### 2.3 诊断
+
+```powershell
+# 本地诊断（不联网、不写学习记录、不碰凭据），JSON 便于核对
+.\diagnose.cmd -Json -NoPause
+
+# 只看 DSH 接线状态（不会修改任何文件）
+& '.venv/Scripts/python.exe' tools/onboarding/dsh_integration.py status --json
+
+# 只看聊天身份解析结果（不写任何文件）
+& '.venv/Scripts/python.exe' tools/study/chat_identity.py
+```
+
+诊断中 `dsh`/`client` 两项应显示“已指向当前项目”；若提示同名 MCP 冲突或技能目录未加入，按状态 JSON 的 `warnings` 与上文手动处理。`client` 检查同时兼容原 Codex 的 `.codex/config.toml`，两种客户端任一可用即可。
+
+## 3. 聊天身份规则（与 Codex 一致）
+
+`study.cmd` / `session.py` 解析原始聊天 ID 的顺序：
+
+| 顺序 | 来源 | 说明 |
+| --- | --- | --- |
+| 1 | 显式 `--chat "原始聊天ID"` | Codex 主助手继续显式传入；DSH 也可显式传 |
+| 2 | 环境变量 `STUDY_CHAT_ID` | 客户端没有稳定 ID 时，与本人约定一个会话名并一直沿用（可恢复的替代方式） |
+| 3 | DSH 的 `DSH_SESSION_ID` | **仅接受主聊天**的 `session-<uuid>` 形式，自动接续 |
+
+规则：
+
+- 同一聊天跨轮、重开、上下文压缩：ID 不变，第二次起复用已核验结果，**不会重复首次刷新**。
+- 真正新建聊天：新的 `DSH_SESSION_ID`，首次进入学习时正常采集一次。
+- **禁止**随机生成 ID，也**禁止**所有聊天共用一个固定 ID；无法可靠取得身份时按上表第 2 行与本人约定名称，或明确报错停下。
+- DSH 内部子会话/子代理拿到的是自己的裸 UUID，**不能**当原始聊天 ID：子任务必须由主助手把主聊天 ID 显式写进任务，并加 `--subtask`（只允许 `continue`/`status`，不联网、不写学习状态）。
+
+日常命令（在项目根执行，未传 `--chat` 时自动使用上面的稳定身份）：
+
+```powershell
+.\study.cmd continue          # 学习接续；本聊天首次调用会完整采集一次
+.\study.cmd today             # 接续 + 今日复习与视图
+.\study.cmd status            # 只看本地状态，不联网
+.\study.cmd refresh           # 本人明确要求更新学校信息时才用
+```
+
+## 4. 原页图片
+
+- PDF 页：`tools/study/library.cmd render <material_id> --unit N` 返回 `path`（`Study/_System/Library/renders/<sha>/page-N-<dpi>.png`），随后让助手用 DSH `read_image` 读取该路径。默认 130dpi；密集公式/表格可用 144–180；本工具上限 300dpi。
+- 图片原件：`render` 直接返回原文件路径，可直接 `read_image`。
+- PPTX/DOCX：本工具不生成页图，只返回原文件与 slide/section 编号。DSH 中可用内置 `office-render` 技能渲成图片后再 `read_image`，或请本人提供 PDF/截图。
+- 渲染结果 `verified:false`，只表示“看到原页”，不代表核读通过或掌握。
+
+## 5. 只读与数据边界
+
+- Moodle 工具仍是只读集合；不注册下载、提交、发帖、改完成状态等写操作。普通刷新不下载附件，下载需本人明确指定模块。
+- 所有学习状态写入仍走 `study.cmd review` / `state_io.py` 等正式入口：锁、版本哈希、快照绑定、操作去重、历史证据保护不变；助手不直接改写 `state.json`。
+- 普通问答、查询或纠正本地记忆不触发 Moodle 联网；只有学习启动或本人明确刷新才检查学校信息。
+- DSH 配置里只有本机路径和 `serverName`，不含凭据；Moodle Token 仍由 Windows DPAPI 加密保存在 `.private/`，不进入聊天、状态或 Git。
+
+## 6. 测试
+
+离线回归（需先在项目内完成 `setup`；建议在真实终端运行）：
+
+```powershell
+node --test tests/*.test.mjs
+& '.venv/Scripts/python.exe' -B -m unittest discover -s tests -p 'test_*.py'
+& '.venv/Scripts/python.exe' -B -m unittest discover -s tools/study -p 'test_*.py'
+```
+
+DSH 适配新增的测试：
+
+- `tests/test_dsh_integration.py`：聊天身份解析、DSH profile 合并/备份/幂等/冲突保护、CLI 行为；
+- `tests/chat-identity.test.mjs`：Node 侧身份解析（`refresh` 入口）；
+- `tests/test_onboarding.py`：诊断同时识别 Codex 与 DSH 配置。
+
+注意：在 DSH 的受限 shell 里直接运行 `node --test` 或 Python `tempfile` 相关测试可能被沙箱拒绝（Windows 管道/临时目录权限），这不代表代码失败；请在普通终端运行完整回归。
+
+## 7. 已知限制与待验证
+
+- 技能目录与 MCP 配置修改后**必须重启 DSH** 才生效；运行中的聊天不会热加载 profile。
+- 在聊天中人工上传图片→模型识别的链路尚未在本适配中实测（`read_image` 读取本地文件已实测）。
+- DSH 跨桌面版重启后同一聊天 ID 是否保持，尚未实测；以 `chat_identity.py` 输出与第二次 `continue` 是否复用为准。
+- 真实学校 SSO/MFA、Windows OCR 中文语言包、PPTX/DOCX 经 `office-render` 的清晰度仍需按实际课件验证。
+- 如果 DSH 默认模型不是支持图片输入的 DeepSeek 模型，`read_image` 会明确拒绝；请在校内设置中确认模型（本版按 DeepSeek V4.1 验证）。
+- 在 Windows 受限环境（如本仓库之外的沙箱）运行测试命令可能失败，属于执行环境限制，不是学习工具回归。

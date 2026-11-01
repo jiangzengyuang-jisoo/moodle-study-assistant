@@ -17,6 +17,14 @@ import tomllib
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
+_ONBOARDING_DIR = str(Path(__file__).resolve().parent)
+if _ONBOARDING_DIR not in sys.path:
+    sys.path.insert(0, _ONBOARDING_DIR)
+try:  # Tolerate a partial copy: diagnosis must never crash on a missing helper.
+    import dsh_integration  # noqa: E402  (same directory; explicit path for loaders)
+except ImportError:  # pragma: no cover - only for incomplete file copies
+    dsh_integration = None
+
 INSTALL_URLS = 'Node.js：https://nodejs.org/；Python：https://www.python.org/downloads/windows/'
 TIPS = '''学习时请记住：
 1. 同题追问和同一知识点练习留在原聊天；换课程或独立任务可在同一项目里新建聊天。
@@ -85,10 +93,13 @@ def online_result(code, stdout, stderr):
 
 
 class App:
-    def __init__(self, root=ROOT, run_probe=probe, locate=shutil.which):
+    def __init__(self, root=ROOT, run_probe=probe, locate=shutil.which, environ=None):
         self.root = Path(root).resolve()
         self.probe = run_probe
         self.locate = locate
+        # Injectable environment keeps diagnostics deterministic in tests; real
+        # runs use the process environment so DSH_* facts are visible.
+        self.environ = dict(os.environ if environ is None else environ)
         self._last_online = None
         self._online_scope = None
         self._pip_repair_failed = False
@@ -249,7 +260,8 @@ class App:
         except (OSError, ValueError, AttributeError):
             return '待确认'
 
-    def _client_check(self, add):
+    def _codex_client_status(self):
+        """Return ok/missing/warning for the Codex project-level MCP config."""
         path = self.root / '.codex/config.toml'
         try:
             with path.open('rb') as stream:
@@ -260,11 +272,46 @@ class App:
                     or Path(args[0]).resolve() != self.root / 'tools/moodle/run.mjs'
                     or not (Path(command).is_file() or self.locate(command))):
                 raise ValueError()
-            add('client', 'ok', '本地 AI 工具配置路径可用；客户端是否加载仍需本人确认。')
+            return 'ok'
         except FileNotFoundError:
-            add('client', 'missing', '尚未发现本地 AI 工具配置。', '运行安装后，在 AI 客户端打开项目并确认工具连接。')
+            return 'missing'
         except (OSError, ValueError, KeyError, TypeError):
+            return 'warning'
+
+    def _client_check(self, add):
+        """Report Codex and DeepSeek Harness wiring together; both are read only."""
+        codex = self._codex_client_status()
+        dsh = self._dsh_status(add)
+        if codex == 'ok':
+            add('client', 'ok', 'Codex 本地 AI 工具配置路径可用；客户端是否加载仍需本人确认。')
+        elif dsh == 'ok':
+            add('client', 'ok', 'DeepSeek Harness 工具配置路径可用；客户端是否加载仍需本人确认。')
+        elif 'warning' in (codex, dsh):
             add('client', 'warning', '已有 AI 工具配置需要核对。', '移动项目或更新环境后让 AI 核对路径；向导不覆盖自定义配置。')
+        else:
+            add('client', 'missing', '尚未发现本地 AI 工具配置。', '运行安装后，在 AI 客户端打开项目并确认工具连接。')
+
+    def _dsh_status(self, add):
+        if dsh_integration is None:
+            add('dsh', 'warning', 'DeepSeek Harness 诊断组件缺失；未做 DSH 配置检查。', '重新解压完整项目后再运行诊断。')
+            return 'warning'
+        status = dsh_integration.inspect(self.root, self.environ)
+        chat = status['chat']
+        if not status['detected']:
+            add('dsh', 'ok', '未检测到 DeepSeek Harness；Codex 本地项目入口不受影响。')
+            return 'not-detected'
+        configured = status['mcp']['status'] == 'configured' and status['skills']['status'] == 'configured'
+        if configured:
+            add('dsh', 'ok', 'DeepSeek Harness 的 MCP 与技能配置已指向当前项目；加载情况以重启后的聊天为准。',
+                '' if chat['auto_resolvable'] else '当前会话标识不能直接当原始聊天 ID；内部任务显式传入主聊天 ID 并加 --subtask。')
+            return 'ok'
+        if status['mcp']['status'] == 'conflict':
+            add('dsh', 'warning', 'DeepSeek Harness 已有同名 MCP 配置，但未指向当前项目。',
+                '按 docs/DSH.md 手动核对；向导不会覆盖已有自定义配置。')
+            return 'warning'
+        add('dsh', 'missing', '尚未完成 DeepSeek Harness 的 MCP 与技能配置。',
+            '选择“安装或更新依赖”（会合并配置并备份），或运行 python tools/onboarding/dsh_integration.py install。')
+        return 'missing'
 
     def _school_check(self, state, add):
         runtime = self.root / 'Study/_System/Runtime'
@@ -412,7 +459,8 @@ def guide(app, ask=input, output=print):
                     output(row['message'] + ' ' + row['next_step'])
             output(HANDOFF); output(TIPS); continue
         if action == 'setup':
-            output('将安装/更新项目依赖并运行现有初始化流程，已有学习记录保留。已有资料的缓存同步可能耗时。')
+            output('将安装/更新项目依赖并运行现有初始化流程，已有学习记录保留。已有资料的缓存同步可能耗时。'
+                   '如检测到 DeepSeek Harness，会合并 MCP 与技能配置（保留原有配置并写备份）。')
             if ask('继续请输入 Y，其他输入返回：').strip().lower() != 'y':
                 continue
         if action == 'connect':

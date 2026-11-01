@@ -25,3 +25,10 @@
 - 不自动下载课程文件、不提交作业、不替用户作答学校测验、不发帖、不改学校完成状态、不发邮件。用户明确请求下载后，才按 `docs/TOOLS.md` 的独立下载入口获取已选课程中的指定资源模块，先存入 `_Inbox/`，核读后归档；不扩大成全课程抓取。凭据或网络失败时如实说明；不得绕过学校限制。
 - 回复用简明中文，给有用结论和下一步。保留来源证据在本地状态，默认不堆技术日志。无需用户再次确认已授权的日常读取和本地学习维护。
 - 修改面向同学的功能或修复问题时，同步维护 `CHANGELOG.md`，说明新增、修复或改进及升级后怎么用，并更新 README 的最近三次功能更新；以实际代码和验证为依据，不把个人学习记录写入公开日志。纯文档补充可并入对应日期的条目。
+
+## DeepSeek Harness（DSH）客户端
+
+- 本项目同时支持 Codex 与 DeepSeek Harness。DSH 以项目根目录为工作区时，根 `AGENTS.md` 由客户端自动读取；仓库内 `skills/self-study-tutor/SKILL.md` 与根 `SKILL.md` 先按需读取，技能是否已注册以 `python tools/onboarding/dsh_integration.py status --json` 为准。
+- 聊天身份沿用统一入口：未显式传 `--chat` 时按“显式参数 → 环境变量 `STUDY_CHAT_ID`（与本人约定的会话名）→ DSH 主聊天的 `DSH_SESSION_ID`（`session-<uuid>` 形式）”解析。禁止随机生成，也禁止所有聊天共用一个固定 ID。DSH 内部子会话得到的是裸 UUID，不能当原始聊天 ID：内部任务必须由主助手显式传原始 ID 并加 `--subtask`。
+- DSH 一次性接线：在 DSH 聊天中运行 `setup`（检测到 DSH 时会合并配置）或 `python tools/onboarding/dsh_integration.py install`；只追加 MCP 与技能目录配置、保留原有配置并写备份，重启 DSH 后生效。详见 [docs/DSH.md](docs/DSH.md)。
+- 原页查看：`library.cmd render` 返回 PNG 路径后，用 Harness 的 `read_image` 查看；PPTX/DOCX 没有页图，使用 `office-render` 技能或请本人提供 PDF/截图。模型图片能力以实际模型声明为准（本版已实测 DeepSeek V4.1 可读 PNG/JPEG）。

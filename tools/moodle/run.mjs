@@ -1,6 +1,7 @@
 import {decryptWindowsToken} from './windows-token.mjs';
 import {connectionDiagnostic} from './connection-errors.mjs';
 import {loadCollectionRequest, bindCollection} from './collection-request.mjs';
+import {resolveChatId} from './chat-identity.mjs';
 import { saveState, python } from './state-bridge.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -25,7 +26,18 @@ async function main() {
   if (mode === 'refresh') {
     const args = process.argv.slice(3);
     const index = args.indexOf('--chat');
-    const chat = index >= 0 ? args[index + 1] : 'manual-refresh-entry';
+    let resolved;
+    try {
+      // Explicit --chat keeps the client's original thread ID; DSH main chats
+      // supply it through DSH_SESSION_ID. Manual refresh without either keeps
+      // the historical manual entry so a human command still has a stable key.
+      resolved = resolveChatId(index >= 0 ? args[index + 1] : '', process.env);
+    } catch (error) {
+      console.error(error.message);
+      process.exitCode = 1;
+      return;
+    }
+    const chat = resolved ? resolved.chat : 'manual-refresh-entry';
     const result = spawnSync(python(root), [join(root, 'tools/study/session.py'), '--chat', chat, 'refresh'],
       {stdio: 'inherit', windowsHide: true, env: {...process.env, STUDY_NODE: process.execPath}});
     process.exitCode = result.status ?? 1;

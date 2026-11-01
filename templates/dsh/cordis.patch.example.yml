@@ -1,0 +1,34 @@
+# DeepSeek Harness（DSH）配置示例
+#
+# 这是 tools/onboarding/dsh_integration.py install 会追加到用户
+# `~/.dsh/profiles/desktop/cordis.patch.yml` 的片段示例。
+# 实际安装不需要手工复制：脚本会解析真实路径、保留已有配置、写备份并幂等更新。
+#
+# 手动合并时应把 <PROJECT_ROOT> 换成项目绝对路径（正斜杠），<NODE> 换成 node 可执行文件。
+# 片段放在 patch 文件末尾即可；它由两段组成：
+#   1) 一个 MCP stdio 客户端，启动本部署的只读 Moodle 服务；
+#   2) 一个文件系统技能源覆盖，把本部署的 skills/ 目录加入技能目录。
+# 修改 profile 后需要重启 DeepSeek Harness 桌面版，新建聊天才会加载。
+
+# >>> moodle-study-assistant DSH integration (generated) >>>
+# 由 tools/onboarding/dsh_integration.py install 生成；重跑只更新本段，其他配置保留。
+# 删除本段即可回滚。
+- insert:
+    - id: moodle-study
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: moodle_study
+        transport: stdio
+        command: '<NODE>'
+        args:
+          - '<PROJECT_ROOT>/tools/moodle/run.mjs'
+          - 'mcp'
+        env: {}
+        cwd: '<PROJECT_ROOT>'
+        failOnStartupError: true
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    customSkillDirs:
+      - '<PROJECT_ROOT>/skills'
+# <<< moodle-study-assistant DSH integration (generated) <<<

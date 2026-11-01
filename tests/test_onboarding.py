@@ -40,7 +40,7 @@ class OnboardingTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.calls = []
-        self.app = entry.App(self.root, run_probe=self.fake_probe, locate=lambda name: 'node.exe' if name == 'node' else 'npm.cmd')
+        self.app = entry.App(self.root, run_probe=self.fake_probe, locate=lambda name: 'node.exe' if name == 'node' else 'npm.cmd', environ={})
 
     def fake_probe(self, args, root, timeout=20):
         self.assertEqual(self.root, root)
@@ -361,6 +361,61 @@ catch(error) { console.error(error.code + ': ' + error.message); process.exitCod
         self.assertEqual('warning', self.checks(self.app.inspect())['client']['status'])
         self.assertEqual(before, self.tree())
 
+    def _dsh_patch(self, configured=True, project=None):
+        home = Path(self.temp.name) / 'dsh-home'
+        profile = home / 'profiles/desktop'
+        profile.mkdir(parents=True)
+        (self.root / 'skills').mkdir(exist_ok=True)
+        patch = profile / 'cordis.patch.yml'
+        project = project or self.root
+        slash = lambda path: str(path).replace('\\', '/')
+        if configured:
+            patch.write_text(
+                "- insert:\n    - id: moodle-study\n      name: '@deepseek-ai/dsh-mcp-client'\n"
+                '      config:\n        serverName: moodle_study\n        transport: stdio\n'
+                "        command: 'node'\n        args:\n"
+                '          - "' + slash(project / 'tools/moodle/run.mjs') + '"\n'
+                "          - 'mcp'\n"
+                '        cwd: "' + slash(project) + '"\n'
+                "- id: skill-filesystem\n  name: '@deepseek-ai/dsh-skill-filesystem'\n"
+                '  config:\n    customSkillDirs:\n'
+                '      - "' + slash(project / 'skills') + '"\n', encoding='utf-8')
+        else:
+            patch.write_text('# profile without project wiring\n', encoding='utf-8')
+        return home
+
+    def _dsh_app(self, home):
+        return entry.App(self.root, run_probe=self.fake_probe,
+                         locate=lambda name: 'node.exe' if name == 'node' else 'npm.cmd',
+                         environ={'DSH_HOME': str(home)})
+
+    def test_dsh_project_wiring_is_recognized_without_codex_config(self):
+        self.prepared()
+        (self.root / '.codex/config.toml').unlink()
+        home = self._dsh_patch()
+        report = self._dsh_app(home).inspect()
+        self.assertEqual('ok', self.checks(report)['client']['status'])
+        self.assertEqual('ok', self.checks(report)['dsh']['status'])
+        self.assertEqual('handoff', report['next_action'])
+
+    def test_dsh_without_project_wiring_recommends_setup(self):
+        self.prepared()
+        (self.root / '.codex/config.toml').unlink()
+        home = self._dsh_patch(configured=False)
+        report = self._dsh_app(home).inspect()
+        self.assertEqual('missing', self.checks(report)['client']['status'])
+        self.assertEqual('setup', report['next_action'])
+
+    def test_dsh_conflicting_mcp_is_reported_not_ignored(self):
+        self.prepared()
+        (self.root / '.codex/config.toml').unlink()
+        home = self._dsh_patch(configured=True, project=self.root.parent / 'other-project')
+        before = self.tree()
+        report = self._dsh_app(home).inspect()
+        self.assertEqual('warning', self.checks(report)['client']['status'])
+        self.assertEqual('warning', self.checks(report)['dsh']['status'])
+        self.assertEqual(before, self.tree())
+
     def test_menu_tips_handoff_and_exit_never_install_or_refresh(self):
         self.prepared()
         answers = iter(['4', '1', '0'])
@@ -473,8 +528,11 @@ catch(error) { console.error(error.code + ': ' + error.message); process.exitCod
     def test_real_powershell_and_python_diagnose_blank_root_never_initialize(self):
         target = self.root / 'tools/onboarding'
         target.mkdir(parents=True)
-        for name in ('start.ps1', 'entry.py', 'python-runtime.ps1'):
-            shutil.copyfile(ROOT / 'tools/onboarding' / name, target / name)
+        for source in (ROOT / 'tools/onboarding').iterdir():
+            if source.is_file():
+                shutil.copyfile(source, target / source.name)
+        (self.root / 'tools/study').mkdir(parents=True)
+        shutil.copyfile(ROOT / 'tools/study/chat_identity.py', self.root / 'tools/study/chat_identity.py')
         before = self.tree()
         result = subprocess.run([entry.powershell(), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(target / 'start.ps1'),
                                  '-Mode', 'Diagnose', '-Json', '-NoPause'],
@@ -489,8 +547,11 @@ catch(error) { console.error(error.code + ': ' + error.message); process.exitCod
     def test_actual_cmd_launchers_show_diagnostic_and_menu_without_writes(self):
         target = self.root / 'tools/onboarding'
         target.mkdir(parents=True)
-        for name in ('start.ps1', 'entry.py', 'python-runtime.ps1'):
-            shutil.copyfile(ROOT / 'tools/onboarding' / name, target / name)
+        for source in (ROOT / 'tools/onboarding').iterdir():
+            if source.is_file():
+                shutil.copyfile(source, target / source.name)
+        (self.root / 'tools/study').mkdir(parents=True)
+        shutil.copyfile(ROOT / 'tools/study/chat_identity.py', self.root / 'tools/study/chat_identity.py')
         for name in ('start.cmd', 'diagnose.cmd'):
             shutil.copyfile(ROOT / name, self.root / name)
         system = Path(os.environ['SystemRoot']) / 'System32'

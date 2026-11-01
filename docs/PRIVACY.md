@@ -2,6 +2,8 @@
 
 代码可以公开，个人数据不随代码发布。安装后生成的 `Study/`、`.private/`、`config.local.json` 和 `.codex/` 已列入 Git 忽略规则。忽略规则只保护常规 Git 添加，不保护手动压缩、网盘同步、强制添加或屏幕分享。
 
+DeepSeek Harness 的接入配置位于用户自己的 Harness profile（`~/.dsh/profiles/<profile>/cordis.patch.yml`），不在本仓库内；合并命令只写入本机路径与 MCP 服务名，不写入凭据。请同样不要把该 profile 配置、备份或整个 Harness 数据目录分享给他人。
+
 ## 认证
 
 浏览器辅助仅打开新的临时浏览器会话，让本人在学校网页完成登录，接收官方移动授权回调。程序不读取或导出浏览器 Cookie、不读取网页密码、不使用作者登录状态。回调用本次 passport 与站点标识核对，只保留普通 API Token，丢弃移动协议中的 private token。
