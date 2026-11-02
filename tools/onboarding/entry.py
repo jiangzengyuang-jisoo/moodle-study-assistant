@@ -320,10 +320,26 @@ class App:
         except (OSError, ValueError, KeyError, TypeError):
             return 'warning'
 
+    def _release_client(self):
+        path = self.root / 'client-target.json'
+        if not path.exists():
+            return 'legacy'
+        data = read_json(path)
+        if data.get('version') != 1 or data.get('client') not in ('codex', 'deepseek'):
+            raise ValueError('Invalid client-target.json')
+        return data['client']
+
     def _client_check(self, add):
         """Report Codex and DeepSeek Harness wiring together; both are read only."""
-        codex = self._codex_client_status()
-        dsh = self._dsh_status(add)
+        try:
+            target = self._release_client()
+        except (OSError, ValueError, AttributeError):
+            add('client', 'warning', '客户端分支配置无效。', '从所选分支恢复 client-target.json；不修改学习档案。')
+            return
+        codex = self._codex_client_status() if target != 'deepseek' else 'missing'
+        dsh = self._dsh_status(add) if target != 'codex' else 'not-selected'
+        if target == 'deepseek' and dsh == 'not-detected':
+            dsh = 'missing'
         if codex == 'ok':
             add('client', 'ok', 'Codex 本地 AI 工具配置路径可用；客户端是否加载仍需本人确认。')
         elif dsh == 'ok':
@@ -340,7 +356,7 @@ class App:
         status = dsh_integration.inspect(self.root, self.environ)
         chat = status['chat']
         if not status['detected']:
-            add('dsh', 'ok', '未检测到 DeepSeek Harness；Codex 本地项目入口不受影响。')
+            add('dsh', 'ok', '未检测到 DeepSeek Harness；本次未确认其客户端配置。')
             return 'not-detected'
         if status.get('patch_parse') == 'unavailable':
             add('dsh', 'warning', 'DeepSeek Harness 配置检查需要未安装的 YAML 解析依赖。',
@@ -511,7 +527,7 @@ def guide(app, ask=input, output=print):
             output(HANDOFF); output(TIPS); continue
         if action == 'setup':
             output('将安装/更新项目依赖并运行现有初始化流程，已有学习记录保留。已有资料的缓存同步可能耗时。'
-                   '如检测到 DeepSeek Harness，会合并 MCP 与技能配置（保留原有配置并写备份）。')
+                   '仅配置 client-target.json 指定的客户端；DeepSeek 分支合并 MCP 与技能配置并备份，Codex 分支不修改 Harness。')
             if ask('继续请输入 Y，其他输入返回：').strip().lower() != 'y':
                 continue
         if action == 'connect':

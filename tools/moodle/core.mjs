@@ -20,8 +20,17 @@ export function atomicJSON(path, value) {
   renameSync(temp, path);
 }
 
+export function clientTarget(root) {
+  const path = join(root, 'client-target.json');
+  if (!existsSync(path)) return 'codex'; // Older Codex installations remain usable.
+  const target = JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
+  if (target.version !== 1 || !['codex', 'deepseek'].includes(target.client)) throw new Error('Invalid client-target.json');
+  return target.client;
+}
+
 export function initialize(root) {
-  for (const dir of ['Study/_System', 'Study/_Inbox', '.private', '.codex']) mkdirSync(join(root, dir), {recursive: true});
+  const target = clientTarget(root);
+  for (const dir of ['Study/_System', 'Study/_Inbox', '.private', ...(target === 'codex' ? ['.codex'] : [])]) mkdirSync(join(root, dir), {recursive: true});
   const configPath = join(root, 'config.local.json');
   if (!existsSync(configPath)) atomicJSON(configPath, {moodle_url: 'https://moodle.hku.hk', timezone: 'Asia/Hong_Kong'});
   const path = join(root, 'Study/_System/state.json');
@@ -44,7 +53,7 @@ export function initialize(root) {
     saveState(root, 'init', state);
   }
   const mcpPath = join(root, '.codex/config.toml');
-  if (!existsSync(mcpPath)) writeFileSync(mcpPath,
+  if (target === 'codex' && !existsSync(mcpPath)) writeFileSync(mcpPath,
     '[mcp_servers.moodle_study]\ncommand = ' + JSON.stringify(process.execPath.replaceAll('\\', '/')) +
     '\nargs = [' + JSON.stringify(join(root, 'tools/moodle/run.mjs').replaceAll('\\', '/')) + ', "mcp"]\nstartup_timeout_sec = 60\ntool_timeout_sec = 180\n', 'utf8');
   return JSON.parse(readFileSync(path, 'utf8'));

@@ -22,6 +22,27 @@ from state_io import atomic, digest, read
 
 
 class OnboardingTests(unittest.TestCase):
+    def test_codex_release_ignores_dsh_environment_and_configuration(self):
+        self.write('client-target.json', {'version': 1, 'client': 'codex'})
+        rows = []
+        with patch.object(self.app, '_dsh_status', side_effect=AssertionError('must not inspect DSH')), patch.object(self.app, '_codex_client_status', return_value='ok'):
+            self.app._client_check(lambda *args: rows.append(args))
+        self.assertEqual(rows[0][:2], ('client', 'ok'))
+        self.assertIn('Codex', rows[0][2])
+
+    def test_deepseek_release_does_not_accept_codex_as_ready(self):
+        self.write('client-target.json', {'version': 1, 'client': 'deepseek'})
+        rows = []
+        with patch.object(self.app, '_codex_client_status', side_effect=AssertionError('must not inspect Codex')), patch.object(self.app, '_dsh_status', return_value='missing'):
+            self.app._client_check(lambda *args: rows.append(args))
+        self.assertEqual(rows[-1][:2], ('client', 'missing'))
+
+    def test_invalid_release_is_diagnostic_warning(self):
+        self.write('client-target.json', {'version': 1, 'client': 'unknown'})
+        rows = []
+        self.app._client_check(lambda *args: rows.append(args))
+        self.assertEqual(rows[0][:2], ('client', 'warning'))
+
     def test_structured_connection_failures_use_static_safe_guidance(self):
         for code, expected in [('STUDY_DNS', '域名'), ('STUDY_TIMEOUT', '超时'),
                                ('STUDY_TLS', '证书'), ('STUDY_ACCESS', '拒绝'),

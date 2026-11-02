@@ -43,6 +43,7 @@ Add-Type -TypeDefinition 'public class BrokenPip { public static int Main(string
         for name in ('start.ps1', 'entry.py', 'python-runtime.ps1'):
             shutil.copyfile(ROOT / 'tools/onboarding' / name, target / name)
         shutil.copyfile(ROOT / 'setup.ps1', self.root / 'setup.ps1')
+        (self.root / 'client-target.json').write_text('{"version":1,"client":"codex"}', encoding='utf-8')
         (self.root / 'requirements.txt').write_text('', encoding='utf-8')
         (self.root / 'package.json').write_text('{"version":"0.3.1"}', encoding='utf-8')
         binaries = self.root / 'bin'; binaries.mkdir()
@@ -69,7 +70,23 @@ Add-Type -TypeDefinition 'public class BrokenPip { public static int Main(string
     def completed_steps(self):
         return (self.root / 'post-install.log').read_text(encoding='utf-8').splitlines()
 
+    def test_deepseek_setup_uses_release_even_outside_harness_and_reports_failure(self):
+        (self.root / 'client-target.json').write_text('{"version":1,"client":"deepseek"}', encoding='utf-8')
+        self.env.pop('DSH_HOME', None)
+        self.env.pop('DSH_SESSION_ID', None)
+        helper = self.root / 'tools/onboarding/dsh_integration.py'
+        helper.write_text('from pathlib import Path; Path("dsh-called").write_text("yes")', encoding='utf-8')
+        result = self.run_ps(self.root / 'setup.ps1')
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual('yes', (self.root / 'dsh-called').read_text())
+        helper.write_text('raise SystemExit(2)', encoding='utf-8')
+        result = self.run_ps(self.root / 'setup.ps1')
+        self.assertNotEqual(0, result.returncode)
+        self.assertNotIn('Setup complete', result.stdout)
+
     def test_standalone_setup_skips_old_py_and_uses_working_python(self):
+        self.env['DSH_HOME'] = str(self.root / 'must-not-configure')
+        (self.root / 'tools/onboarding/dsh_integration.py').write_text('raise SystemExit(91)', encoding='utf-8')
         result = self.run_ps(self.root / 'setup.ps1')
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertEqual(0, self.pip_version().returncode)

@@ -1,5 +1,7 @@
 # 在 DeepSeek Harness（DSH）中使用
 
+> 当前 `codex` 分支不使用这份安装流程。此文件作为兼容实现的参考保留；实际安装请使用独立目录中的 `deepseek` 分支。
+
 本项目同时支持 Codex 本地项目和 DeepSeek Harness 桌面版。学习引擎、状态协议、Moodle 只读工具和证据规则完全相同；DSH 适配只增加**客户端接线**，不改学习逻辑，也不改变 Codex 用法。
 
 ## 1. 已实测环境

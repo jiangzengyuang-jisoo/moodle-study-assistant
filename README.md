@@ -1,5 +1,7 @@
 # Moodle Study Assistant
 
+**Codex edition — branch `codex`.** Select this branch before downloading. For DeepSeek Harness use branch `deepseek` in a separate folder. Setup configures Codex only. [Branch maintenance](docs/BRANCHES.md).
+
 **Study with your course materials, your instructor's requirements, and a record of what you have actually learned.**
 
 **English** · [简体中文](README.zh-CN.md)
@@ -130,23 +132,11 @@ If setup stalls, share the error text without passwords or tokens and ask the as
 
 </details>
 
-## Use with DeepSeek Harness (optional)
-
-The same project works in a **DeepSeek Harness** desktop chat, and the Codex instructions above keep working:
-
-1. Finish the normal setup (`setup.cmd`) in this folder.
-2. In a Harness chat, run `python tools/onboarding/dsh_integration.py install` (running `setup` inside Harness also merges it). It appends an MCP stdio entry and a skill directory to your Harness profile, keeps every existing entry, and writes a backup. It never touches study records or credentials.
-3. Restart DeepSeek Harness and open this folder as the chat workspace.
-4. No chat ID is typed per message: the stable Harness session ID is used, so continuing the same chat reuses verified information while a genuinely new chat collects once. Internal delegated tasks must receive the original chat ID explicitly and add `--subtask`.
-5. Original pages: `library.cmd render` returns a PNG path that the assistant reads with `read_image`. PPTX/DOCX have no page image, so use the `office-render` skill or provide a PDF/screenshot.
-
-See the [DeepSeek Harness guide](docs/DSH.md) (Chinese) for the configuration example, diagnostics, identity rules and known limits. The Harness adaptation was validated locally on Windows with DeepSeek V4.1; other clients and operating systems remain unvalidated.
-
 ## FAQ and privacy
 
 **Can I use only the web or mobile app, another AI client, or another operating system?**
 
-The supported onboarding paths are the Windows local Codex project described above and, optionally, DeepSeek Harness desktop through the one-time profile merge described above. Browser-only/mobile-only setup, other AI clients, and other operating systems have not been validated for this workflow.
+This branch provides the Windows local Codex project setup described above. Browser-only/mobile-only setup, other AI clients, and other operating systems have not been validated for this workflow.
 
 **Do I need an API key or a separate subscription?**
 
@@ -174,7 +164,7 @@ Ask the assistant to back up and preserve `Study/`, configuration, credentials, 
 
 | Date | Change |
 | --- | --- |
-| [2026-11-02](CHANGELOG.md#2026-11-02) | Course-authorized automatic downloads, filing and indexing; inspect and correct memory; optional DeepSeek Harness support |
+| [2026-11-02](CHANGELOG.md#2026-11-02) | Course-authorized automatic downloads, filing and indexing; inspect and correct memory; separate Codex and DeepSeek release branches |
 | [2026-11-01](CHANGELOG.md#2026-11-01) | English and Chinese READMEs explain the course library and study continuity; narrower startup scope and clearer Moodle diagnostics |
 | [2026-10-31](CHANGELOG.md#2026-10-31) | Stronger learning-record protection, cross-chapter continuity, and Chinese setup diagnostics |
 
@@ -184,7 +174,7 @@ Offline tests do not validate real school login or every installation environmen
 
 Detailed guides are currently primarily in Chinese:
 
-[Study workflow](docs/使用须知.md) · [Tutoring](docs/TUTORING.md) · [Material library](docs/LIBRARY.md) · [Version management](docs/MATERIAL_VERSIONS.md) · [Exam preparation](docs/EXAM_PREP.md) · [Session recovery](docs/SESSION.md) · [DeepSeek Harness](docs/DSH.md) · [Tools and tests](docs/TOOLS.md)
+[Study workflow](docs/使用须知.md) · [Tutoring](docs/TUTORING.md) · [Material library](docs/LIBRARY.md) · [Version management](docs/MATERIAL_VERSIONS.md) · [Exam preparation](docs/EXAM_PREP.md) · [Session recovery](docs/SESSION.md) · [Client branches](docs/BRANCHES.md) · [Tools and tests](docs/TOOLS.md)
 
 For a bug report or improvement, [open an issue](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/issues). Describe the expected behavior, actual result, and reproduction steps without credentials, private course content, or learning records. Code changes should follow [AGENTS.md](AGENTS.md) and the checks in [docs/TOOLS.md](docs/TOOLS.md#验证与发布).
 

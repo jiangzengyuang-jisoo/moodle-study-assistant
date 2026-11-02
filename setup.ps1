@@ -1,6 +1,8 @@
 param([string]$PythonExecutable = '')
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
+$clientTarget = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'client-target.json') -Raw | ConvertFrom-Json
+if ($clientTarget.version -ne 1 -or $clientTarget.client -notin @('codex', 'deepseek')) { throw 'Invalid client-target.json. Restore the file from your release branch.' }
 . (Join-Path $PSScriptRoot 'tools/onboarding/python-runtime.ps1')
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'Install Node.js 22+ LTS from https://nodejs.org/ then reopen setup.cmd.' }
 & node -e "if(Number(process.versions.node.split('.')[0])<22)process.exit(1)"
@@ -33,13 +35,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Review initialization failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Learning workflow initialization failed.' }
 & '.venv/Scripts/python.exe' tools/study/library.py sync
 if ($LASTEXITCODE -ne 0) { throw 'Material library initialization failed. Your study records are preserved.' }
-# Additive DeepSeek Harness wiring: only when setup runs inside Harness, and only
-# through the merge command that preserves existing profile entries with a backup.
-if ($env:DSH_SESSION_ID -or $env:DSH_HOME) {
-    Write-Host 'Detected DeepSeek Harness; merging MCP and skill configuration (existing entries preserved, backup written).'
+# The release branch chooses the client, not inherited environment variables.
+if ($clientTarget.client -eq 'deepseek') {
+    Write-Host 'DeepSeek release; merging MCP and skill configuration (existing entries preserved, backup written).'
     & '.venv/Scripts/python.exe' tools/onboarding/dsh_integration.py install
     if ($LASTEXITCODE -ne 0) {
-        Write-Host 'DeepSeek Harness configuration was not changed. Run python tools/onboarding/dsh_integration.py status --json and follow docs/DSH.md.'
+        throw 'DeepSeek Harness configuration did not complete. Run python tools/onboarding/dsh_integration.py status --json and follow docs/DSH.md.'
     } else {
         Write-Host 'DeepSeek Harness configuration merged. Restart DeepSeek Harness and reopen this folder as the workspace.'
     }
