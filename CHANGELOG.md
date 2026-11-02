@@ -17,6 +17,11 @@
 
 ## 2026-11-02
 
+### 登录浏览器启动修复
+
+- `connect.cmd` 为本次登录进程使用项目内被 Git 忽略的 `tmp/auth-runtime` 临时目录，避免系统临时目录不可用时浏览器尚未弹出就失败；不修改 Windows 全局环境变量。无法创建目录时给出明确提示。
+- 更新后重新双击 `connect.cmd`，由本人在学校网页完成登录；无需重装浏览器或迁移学习记录。已复现原临时目录错误，并验证修复后的 Edge/Chrome 空白浏览器可启动；实际学校登录仍需本人完成。
+
 ### DeepSeek Harness（DSH）适配
 
 - 同一份学习引擎可在 DeepSeek Harness 桌面版中继续使用，Codex 本地项目入口保持不变；新增 [DSH 使用说明](docs/DSH.md) 与 `templates/dsh/` 配置示例。
