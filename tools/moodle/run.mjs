@@ -10,6 +10,8 @@ import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { initialize, atomicJSON, ReadOnlyClient } from './core.mjs';
 import { collectRefresh } from './refresh.mjs';
+import {chooseCourses} from './course-selection.mjs';
+import {normalizeSite} from './content-policy.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const statePath = join(root, 'Study/_System/state.json');
@@ -56,29 +58,23 @@ async function main() {
   const client = await new ReadOnlyClient(config.moodle_url, tokenFromWindows(bundle?.credential)).connect();
   if (mode === 'check') { console.log('Moodle API 已连接。'); return; }
   if (mode === 'courses') {
-    const available = await client.call('core_enrol_get_users_courses', {userid: client.userId});
-    for (const course of available) console.log(`${course.id}  ${course.fullname} (${course.shortname})`);
+    const chatIndex = process.argv.indexOf('--chat');
+    const identity = resolveChatId(chatIndex >= 0 ? process.argv[chatIndex + 1] : '', process.env);
+    // A standalone setup window has no chat. Its explicit initialization run
+    // uses a separate setup key; it is never substituted for a learning chat.
+    const chat = identity?.chat ?? 'course-initialization';
     const prompt = createInterface({input: process.stdin, output: process.stdout});
-    let answer;
-    try { answer = await prompt.question('输入本学期需要跟踪的课程 ID，用逗号分隔（直接回车取消）：'); }
-    finally { prompt.close(); }
-    if (!answer.trim()) return;
-    const ids = [...new Set(answer.trim().split(/[,，\s]+/).map(Number))];
-    if (ids.some(id => !Number.isInteger(id) || !available.some(c => c.id === id))) throw new Error('课程 ID 不在当前账户的列表中');
-    const original = readFileSync(statePath, 'utf8');
-    const state = JSON.parse(original);
-    // Keep learning history; selection only changes which pages are refreshed.
-    for (const course of state.courses) course.moodle_course_ids = (course.moodle_course_ids ?? []).filter(id => ids.includes(id));
-    for (const id of ids) {
-      if (state.courses.some(c => c.moodle_course_ids?.includes(id))) continue;
-      const source = available.find(c => c.id === id);
-      const previous = state.courses.find(c => c.id === `moodle-${id}`);
-      if (previous) previous.moodle_course_ids = [id];
-      else state.courses.push({id: `moodle-${id}`, name: source.fullname, shortname: source.shortname,
-        moodle_course_ids: [id], assignment_focus: null, current_topic: null, teaching_cursor: null, orientation: null});
-    }
-    saveState(root, 'replace', {expected: JSON.parse(original), state});
-    console.log('课程选择已保存；原有学习记录保留。');
+    try {
+      await chooseCourses({client, readState: () => json(statePath),
+        writeState: (expected, state) => saveState(root, 'replace', {expected, state}),
+        ask: question => prompt.question(question), output: message => console.log(message),
+        initialize: async () => {
+          prompt.close();
+          const result = spawnSync(python(root), [join(root, 'tools/study/session.py'), '--chat', chat, 'refresh'],
+            {stdio: 'inherit', windowsHide: true, env: {...process.env, STUDY_NODE: process.execPath}});
+          process.exitCode = result.status ?? 1;
+        }});
+    } finally { prompt.close(); }
     return;
   }
   if (mode === 'collect') {
@@ -88,6 +84,33 @@ async function main() {
       courses: result.pages.length, discussions: result.threads.length, errors: result.errors,
       next: '请让 AI 阅读本次采集，与 state.json 核对后更新学习计划。'}));
     if (!result.collection_complete) process.exitCode = 2;
+    return;
+  }
+  if (mode === 'content-sync') {
+    const index = process.argv.indexOf('--snapshot');
+    const path = index >= 0 ? process.argv[index + 1] : null;
+    if (!path) throw new Error('课程内容同步需要本轮已保存的快照');
+    // Reuse the state writer's current-run gate; an old/modified snapshot or a
+    // changed school/course scope must not start downloads.
+    const checked = spawnSync(python(root), ['-B', '-c',
+      'import sys; sys.path.insert(0, sys.argv[1]); from snapshot_guard import validate_current_snapshot; from state_io import read; validate_current_snapshot(sys.argv[2], read(sys.argv[3]), allow_legacy=False)',
+      join(root, 'tools/study'), statePath, path], {encoding: 'utf8', windowsHide: true});
+    if (checked.status !== 0) throw new Error('本轮快照或课程范围已变化，未启动资料下载；请明确重新同步');
+    const snapshot = json(path);
+    if (snapshot.account_scope?.user_id !== client.userId
+        || normalizeSite(snapshot.account_scope?.site) !== normalizeSite(client.baseUrl)) {
+      throw new Error('本轮快照与当前学校账户不一致，未启动资料下载');
+    }
+    const state = json(statePath);
+    const captured = new Set(snapshot.pages.map(page => page.courseid));
+    state.courses = state.courses.map(course => ({...course,
+      moodle_course_ids: (course.moodle_course_ids ?? []).filter(id => captured.has(id))}));
+    const {syncCourseContent} = await import('./course-content-sync.mjs');
+    const result = await syncCourseContent(client, state, {studyRoot: join(root, 'Study'), statePath,
+      studyToolsDir: join(root, 'tools/study'), python: python(root), snapshot});
+    console.log(JSON.stringify({status: result.status, counts: result.counts,
+      report_path: join(root, 'Study/_System/CourseContent/latest.json'), reviewed: false}));
+    if (result.status === 'partial') process.exitCode = 2;
     return;
   }
   if (mode === 'download') {
@@ -102,7 +125,7 @@ async function main() {
     return;
   }
   if (mode === 'mcp') { const { serve } = await import('./server.mjs'); await serve(client); return; }
-  throw new Error('用法：run.mjs init | check | courses | refresh | mcp | download <module-id> [...] --authorized');
+  throw new Error('用法：run.mjs init | check | courses | refresh | content-sync --snapshot <path> | mcp | download <module-id> [...] --authorized');
 }
 main().catch(error => {
   // Stable, allowlisted code for diagnostics; never expose arbitrary properties.

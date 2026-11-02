@@ -44,6 +44,13 @@ def _reuse_identical(path, incoming, material_id):
     changed = incoming.get("contains_solutions") is True and existing.get("contains_solutions") is not True
     if changed:
         existing["contains_solutions"] = True
+    if incoming.get("content_reviewed") is False:
+        sources = existing.setdefault("moodle_file_sources", [])
+        for source in incoming.get("moodle_file_sources", []):
+            key = versions.keys({"course_id": incoming["course_id"], "moodle_file_sources": [source]})
+            if not any(versions.keys({"course_id": incoming["course_id"], "moodle_file_sources": [old]}) == key for old in sources):
+                sources.append(copy.deepcopy(source)); changed = True
+    if changed:
         versions._commit(path, before, state)
     return {"status": "identical", "material_id": existing["id"],
             "relative_path": existing["relative_path"], "state_written": changed}
@@ -53,7 +60,8 @@ def _reuse_identical(path, incoming, material_id):
 def install_download(path, data):
     """Only consume an explicitly authorized download already staged inside Study."""
     path = Path(path).resolve()
-    cleanup = versions.cleanup(path)
+    batch = any(data.get(key) is True for key in ("defer_index", "source_subdirectory", "retain_unparsed"))
+    cleanup = {} if batch else versions.cleanup(path)
     state = json.loads(path.read_text(encoding="utf-8-sig"))
     source = data["source"]
     module = source.get("module_id")
@@ -81,10 +89,24 @@ def install_download(path, data):
     staged = versions.safe(path.parent.parent, row["relative_path"])
     if "_Inbox" not in staged.relative_to(path.parent.parent).parts:
         raise ValueError("Downloads must be staged in _Inbox before promotion")
+    if batch:
+        from course_content import prepare_batch
+        prepare_batch(state, data, row)
+    versions.verify(path.parent.parent, row)
+    matches = [m for m in state.get("materials", []) if versions.current(m) and versions.keys(m) & versions.keys(row)]
+    if batch and any(m.get("sha256") != row["sha256"] and versions.keys(m) - versions.keys(row) for m in matches):
+        raise ValueError("Shared material source changed; retain original and review source version relationship")
     identical = next((m for m in state.get("materials", []) if versions.current(m)
-                      and m.get("sha256") == row["sha256"] and versions.keys(m) & versions.keys(row)), None)
+                      and m.get("sha256") == row["sha256"] and (versions.keys(m) & versions.keys(row)
+                      or (batch and not matches and m.get("course_id") == row["course_id"]))), None)
     if identical:
+        restored = False
+        if batch:
+            from course_content import restore_missing
+            restored = restore_missing(path.parent.parent, identical, staged)
         result = _reuse_identical(path, row, identical["id"])
+        if restored:
+            result["status"] = "restored"
     else:
         if any(m["id"] == row["id"] for m in state.get("materials", [])):
             row["id"] += "-" + versions.uuid.uuid4().hex[:10]
@@ -95,7 +117,8 @@ def install_download(path, data):
     if result["status"] == "identical":
         # Cached text still uses fresh registry labels in Library.fresh_rows.
         return result
-    Library(path).sync(row["course_id"])
+    if data.get("defer_index") is not True:
+        Library(path).sync(row["course_id"])
     final = json.loads(path.read_text(encoding="utf-8-sig"))
     result["relative_path"] = next(m["relative_path"] for m in final["materials"] if m["id"] == result["material_id"])
     return result

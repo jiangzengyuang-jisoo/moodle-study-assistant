@@ -29,6 +29,37 @@ def fixture():
 
 
 class PlanningTests(unittest.TestCase):
+    def test_new_course_null_focus_daily_run_and_check_preserve_unknown_progress(self):
+        state = {"revision": 1, "settings": {}, "courses": [{"id": "NEW", "moodle_course_ids": [100],
+                 "current_topic": None, "assignment_focus": None, "teaching_cursor": None}],
+                 "materials": [], "tasks": [], "deadlines": [], "mistakes": []}
+        with tempfile.TemporaryDirectory(prefix=".planning-init-test-", dir=Path(__file__).parent) as directory:
+            path = Path(directory) / "Study/_System/state.json"
+            path.parent.mkdir(parents=True)
+            path.write_text(json.dumps(state), encoding="utf-8")
+            command = [sys.executable, str(Path(planning.__file__).with_name("daily.py")),
+                       "--state", str(path), "--at", "2026-11-02T12:00:00+08:00"]
+            # First blank initialization, then metadata arrives before chapter mapping.
+            for has_task in (False, True):
+                if has_task:
+                    current = json.loads(path.read_text(encoding="utf-8"))
+                    current["tasks"] = [{"id": "T1", "course_id": "NEW", "title": "New homework", "status": None, "deadline_id": "D1"}]
+                    current["deadlines"] = [{"id": "D1", "task_id": "T1", "course_id": "NEW", "date": "2026-11-03", "time": None}]
+                    path.write_text(json.dumps(current), encoding="utf-8")
+                result = subprocess.run(command + ["run"], capture_output=True, text=True, encoding="utf-8")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                result = subprocess.run(command + ["check"], capture_output=True, text=True, encoding="utf-8")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(json.loads(result.stdout)["fresh"])
+                saved = json.loads(path.read_text(encoding="utf-8"))
+                self.assertEqual(saved["courses"], state["courses"])
+                self.assertEqual(saved["materials"], [])
+                today = (path.parent / "Today Plan.md").read_text(encoding="utf-8")
+                self.assertNotIn("未开始", today)
+                if has_task:
+                    self.assertIn("New homework", today)
+                    self.assertIsNone(saved["tasks"][0]["status"])
+
     def test_hong_kong_midnight_changes_date_and_never_reuses_yesterday(self):
         state = fixture()
         before = planning.render_views(state, "2026-10-10T15:59:00+00:00")

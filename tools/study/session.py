@@ -109,6 +109,10 @@ class Session:
             self._save(manifest)
         if manifest.get('snapshot_sha256') and file_sha(snapshot) != manifest['snapshot_sha256']:
             raise ValueError('本轮快照已变化，不能继续核读或复用')
+        if manifest.get('content_sync', {}).get('status') == 'running':
+            manifest['content_sync'] = {'status': 'partial', 'reason': 'interrupted',
+                                        'automatic_retry': False}
+            self._save(manifest)
         receipt = read(self.state).get('refresh_receipts', {}).get(manifest['run_id'])
         if receipt and receipt.get('phase', 'reviewed') == 'reviewed' and receipt['snapshot_sha256'] == manifest.get('snapshot_sha256'):
             manifest['phase'] = 'reviewed'
@@ -147,7 +151,44 @@ class Session:
                 raise ValueError(f'{detail[0]}: {detail[1]} {detail[2]} 旧学习记录保留；需明确重试。')
             raise ValueError('学校检查失败；请检查连接后明确重试，旧学习记录保留')
 
-    def start(self, explicit=False, subtask=False, collector=None):
+    def sync_content(self, snapshot_path):
+        """A separate, resumable stage; metadata collection keeps its own limit."""
+        snapshot = read(snapshot_path)
+        account = snapshot.get('account_scope', {})
+        state = read(self.state)
+        policy = state.get('settings', {}).get('course_content_sync', {})
+        selected = {i for course in state.get('courses', []) for i in course.get('moodle_course_ids', [])}
+        captured = {page.get('courseid') for page in snapshot.get('pages', [])}
+        grants = policy.get('grants', []) if policy.get('version') == 1 else []
+        # This is only a no-network fast path. The Node core rechecks exact
+        # account/site consent and current selection before every download.
+        permitted = any(isinstance(grant, dict) and grant.get('mode') == 'full'
+                        and grant.get('user_id') == account.get('user_id')
+                        and grant.get('moodle_course_id') in selected & captured
+                        for grant in grants) if isinstance(grants, list) else False
+        if not permitted:
+            return {'status': 'not_authorized', 'automatic_retry': False}
+        node = os.environ.get('STUDY_NODE') or shutil.which('node')
+        if not node:
+            raise ValueError('未找到 Node')
+        print(json.dumps({'stage': 'course_content_sync',
+                          'message': '正在下载、归档课程资料并建立索引，首次可能需要较长时间。进度保存在 Study/_System/CourseContent/latest.json；失败的资料可在明确刷新时增量补齐。'},
+                         ensure_ascii=False), flush=True)
+        result = subprocess.run([node, str(self.root / 'tools/moodle/run.mjs'), 'content-sync',
+                                 '--snapshot', str(snapshot_path)], cwd=self.root,
+                                capture_output=True, timeout=7200)
+        if result.returncode not in (0, 2):
+            raise ValueError('课程资料同步未完成')
+        try:
+            output = json.loads(result.stdout.decode('utf-8-sig').strip())
+        except (ValueError, UnicodeError):
+            raise ValueError('课程资料同步未返回有效结果') from None
+        if output.get('status') not in {'complete', 'partial', 'not_authorized'}:
+            raise ValueError('课程资料同步状态无效')
+        return {'status': output['status'], 'counts': output.get('counts', {}),
+                'report_path': str(self.state.parent / 'CourseContent/latest.json'), 'automatic_retry': False}
+
+    def start(self, explicit=False, subtask=False, collector=None, content_collector=None):
         if subtask:
             return {**self.status(), 'subtask': True, 'network_started': False}
         lock = file_lock(self.lock, timeout=0)
@@ -210,6 +251,19 @@ class Session:
                     atomic(self.state.parent / 'refresh-latest.json', value)
                     if value.get('collection_complete'):
                         atomic(self.state.parent / 'refresh-last-complete.json', value)
+            if manifest.get('binding_valid'):
+                manifest['content_sync'] = {'status': 'running', 'started_at': stamp()}
+                self._save(manifest)
+                try:
+                    with self.timing('course_content_sync'):
+                        manifest['content_sync'] = (content_collector or self.sync_content)(snapshot)
+                except (ValueError, OSError, subprocess.TimeoutExpired):
+                    # Download/index failure never erases the collected snapshot
+                    # or falsely promotes it to a reviewed learning record.
+                    manifest['content_sync'] = {'status': 'partial', 'reason': 'download_or_index_failed',
+                                                'automatic_retry': False,
+                                                'next': '资料未全部保存；明确刷新 Moodle 可按已有文件增量重试。'}
+                self._save(manifest)
             return {**self.describe(manifest), 'network_started': True}
         finally:
             lock.__exit__(None, None, None)

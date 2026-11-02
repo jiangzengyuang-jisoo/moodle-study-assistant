@@ -51,7 +51,8 @@ def keys(row):
         name = source.get("remote_filename") or unquote(urlparse(source.get("url") or "").path.rsplit("/", 1)[-1])
         if module and name:
             # A folder may contain multiple files; filename and remote subpath matter.
-            result.add((row.get("course_id"), str(module), source.get("filepath", "/"), name))
+            identity = (row.get("course_id"), str(module), source.get("filepath", "/"), name)
+            result.add(identity + ((str(source["post_id"]),) if source.get("post_id") is not None else ()))
     return result
 
 
@@ -62,7 +63,7 @@ def verify(study, row):
     if not row.get("sha256") or not path.is_file() or sha(path) != row["sha256"]:
         raise ValueError("Material is missing or locally modified: " + row["id"])
     from learning_library.extract import extract_document
-    if path.suffix.lower() in {".pdf", ".pptx", ".docx"}:
+    if row.get("structure_validation") != "deferred" and path.suffix.lower() in {".pdf", ".pptx", ".docx"}:
         result = extract_document(path)
         if not result.get("pages"):
             raise ValueError("New material has no readable document structure")
@@ -256,7 +257,10 @@ def promote(state_path, incoming, old_id=None, at=None):
         name = incoming.get("filename") or source.name
         if Path(name).name != name or any(c in name for c in '/\\:<>|?*'):
             raise ValueError("Unsafe original filename")
-        target = safe(study, Path(course) / category / name)
+        subdir = incoming.get("source_subdirectory")
+        if subdir is not None and (not isinstance(subdir, str) or not re.fullmatch(r"source-[a-f0-9]{24}", subdir)):
+            raise ValueError("Invalid source subdirectory")
+        target = safe(study, Path(course) / category / subdir / name if subdir else Path(course) / category / name)
         moves, edits = [], []
         archived = None
         if old:

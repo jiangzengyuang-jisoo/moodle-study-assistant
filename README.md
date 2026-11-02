@@ -49,7 +49,7 @@ You can provide this context manually in a chat. This project organizes it for r
 
 ## Study examples
 
-After setup, place your files in `Study/_Inbox/` and ask the assistant to organize them. Then use requests like these:
+After full course initialization, or after adding your own files to `Study/_Inbox/`, use requests like these:
 
 | Goal | What to say |
 | --- | --- |
@@ -99,7 +99,10 @@ Do not ask me to paste credentials or tokens into chat or read .private contents
 Use the unified study entry point to collect course information, then read and
 verify assignment requirements, deadlines, and announcements.
 Ask what I have completed, where I stopped, and how much time I have available.
-I will provide course materials; do not download files without my request.
+At course selection, offer full initialization or information-only sync.
+Once I authorize full initialization, automatically download all accessible
+materials for those courses, organize and index them, and report any gaps.
+Keep that course-level permission for incremental refreshes without asking per file.
 Do not submit assignments, answer school quizzes, post, or send email for me.
 
 Report what is ready, what has been checked, and what I still need to do.
@@ -114,7 +117,7 @@ The default school is HKU Moodle, where the core API collection has been used. F
 
 ### 3. Add your materials and start learning
 
-Put your files in `Study/_Inbox/`, then ask the assistant to organize them and begin a topic. Ordinary Moodle refreshes do not download course files. To request a download, identify the course and specific material.
+Choose **Full initialization** after selecting your courses: the assistant downloads accessible course files, organizes them, and builds a searchable local library. Later refreshes update authorized courses incrementally. **Information only** remains available. You can also add files to `Study/_Inbox/`. [Scope, limitations, and retries](docs/COURSE_CONTENT.md).
 
 Setup is ready when the assistant has verified the local tools and school connection, confirmed your selected courses, and collected **and reviewed** the course information. A successful connection alone does not mean course content has been reviewed.
 
@@ -155,7 +158,7 @@ Your materials and records are saved locally. `Study/`, credentials, and machine
 
 **What does the assistant do on Moodle?**
 
-The tools are read-only. They do not submit work, answer school quizzes, post, change school completion status, or send email. Course downloads require an explicit request. Passwords and verification codes stay on the school's sign-in page.
+The tools are read-only. They do not submit work, answer school quizzes, post, change school completion status, or send email. Bulk downloads require your one-time, account-bound course permission; older installations are not opted in automatically. Passwords and verification codes stay on the school's sign-in page.
 
 **What still needs checking?**
 
@@ -171,7 +174,7 @@ Ask the assistant to back up and preserve `Study/`, configuration, credentials, 
 
 | Date | Change |
 | --- | --- |
-| [2026-11-02](CHANGELOG.md#2026-11-02) | Inspect and correct memory; optional DeepSeek Harness desktop support with stable chat identity, validated profile-safe MCP/skill wiring, and a new guide |
+| [2026-11-02](CHANGELOG.md#2026-11-02) | Course-authorized automatic downloads, filing and indexing; inspect and correct memory; optional DeepSeek Harness support |
 | [2026-11-01](CHANGELOG.md#2026-11-01) | English and Chinese READMEs explain the course library and study continuity; narrower startup scope and clearer Moodle diagnostics |
 | [2026-10-31](CHANGELOG.md#2026-10-31) | Stronger learning-record protection, cross-chapter continuity, and Chinese setup diagnostics |
 

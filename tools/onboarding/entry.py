@@ -32,7 +32,7 @@ TIPS = '''学习时请记住：
 3. 换聊天前保存实际进度、原答、卡点和下一步，确认保存成功；关键作答不要等到聊天快满才保存。
 4. 新聊天首次进入学习时先读取记录并检查一次 Moodle；无关问答跳过，维修只做必要诊断。
 5. 同聊天追问复用上次检查；要看老师刚发的内容，明确说“刷新 Moodle”。没有后台监控。
-6. 课件自己放入 Study/_Inbox，或明确授权下载指定资料；核对完整题设、原页、公式与图表。
+6. 选课时选择完整初始化，会自动保存所选课程可获取的正文和文件并建立索引，以后同步增量补齐；也可选择仅同步信息。下载完成不等于已经核读资料。
 7. 看过答案、提示后答对不算独立掌握；告诉 AI 哪些是你独立完成的，保留原答。
 8. 升级前备份 Study 和配置，保留个人目录；不要把整个使用文件夹、密码或 Token 发给别人。
 完整说明：docs/使用须知.md。学习仍在可操作本地项目的 AI 客户端中进行。'''
@@ -233,6 +233,7 @@ class App:
             '' if selected else '连接学校后选择课程；取消选课不会清空旧记录。')
         self._client_check(add)
         self._school_check(state, add)
+        self._content_check(config, state, add)
         result = {'schema_version': 1, 'version': self._version(),
                   'checked_at': datetime.now(timezone.utc).isoformat(),
                   'mode': 'online' if online else 'local', 'checks': checks}
@@ -252,6 +253,47 @@ class App:
             checks.append(row)
         result['next_action'] = next_action(result)
         return result
+
+    def _content_check(self, config, state, add):
+        """Report saved initialization evidence, without a network probe or upgrade."""
+        if not config or not state:
+            return
+        selected = {i for course in state.get('courses', []) for i in course.get('moodle_course_ids', [])}
+        if not selected:
+            return
+        policy = state.get('settings', {}).get('course_content_sync', {})
+        grants = policy.get('grants', []) if isinstance(policy, dict) and policy.get('version') == 1 else []
+        relevant = [g for g in grants if isinstance(g, dict)
+                    and g.get('site') == config['moodle_url'].rstrip('/')
+                    and g.get('moodle_course_id') in selected] if isinstance(grants, list) else []
+        if not any(g.get('mode') == 'full' for g in relevant):
+            add('course_content', 'unknown', '尚未记录所选课程的完整下载授权；已有选课不会自动升级为下载授权。',
+                '如需自动建立资料库，选择“选择课程”，再选择“完整初始化”；也可继续仅同步信息。')
+            return
+        path = self.root / 'Study/_System/CourseContent/latest.json'
+        try:
+            report = read_json(path)
+            account = report.get('account_scope', {})
+            ids = {g['moodle_course_id'] for g in relevant if g.get('mode') == 'full'
+                   and g.get('user_id') == account.get('user_id')}
+            pointer = read_json(self.root / 'Study/_System/Runtime/latest-request.json')
+            binding = report.get('collection_binding', {})
+            matching = (account.get('site') == config['moodle_url'].rstrip('/') and ids
+                        and set(report.get('course_ids', [])) == ids
+                        and binding.get('run_id') == pointer.get('run_id'))
+            if not matching:
+                raise ValueError('stale scope')
+            if report.get('status') == 'complete':
+                add('course_content', 'ok', '最近一次记录显示：已保存授权范围内当时可获取的资料并处理索引。',
+                    '这不是本次联网检查，也不表示 AI 已核读全部资料；新发布内容会在下一次正常同步时增量处理。')
+            elif report.get('status') == 'partial':
+                add('course_content', 'warning', '最近一次课程资料初始化未全部完成，已有文件和学习记录保留。',
+                    '让 AI 查看 CourseContent/latest.json 的缺口；明确刷新 Moodle 可按已有文件增量重试。')
+            else:
+                raise ValueError('not completed')
+        except (OSError, ValueError, TypeError, AttributeError, KeyError):
+            add('course_content', 'unknown', '已记录完整下载授权，但当前范围的资料初始化结果尚未确认。',
+                '让 AI 明确刷新 Moodle 完成同步；当前账户和授权范围会在同步时再次校验。')
 
     def _version(self):
         try:

@@ -17,7 +17,8 @@ test('initialization is blank, portable and preserves existing state', () => {
     for (const name of ['review_sessions','review_attempts','learning_feedback','exam_profiles','mock_exams','mock_attempts'])
       assert.deepEqual(state[name], []);
     assert.equal(state.settings.learning_loop.enabled, true);
-    assert.equal(state.settings.exam_preparation.auto_download_materials, false);
+  assert.equal(state.settings.exam_preparation.auto_download_materials, false);
+  assert.deepEqual(state.settings.course_content_sync, {version: 1, grants: []});
     assert.equal(state.settings.moodle_refresh_policy.mode, 'first_learning_turn_or_explicit_request');
     assert.equal(state.settings.moodle_refresh_policy.unrelated_tasks, 'skip_learning_entry');
     assert.equal(state.settings.moodle_refresh_policy.maintenance, 'diagnosis_only');

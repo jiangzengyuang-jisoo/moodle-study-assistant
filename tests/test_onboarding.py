@@ -93,6 +93,60 @@ class OnboardingTests(unittest.TestCase):
         self.assertEqual('unknown', self.checks(report)['credential']['status'])
         self.assertEqual(before, self.tree())
 
+    def test_legacy_selection_is_not_silently_given_download_consent(self):
+        self.prepared()
+        before = self.tree()
+        report = self.app.inspect()
+        row = self.checks(report)['course_content']
+        self.assertEqual('unknown', row['status'])
+        self.assertIn('不会自动升级', row['message'])
+        self.assertEqual(before, self.tree())
+        self.assertFalse(any('content-sync' in call or call[-1] == 'check' for call in self.calls))
+
+    def content_fixture(self, status='complete'):
+        self.prepared()
+        path = self.root / 'Study/_System/state.json'
+        state = read(path)
+        state['settings'] = {'course_content_sync': {'version': 1, 'grants': [
+            {'site': 'https://synthetic.example', 'user_id': 17, 'moodle_course_id': 9,
+             'mode': 'full', 'authorized_at': '2026-11-02T00:00:00Z'}]}}
+        atomic(path, state)
+        self.write('Study/_System/Runtime/latest-request.json', {'run_id': 'a' * 32})
+        self.write('Study/_System/CourseContent/latest.json', {
+            'status': status, 'account_scope': {'site': 'https://synthetic.example', 'user_id': 17},
+            'course_ids': [9], 'collection_binding': {'run_id': 'a' * 32}})
+
+    def test_content_initialization_is_distinct_from_semantic_review_and_current_check(self):
+        self.content_fixture()
+        before = self.tree()
+        row = self.checks(self.app.inspect())['course_content']
+        self.assertEqual('ok', row['status'])
+        self.assertIn('不是本次联网检查', row['next_step'])
+        self.assertIn('不表示 AI 已核读', row['next_step'])
+        self.assertEqual(before, self.tree())
+
+    def test_content_partial_result_is_actionable_without_auto_retry(self):
+        self.content_fixture(status='partial')
+        before = self.tree()
+        row = self.checks(self.app.inspect())['course_content']
+        self.assertEqual('warning', row['status'])
+        self.assertIn('增量重试', row['next_step'])
+        self.assertEqual(before, self.tree())
+
+    def test_old_content_scope_or_account_cannot_show_ready(self):
+        self.content_fixture()
+        path = self.root / 'Study/_System/CourseContent/latest.json'
+        original = read(path)
+        for change in ('site', 'user', 'courses', 'run'):
+            value = copy.deepcopy(original)
+            if change == 'site': value['account_scope']['site'] = 'https://other.example'
+            if change == 'user': value['account_scope']['user_id'] = 18
+            if change == 'courses': value['course_ids'] = [9, 999]
+            if change == 'run': value['collection_binding']['run_id'] = 'b' * 32
+            atomic(path, value)
+            row = self.checks(self.app.inspect())['course_content']
+            self.assertEqual('unknown', row['status'], change)
+
     def test_credential_is_only_statted_in_local_diagnosis(self):
         self.prepared()
         original = Path.open

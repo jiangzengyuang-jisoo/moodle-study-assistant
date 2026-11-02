@@ -29,6 +29,7 @@ export function initialize(root) {
     const state = {schema_version: 1, revision: 0, timezone: 'Asia/Hong_Kong',
       study_root: 'Study', created_at: new Date().toISOString(), settings: {
         brief_send_authorized: false, study_capacity_target: 0.8,
+        course_content_sync: {version: 1, grants: []},
         study_capacity_range: [0.7, 0.85], review_minutes_range: [15, 30],
         moodle_refresh_policy: {mode: 'first_learning_turn_or_explicit_request', conversation_boundary: 'new_chat_thread',
           unrelated_tasks: 'skip_learning_entry', maintenance: 'diagnosis_only',
@@ -53,7 +54,7 @@ const READ_METHODS = new Set([
   'core_webservice_get_site_info', 'core_enrol_get_users_courses', 'core_course_get_contents',
   'mod_assign_get_assignments', 'mod_assign_get_submission_status', 'mod_quiz_get_quizzes_by_courses',
   'mod_quiz_get_user_attempts', 'mod_forum_get_forum_discussions', 'mod_forum_get_discussion_posts',
-  'core_calendar_get_action_events_by_timesort',
+  'core_calendar_get_action_events_by_timesort', 'mod_page_get_pages_by_courses',
 ]);
 
 export class ReadOnlyClient extends MoodleClient {
