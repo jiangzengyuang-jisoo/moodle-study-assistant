@@ -17,7 +17,7 @@ node tools/moodle/run.mjs mcp
 
 AI 按新对话开始或用户明确要求调用 `refresh`，不会每条追问重复执行；命令本身始终进行真实采集。采集器全局最多同时执行4个 API 请求，每个论坛的分页仍按顺序读取，完整正文、回复和权限核对保留。不要把没有重新联网的缓存复用记为新的检查。
 
-MCP 暴露课程、作业、测验、论坛只读查询；全论坛分页用 `study_all_discussions`，回复用 `study_discussion_posts`。上游 recent discussions 只有最近20条，不能替代完整采集。不注册学校写操作；默认刷新和普通 MCP 查询不会下载文件。
+MCP 暴露课程、作业、测验、论坛只读查询；全论坛分页用 `study_all_discussions`，回复用 `study_discussion_posts`。上游 recent discussions 只有最近20条，不能替代完整采集。不注册学校写操作；普通 MCP 查询不下载文件。正常刷新在采集后为有课程级完整授权的范围自动下载、归档和索引；没有授权的范围只同步信息。选课授权、结果和重试入口见 [COURSE_CONTENT.md](COURSE_CONTENT.md)。
 
 ### 课程级授权与资料初始化
 

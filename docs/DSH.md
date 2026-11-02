@@ -1,6 +1,7 @@
 # 在 DeepSeek Harness（DSH）中使用
 
-本项目同时支持 Codex 本地项目和 DeepSeek Harness 桌面版。学习引擎、状态协议、Moodle 只读工具和证据规则完全相同；DSH 适配只增加**客户端接线**，不改学习逻辑，也不改变 Codex 用法。
+
+本指南用于 `deepseek` 分支。安装只配置 DeepSeek Harness；学习引擎、状态协议与证据规则和 Codex 分支共用。本分支来自公开源码基线，已合入 D 盘至 6cdf2b1 的公开源码更新；新部署仍需实际验收。
 
 ## 1. 已实测环境
 
@@ -46,7 +47,7 @@
 
 - 不读取、不写入任何学习数据、凭据或 Cookie。
 
-也可以运行 `setup.ps1`：检测到 DSH 环境（`DSH_SESSION_ID`/`DSH_HOME`）时会自动执行上述合并；在普通终端双击 `setup.cmd` 时不会改动 DSH 配置。
+本分支运行 `setup.cmd` 或 `setup.ps1` 时都会按 `client-target.json` 执行上述合并；无需先在 Harness 内运行。合并失败会停止并报告未完成，不冒充安装成功。
 
 <details>
 <summary>手动配置示例（脚本不可用时）</summary>
@@ -77,7 +78,7 @@
 诊断中 `dsh`/`client` 的分工：
 
 - `dsh` 行只报告**配置结构**：MCP 条目是否指向本项目的 `tools/moodle/run.mjs`、技能目录是否加入 `customSkillDirs`、现有配置是否冲突/无法解析；`status --json` 里的 `configuration_ok` 表示配置正确，`runtime_loaded` 固定为 `unverified`——**配置检测不等于运行成功**。
-- `client` 行表示当前项目至少有一种可用客户端配置（Codex 的 `.codex/config.toml` 或 DSH profile），同样不代表运行时已加载；是否真正加载需重启后在新聊天中实际确认。
+- `client` 行只表示当前 DeepSeek 分支的 DSH profile 配置可用，同样不代表运行时已加载；是否真正加载需重启后在新聊天中实际确认。
 - 若 profile patch 无法解析或缺少 YAML 依赖，诊断只给 warning 并明确“未修改任何配置”，不会报成“配置正确”。
 - 已有同名 MCP 冲突、技能目录未加入、profile 无法解析时，按 `status --json` 的 `warnings` 与上文手动处理。
 
@@ -116,8 +117,7 @@
 
 ## 5. 只读与数据边界
 
-- Moodle 工具仍是只读集合；不注册提交、发帖、改完成状态等写操作。普通刷新不下载附件。选课时保存的课程级完整授权允许在已选课程页面内自动下载、归档和建立索引（`courses` 完整初始化 / `library-sync`），但不会开始测验尝试、提交作业、发帖或修改学校状态；未授权或只同步信息的课程不下载，范围外资料仍需本人明确指定。
-- 受限 shell 可能阻止 Node 子进程、DPAPI 解密或网络下载：真实课程初始化/资料同步应在普通终端（`start.cmd`、`choose-courses.cmd`，或经用户批准的完整访问命令）运行；DSH 会话内可用只读的 `library.cmd context --read-only`、`search`、`read` 等。命令失败先按执行环境限制判断，不据此修改学习记录。规则见 [COURSE_LIBRARY.md](COURSE_LIBRARY.md)。
+- Moodle MCP 工具仍是只读查询集合；不注册提交、发帖、改完成状态等操作。选课时确认完整初始化后，刷新通过独立资料阶段自动下载、归档与索引授权课程的可访问内容；仅信息或未授权范围不下载。详见 [课程内容同步](COURSE_CONTENT.md)。
 - 所有学习状态写入仍走 `study.cmd review` / `state_io.py` 等正式入口：锁、版本哈希、快照绑定、操作去重、历史证据保护不变；助手不直接改写 `state.json`。
 - 普通问答、查询或纠正本地记忆不触发 Moodle 联网；只有学习启动或本人明确刷新才检查学校信息。
 - DSH 配置里只有本机路径和 `serverName`，不含凭据；Moodle Token 仍由 Windows DPAPI 加密保存在 `.private/`，不进入聊天、状态或 Git。
@@ -136,9 +136,9 @@ DSH 适配新增的测试：
 
 - `tests/test_dsh_integration.py`：聊天身份解析、DSH profile 合并/备份/幂等/冲突保护、CLI 行为；
 - `tests/chat-identity.test.mjs`：Node 侧身份解析（`refresh` 入口）；
-- `tests/test_onboarding.py`：诊断同时识别 Codex 与 DSH 配置。
+- `tests/test_onboarding.py`：按发行目标诊断，避免另一客户端配置掩盖本端缺失。
 
-注意：在 DSH 的受限 shell 里直接运行 `node --test` 或 Python `tempfile` 相关测试可能被沙箱拒绝（Windows 管道/临时目录权限），需要 Node 子进程、DPAPI 或网络下载的课程完整初始化/资料同步也可能失败；这不代表代码失败，请在普通终端运行完整回归和真实同步。
+注意：在 DSH 的受限 shell 里直接运行 `node --test` 或 Python `tempfile` 相关测试可能被沙箱拒绝（Windows 管道/临时目录权限），这不代表代码失败；请在普通终端运行完整回归。
 
 ## 7. 已知限制与待验证
 
@@ -148,3 +148,5 @@ DSH 适配新增的测试：
 - 真实学校 SSO/MFA、Windows OCR 中文语言包、PPTX/DOCX 经 `office-render` 的清晰度仍需按实际课件验证。
 - 如果 DSH 默认模型不是支持图片输入的 DeepSeek 模型，`read_image` 会明确拒绝；请在校内设置中确认模型（本版按 DeepSeek V4.1 验证）。
 - 在 Windows 受限环境（如本仓库之外的沙箱）运行测试命令可能失败，属于执行环境限制，不是学习工具回归。
+
+课程资料库初始化和增量同步见 [COURSE_LIBRARY.md](COURSE_LIBRARY.md)。

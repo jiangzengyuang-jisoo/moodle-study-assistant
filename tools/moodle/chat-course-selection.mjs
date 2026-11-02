@@ -82,5 +82,5 @@ export async function selectCoursesInChat({client, readState, writeState, select
   // One optimistic, locked save prevents selection and permission disagreeing.
   writeState(original, state);
   return {status: 'saved', mode: selection.mode, course_ids: ids, reviewed: false,
-    next: '按当前原始聊天 ID 执行 study.cmd continue（已采集后改选课则 refresh），核读独立快照。full 模式随后执行 library-sync --snapshot 该快照路径，info_only 不执行下载。完成后主动讲系统用法。'};
+    next: '按当前原始聊天 ID 执行 study.cmd continue（已采集后改选课则 refresh），核读独立快照。full 模式核对本轮自动资料同步的 content_sync 与报告，已完成不重复；明确补齐时使用 library-sync --snapshot 该快照路径，info_only 不执行下载。完成后主动讲系统用法。'};
 }

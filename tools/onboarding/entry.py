@@ -233,6 +233,7 @@ class App:
             '' if selected else '连接学校后选择课程；取消选课不会清空旧记录。')
         self._client_check(add)
         self._school_check(state, add)
+        self._content_check(config, state, add)
         result = {'schema_version': 1, 'version': self._version(),
                   'checked_at': datetime.now(timezone.utc).isoformat(),
                   'mode': 'online' if online else 'local', 'checks': checks}
@@ -252,6 +253,58 @@ class App:
             checks.append(row)
         result['next_action'] = next_action(result)
         return result
+
+    def _content_check(self, config, state, add):
+        """Report saved initialization evidence, without a network probe or upgrade."""
+        if not config or not state:
+            return
+        selected = {i for course in state.get('courses', []) for i in course.get('moodle_course_ids', [])}
+        if not selected:
+            return
+        if 'course_library_authorization' in state.get('settings', {}):
+            policy = state['settings']['course_library_authorization']
+            grants = policy.get('courses', {}) if isinstance(policy, dict) and policy.get('schema') == 1 else {}
+            full = isinstance(grants, dict) and any(
+                isinstance(grants.get(c.get('id')), dict) and grants[c['id']].get('mode') == 'full'
+                and grants[c['id']].get('moodle_courseid') in c.get('moodle_course_ids', [])
+                for c in state.get('courses', []))
+            add('course_content', 'unknown',
+                '已保存课程级完整初始化授权；资料是否齐全需核对同步报告。' if full else '当前课程未授权完整初始化；保留只同步信息模式。',
+                '查看 Study/_System/LibrarySync/latest.json 与资料缺口.md；授权本身不代表下载完成，也不是本次联网检查。' if full else '需要建立资料库时重新选择课程并明确授权完整初始化。')
+            return
+        policy = state.get('settings', {}).get('course_content_sync', {})
+        grants = policy.get('grants', []) if isinstance(policy, dict) and policy.get('version') == 1 else []
+        relevant = [g for g in grants if isinstance(g, dict)
+                    and g.get('site') == config['moodle_url'].rstrip('/')
+                    and g.get('moodle_course_id') in selected] if isinstance(grants, list) else []
+        if not any(g.get('mode') == 'full' for g in relevant):
+            add('course_content', 'unknown', '尚未记录所选课程的完整下载授权；已有选课不会自动升级为下载授权。',
+                '如需自动建立资料库，选择“选择课程”，再选择“完整初始化”；也可继续仅同步信息。')
+            return
+        path = self.root / 'Study/_System/CourseContent/latest.json'
+        try:
+            report = read_json(path)
+            account = report.get('account_scope', {})
+            ids = {g['moodle_course_id'] for g in relevant if g.get('mode') == 'full'
+                   and g.get('user_id') == account.get('user_id')}
+            pointer = read_json(self.root / 'Study/_System/Runtime/latest-request.json')
+            binding = report.get('collection_binding', {})
+            matching = (account.get('site') == config['moodle_url'].rstrip('/') and ids
+                        and set(report.get('course_ids', [])) == ids
+                        and binding.get('run_id') == pointer.get('run_id'))
+            if not matching:
+                raise ValueError('stale scope')
+            if report.get('status') == 'complete':
+                add('course_content', 'ok', '最近一次记录显示：已保存授权范围内当时可获取的资料并处理索引。',
+                    '这不是本次联网检查，也不表示 AI 已核读全部资料；新发布内容会在下一次正常同步时增量处理。')
+            elif report.get('status') == 'partial':
+                add('course_content', 'warning', '最近一次课程资料初始化未全部完成，已有文件和学习记录保留。',
+                    '让 AI 查看 CourseContent/latest.json 的缺口；明确刷新 Moodle 可按已有文件增量重试。')
+            else:
+                raise ValueError('not completed')
+        except (OSError, ValueError, TypeError, AttributeError, KeyError):
+            add('course_content', 'unknown', '已记录完整下载授权，但当前范围的资料初始化结果尚未确认。',
+                '让 AI 明确刷新 Moodle 完成同步；当前账户和授权范围会在同步时再次校验。')
 
     def _version(self):
         try:
@@ -278,10 +331,26 @@ class App:
         except (OSError, ValueError, KeyError, TypeError):
             return 'warning'
 
+    def _release_client(self):
+        path = self.root / 'client-target.json'
+        if not path.exists():
+            return 'legacy'
+        data = read_json(path)
+        if data.get('version') != 1 or data.get('client') not in ('codex', 'deepseek'):
+            raise ValueError('Invalid client-target.json')
+        return data['client']
+
     def _client_check(self, add):
         """Report Codex and DeepSeek Harness wiring together; both are read only."""
-        codex = self._codex_client_status()
-        dsh = self._dsh_status(add)
+        try:
+            target = self._release_client()
+        except (OSError, ValueError, AttributeError):
+            add('client', 'warning', '客户端分支配置无效。', '从所选分支恢复 client-target.json；不修改学习档案。')
+            return
+        codex = self._codex_client_status() if target != 'deepseek' else 'missing'
+        dsh = self._dsh_status(add) if target != 'codex' else 'not-selected'
+        if target == 'deepseek' and dsh == 'not-detected':
+            dsh = 'missing'
         if codex == 'ok':
             add('client', 'ok', 'Codex 本地 AI 工具配置路径可用；客户端是否加载仍需本人确认。')
         elif dsh == 'ok':
@@ -298,7 +367,7 @@ class App:
         status = dsh_integration.inspect(self.root, self.environ)
         chat = status['chat']
         if not status['detected']:
-            add('dsh', 'ok', '未检测到 DeepSeek Harness；Codex 本地项目入口不受影响。')
+            add('dsh', 'ok', '未检测到 DeepSeek Harness；本次未确认其客户端配置。')
             return 'not-detected'
         if status.get('patch_parse') == 'unavailable':
             add('dsh', 'warning', 'DeepSeek Harness 配置检查需要未安装的 YAML 解析依赖。',
@@ -469,7 +538,7 @@ def guide(app, ask=input, output=print):
             output(HANDOFF); output(TIPS); continue
         if action == 'setup':
             output('将安装/更新项目依赖并运行现有初始化流程，已有学习记录保留。已有资料的缓存同步可能耗时。'
-                   '如检测到 DeepSeek Harness，会合并 MCP 与技能配置（保留原有配置并写备份）。')
+                   '仅配置 client-target.json 指定的客户端；DeepSeek 分支合并 MCP 与技能配置并备份，Codex 分支不修改 Harness。')
             if ask('继续请输入 Y，其他输入返回：').strip().lower() != 'y':
                 continue
         if action == 'connect':

@@ -1,5 +1,7 @@
 # Moodle Study Assistant
 
+**DeepSeek Harness edition — branch `deepseek`.** Select this branch before downloading. For Codex use branch `codex` in a separate folder. Setup configures Harness only. [Branch maintenance](docs/BRANCHES.md).
+
 **Study with your course materials, your instructor's requirements, and a record of what you have actually learned.**
 
 **English** · [简体中文](README.zh-CN.md)
@@ -8,7 +10,7 @@
 
 A personal course workspace used through a **DeepSeek Harness chat**. Keep slides, handouts, exercises, and learning records on your computer. Connect Moodle to bring in assignment requirements, deadlines, announcements, and discussions, then use that context for explanations, practice, and exam preparation.
 
-Designed for students following university courses over a semester. The documented setup is **Windows 10/11 + DeepSeek Harness local project mode**. You study in the chat; there is no separate web app to deploy.
+Designed for students following university courses over a semester. The documented setup is **Windows 10/11 + DeepSeek Harness desktop with local workspace access**. You study in the chat; there is no separate web app to deploy.
 
 ## Why use it?
 
@@ -72,11 +74,11 @@ Moodle is collected when a chat first enters course learning, review, or study p
 
 For this DeepSeek Harness deployment, open this folder as your chat workspace and say **“Install this and teach me how to use it.”** The assistant handles setup, presents courses and sync modes in chat, and teaches the workflow afterward. School sign-in stays in the school browser page. No CMD menu is required. See [chat onboarding](docs/CHAT_ONBOARDING.md).
 
-### 1. Open the project in Harness
+### 1. Open a DeepSeek Harness workspace
 
-Open this project folder as the workspace in DeepSeek Harness and allow the required project access. Existing users should reopen their current folder and preserve its records. See [DSH.md](docs/DSH.md) for configuration and restart guidance.
+Select branch `deepseek`, download and extract it to a dedicated folder, and open that folder in your installed DeepSeek Harness desktop app. The workspace root contains `AGENTS.md`, `README.md`, and `start.cmd`. Choose your DeepSeek model in Harness; the project does not switch the model for you.
 
-Download this repository with **Code → Download ZIP**, extract it to a stable location such as `D:\MoodleStudy`, and open the folder containing `README.md`, `AGENTS.md`, and `start.cmd` as the local project. Allow access to that project when prompted. Pasting the repository link into an ordinary chat does not install it on your computer.
+Ask the assistant to run `setup.ps1` in this chat to prepare dependencies and merge the Harness MCP/skill configuration with a backup. Restart Harness and verify both the skill and Moodle tool actually load. No Codex configuration is generated. See the [Harness guide](docs/DSH.md) for conflicts, moving a project, and runtime verification.
 
 ### 2. Complete setup in the current chat
 
@@ -134,27 +136,15 @@ If setup stalls, share the error text without passwords or tokens and ask the as
 
 </details>
 
-## Use with DeepSeek Harness (optional)
-
-These details are for the assistant to diagnose Harness configuration; users can stay in the current chat:
-
-1. The assistant runs `setup.ps1` in the current chat; users do not open CMD.
-2. In a Harness chat, run `python tools/onboarding/dsh_integration.py install` (running `setup` inside Harness also merges it). It appends an MCP stdio entry and a skill directory to your Harness profile, keeps every existing entry, and writes a backup. It never touches study records or credentials.
-3. Restart DeepSeek Harness and open this folder as the chat workspace.
-4. No chat ID is typed per message: the stable Harness session ID is used, so continuing the same chat reuses verified information while a genuinely new chat collects once. Internal delegated tasks must receive the original chat ID explicitly and add `--subtask`.
-5. Original pages: `library.cmd render` returns a PNG path that the assistant reads with `read_image`. PPTX/DOCX have no page image, so use the `office-render` skill or provide a PDF/screenshot.
-
-See the [DeepSeek Harness guide](docs/DSH.md) (Chinese) for the configuration example, diagnostics, identity rules and known limits. The Harness adaptation was validated locally on Windows with DeepSeek V4.1; other clients and operating systems remain unvalidated.
-
 ## FAQ and privacy
 
 **Can I use only the web or mobile app, another AI client, or another operating system?**
 
-The supported onboarding paths are the Windows local Codex project described above and, optionally, DeepSeek Harness desktop through the one-time profile merge described above. Browser-only/mobile-only setup, other AI clients, and other operating systems have not been validated for this workflow.
+This branch supports the Windows local DeepSeek Harness workflow. Other platforms remain unvalidated.
 
 **Do I need an API key or a separate subscription?**
 
-The code is open source and does not include an AI account or subscription. Account access, usage limits, and charges are separate. This guide does not require a separately purchased API key; see the [official sign-in documentation](https://learn.chatgpt.com/docs/auth).
+The code is open source and does not include an AI account or subscription. Account access, usage limits, and charges are separate. Use the account or model configuration supported by your Harness installation.
 
 **Are my learning records uploaded to this GitHub repository?**
 

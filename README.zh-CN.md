@@ -1,5 +1,7 @@
 # Moodle Study Assistant
 
+**DeepSeek Harness 版，分支 `deepseek`。** 下载前选择此分支；Codex 请使用独立目录中的 `codex` 分支。本分支安装只配置 Harness。[分支维护说明](docs/BRANCHES.md)。
+
 **结合你的课程资料、老师要求和真实学习进度，让 AI 陪你持续学习。**
 
 [English](README.md) · **简体中文**
@@ -8,7 +10,7 @@
 
 这是一个在 **DeepSeek Harness 聊天窗口里使用的个人课程学习工作区**。课件、讲义、习题和学习记录保存在自己的电脑上，再结合 Moodle 中的作业要求、截止日期、公告和讨论，为讲解、练习和备考提供依据。
 
-适合希望围绕大学课程持续学习一个学期的同学。目前按 **Windows 10/11 + DeepSeek Harness 本地项目**提供使用说明与支持。学习就在聊天里进行，无需另行部署网页应用。
+适合希望围绕大学课程持续学习一个学期的同学。目前按 **Windows 10/11 + DeepSeek Harness 桌面版的本地工作区**提供使用说明与支持。学习就在聊天里进行，无需另行部署网页应用。
 
 ## 为什么使用
 
@@ -72,11 +74,11 @@
 
 本目录用于 DeepSeek Harness：打开本项目文件夹作为聊天工作区，直接说 **“帮我安装并教我怎么用”**。助手执行安装，在聊天中让你选择课程和同步方式，学校登录在学校网页完成；结束后主动介绍常见用法并带你做第一次操作。不需要自己打开 CMD。详见[聊天上手](docs/CHAT_ONBOARDING.md)。
 
-### 1. 在 Harness 打开本地项目
+### 1. 打开 DeepSeek Harness 工作区
 
-在 DeepSeek Harness 中打开此项目文件夹作为聊天工作区，允许必要的项目访问。已有部署直接打开原文件夹，保留学习记录；无需再安装另一套客户端。接线与重启说明见 [DSH.md](docs/DSH.md)。
+在仓库选择 `deepseek` 分支，下载并解压到独立文件夹，再在已安装的 DeepSeek Harness 桌面版中打开。项目根目录应能看到 `AGENTS.md`、`README.md` 和 `start.cmd`。模型由你在 Harness 中选择，项目不会自动更换模型。
 
-在本仓库点 **Code → Download ZIP**，完整解压到固定文件夹，例如 `D:\MoodleStudy`。将能直接看到 `README.md`、`AGENTS.md` 和 `start.cmd` 的那层文件夹作为本地项目打开，按提示允许访问。仅在普通聊天里粘贴仓库链接，不会完成电脑上的安装。
+由助手在当前聊天运行 `setup.ps1` 准备依赖并合并 Harness 的 MCP/技能配置，修改前会备份。重启后实际确认技能与 Moodle 工具加载成功；本分支不生成 Codex 配置。路径冲突、移动项目及运行验收见 [Harness 指南](docs/DSH.md)。
 
 ### 2. 在当前聊天完成设置
 
@@ -132,27 +134,15 @@
 
 </details>
 
-## 在 DeepSeek Harness 中使用（可选）
-
-以下是供助手排查 Harness 接线的说明，正常用户继续在当前聊天操作：
-
-1. 助手在当前聊天执行 `setup.ps1`，无需用户打开 CMD。
-2. 在 Harness 聊天中运行 `python tools/onboarding/dsh_integration.py install`（在 Harness 里运行 `setup` 也会自动合并）。它只向 Harness profile 追加一段 MCP stdio 配置和技能目录，保留已有配置并写备份；不读写学习记录和凭据。
-3. 重启 DeepSeek Harness，再以本文件夹作为工作区新建聊天。
-4. 不需要每条消息手写聊天 ID：会使用 Harness 的稳定会话 ID，同一聊天继续学习会复用已核验信息，真正的新聊天才采集一次；内部子任务必须由主助手显式传原始聊天 ID 并加 `--subtask`。
-5. 原页图片：`library.cmd render` 返回 PNG 路径，助手用 `read_image` 查看；PPTX/DOCX 没有页图，可用 `office-render` 技能或提供 PDF/截图。
-
-配置示例、诊断命令、身份规则和已知限制见 [DeepSeek Harness 使用说明](docs/DSH.md)。DSH 适配已在 Windows + DeepSeek V4.1 本机验证；其他客户端和操作系统仍未验证。
-
 ## 常见问题与隐私
 
 **只有网页版或手机端可以吗？支持其他 AI 客户端和系统吗？**
 
-当前支持上述 Windows 本地 Codex 项目流程，以及通过一次性 profile 合并接入的 DeepSeek Harness 桌面版。尚未验证仅靠网页版或手机端完成安装、其他 AI 客户端或其他操作系统的完整流程。
+本分支提供 Windows 本地 DeepSeek Harness 工作区流程，其他客户端使用对应发行分支。
 
 **需要 API Key 或额外订阅吗？**
 
-开源代码不附带 AI 账号或订阅，可用权限、额度与费用取决于账号。本教程不要求另购 API Key，登录方式见 [OpenAI 官方说明](https://learn.chatgpt.com/docs/auth)。
+开源代码不附带 AI 账号或订阅，可用权限、额度与费用取决于账号。账号登录或模型配置沿用 Harness 本身的设置。
 
 **学习记录会上传到这个 GitHub 仓库吗？**
 

@@ -20,8 +20,17 @@ export function atomicJSON(path, value) {
   renameSync(temp, path);
 }
 
+export function clientTarget(root) {
+  const path = join(root, 'client-target.json');
+  if (!existsSync(path)) return 'codex'; // Older Codex installations remain usable.
+  const target = JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
+  if (target.version !== 1 || !['codex', 'deepseek'].includes(target.client)) throw new Error('Invalid client-target.json');
+  return target.client;
+}
+
 export function initialize(root) {
-  for (const dir of ['Study/_System', 'Study/_Inbox', '.private', '.codex']) mkdirSync(join(root, dir), {recursive: true});
+  const target = clientTarget(root);
+  for (const dir of ['Study/_System', 'Study/_Inbox', '.private', ...(target === 'codex' ? ['.codex'] : [])]) mkdirSync(join(root, dir), {recursive: true});
   const configPath = join(root, 'config.local.json');
   if (!existsSync(configPath)) atomicJSON(configPath, {moodle_url: 'https://moodle.hku.hk', timezone: 'Asia/Hong_Kong'});
   const path = join(root, 'Study/_System/state.json');
@@ -29,6 +38,7 @@ export function initialize(root) {
     const state = {schema_version: 1, revision: 0, timezone: 'Asia/Hong_Kong',
       study_root: 'Study', created_at: new Date().toISOString(), settings: {
         brief_send_authorized: false, study_capacity_target: 0.8,
+        course_content_sync: {version: 1, grants: []},
         study_capacity_range: [0.7, 0.85], review_minutes_range: [15, 30],
         moodle_refresh_policy: {mode: 'first_learning_turn_or_explicit_request', conversation_boundary: 'new_chat_thread',
           unrelated_tasks: 'skip_learning_entry', maintenance: 'diagnosis_only',
@@ -43,7 +53,7 @@ export function initialize(root) {
     saveState(root, 'init', state);
   }
   const mcpPath = join(root, '.codex/config.toml');
-  if (!existsSync(mcpPath)) writeFileSync(mcpPath,
+  if (target === 'codex' && !existsSync(mcpPath)) writeFileSync(mcpPath,
     '[mcp_servers.moodle_study]\ncommand = ' + JSON.stringify(process.execPath.replaceAll('\\', '/')) +
     '\nargs = [' + JSON.stringify(join(root, 'tools/moodle/run.mjs').replaceAll('\\', '/')) + ', "mcp"]\nstartup_timeout_sec = 60\ntool_timeout_sec = 180\n', 'utf8');
   return JSON.parse(readFileSync(path, 'utf8'));
@@ -53,7 +63,7 @@ const READ_METHODS = new Set([
   'core_webservice_get_site_info', 'core_enrol_get_users_courses', 'core_course_get_contents',
   'mod_assign_get_assignments', 'mod_assign_get_submission_status', 'mod_quiz_get_quizzes_by_courses',
   'mod_quiz_get_user_attempts', 'mod_forum_get_forum_discussions', 'mod_forum_get_discussion_posts',
-  'core_calendar_get_action_events_by_timesort',
+  'core_calendar_get_action_events_by_timesort', 'mod_page_get_pages_by_courses',
 ]);
 
 export class ReadOnlyClient extends MoodleClient {

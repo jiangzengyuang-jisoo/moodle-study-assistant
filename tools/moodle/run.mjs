@@ -11,6 +11,7 @@ import { createInterface } from 'node:readline/promises';
 import { initialize, atomicJSON, ReadOnlyClient } from './core.mjs';
 import { collectRefresh } from './refresh.mjs';
 import {chatCourseOptions, courseCatalog, selectCoursesInChat} from './chat-course-selection.mjs';
+import {normalizeSite} from './content-policy.mjs';
 import {
   SCOPE_TEXT, SCOPE_VERSION, authorizeCourses, authorizationReport, newestSnapshotPath,
   readJSON, selectedPages, syncCourseLibrary,
@@ -74,7 +75,8 @@ function refreshForCourseSync(chat, explicit) {
   if (chat) args.push('--chat', chat);
   const result = spawnSync(process.execPath, args, {
     cwd: root, stdio: 'inherit', windowsHide: true,
-    env: {...process.env, STUDY_PYTHON: python(root)},
+    // The chooser runs its library stage immediately after this metadata refresh.
+    env: {...process.env, STUDY_PYTHON: python(root), STUDY_DEFER_CONTENT_SYNC: '1'},
   });
   return result.status ?? 1;
 }
@@ -309,6 +311,31 @@ async function main() {
     if (!result.collection_complete) process.exitCode = 2;
     return;
   }
+  if (mode === 'content-sync') {
+    const index = process.argv.indexOf('--snapshot');
+    const path = index >= 0 ? process.argv[index + 1] : null;
+    if (!path) throw new Error('课程内容同步需要本轮已保存的快照');
+    // Reuse the state writer's current-run gate; an old/modified snapshot or a
+    // changed school/course scope must not start downloads.
+    const checked = spawnSync(python(root), ['-B', '-c',
+      'import sys; sys.path.insert(0, sys.argv[1]); from snapshot_guard import validate_current_snapshot; from state_io import read; validate_current_snapshot(sys.argv[2], read(sys.argv[3]), allow_legacy=False)',
+      join(root, 'tools/study'), statePath, path], {encoding: 'utf8', windowsHide: true});
+    if (checked.status !== 0) throw new Error('本轮快照或课程范围已变化，未启动资料下载；请明确重新同步');
+    const snapshot = json(path);
+    if (snapshot.account_scope?.user_id !== client.userId
+        || normalizeSite(snapshot.account_scope?.site) !== normalizeSite(client.baseUrl)) {
+      throw new Error('本轮快照与当前学校账户不一致，未启动资料下载');
+    }
+    const state = json(statePath);
+    const captured = new Set(snapshot.pages.map(page => page.courseid));
+    state.courses = state.courses.map(course => ({...course,
+      moodle_course_ids: (course.moodle_course_ids ?? []).filter(id => captured.has(id))}));
+    const {syncAuthorizedContent} = await import('./content-sync-router.mjs');
+    const result = await syncAuthorizedContent({client, state, root, snapshot, snapshotPath: path});
+    console.log(JSON.stringify({...result, reviewed: false}));
+    if (result.status === 'partial') process.exitCode = 2;
+    return;
+  }
   if (mode === 'download') {
     const args = process.argv.slice(3);
     const authorized = args.includes('--authorized');
@@ -321,7 +348,7 @@ async function main() {
     return;
   }
   if (mode === 'mcp') { const { serve } = await import('./server.mjs'); await serve(client); return; }
-  throw new Error('用法：run.mjs init | check | courses [--select IDS --mode full|info_only --yes] | library-sync [--course ID] [--snapshot PATH] [--dry-run] | refresh | mcp | download <module-id> [...] --authorized');
+  throw new Error('用法：run.mjs init | check | courses [--select IDS --mode full|info_only --yes] | library-sync [--course ID] [--snapshot PATH] [--dry-run] | content-sync --snapshot PATH | refresh | mcp | download <module-id> [...] --authorized');
 }
 main().catch(error => {
   // Stable, allowlisted code for diagnostics; never expose arbitrary properties.

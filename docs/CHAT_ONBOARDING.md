@@ -7,7 +7,7 @@
 1. 先读取当前项目规则，运行 `diagnose.cmd -Json -NoPause`，只按缺口补装。没有 Python 时检查现有运行环境，并由助手处理允许的安装步骤；确需本人操作或客户端审批时，在聊天里说明具体内容。已有档案损坏先修复，不删掉重建。
 2. 由助手运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File setup.ps1`；不要运行会 `pause` 的 `setup.cmd`，也不要启动交互式 `start.cmd`。安装授权涵盖正常依赖安装；付费或权限扩大另按实际要求处理。
 3. 安装结束后立即在当前回复中说明怎样通过聊天使用系统，不能只报“安装成功”。读取 `tools/study/product_tour.py status` 的结果：尚未讲解则主动进行下文教学。只完成环境时说明登录/选课/资料/核读的真实未完成项，然后继续初始化。
-4. 在 Harness 聊天中运行安装器时会合并 Harness 配置；若从普通终端安装则先由助手检查 `dsh_integration.py status --json`，必要时执行 `install`；需要重启 Harness 时，先保存现有进度，明确“退出并重新打开 Harness，回到这个项目聊天”。重启后读实际诊断接续，不能因配置已写入就宣称工具运行已验证。不要用其他版本整目录覆盖本端的 SSO 登录修复和资料同步实现。
+4. 本分支安装器按 `client-target.json` 合并 Harness 配置，不依赖是否从 Harness 启动；已有安装先由助手检查 `dsh_integration.py status --json`，必要时执行 `install`；需要重启 Harness 时，先保存现有进度，明确“退出并重新打开 Harness，回到这个项目聊天”。重启后读实际诊断接续，不能因配置已写入就宣称工具运行已验证。不要用其他版本整目录覆盖本端的 SSO 登录修复和资料同步实现。
 
 ## 登录只进入学校网页
 
@@ -54,7 +54,7 @@ node tools/moodle/run.mjs courses --select-file tmp/course-selection.json
 
 保存前会重新校验账号、可见课程与状态版本；不匹配则不写入，重新列出并核对变化，不套用旧授权。此入口没有 stdin 提问、不打开终端窗口、不自动启动另一个学习聊天。
 
-保存成功后按 `SESSION.md` 用**当前原始聊天 ID**执行 `study.cmd ... continue`，完成本聊天首次采集与独立快照核读；如果本聊天已有采集而用户主动改变选课，则执行一次 `refresh`。不要先用临时初始化聊天刷新，再用新聊天重复刷新。失败需报告且不自动循环重试。完整初始化（`full`）还必须由助手运行 `node tools/moodle/run.mjs library-sync --snapshot "本轮独立快照路径"`，完成本端的资料下载、归档和索引；只同步信息（`info_only`）不执行资料下载。本部署的 `continue` 不会自动启动资料下载，不能省略此步骤后宣称完整初始化。下载、索引、核读分别说明，缺口保留。
+保存成功后按 `SESSION.md` 用**当前原始聊天 ID**执行 `study.cmd ... continue`，完成本聊天首次采集与独立快照核读；如果本聊天已有采集而用户主动改变选课，则执行一次 `refresh`。不要先用临时初始化聊天刷新，再用新聊天重复刷新。失败需报告且不自动循环重试。完整初始化（`full`）在本轮 `continue/refresh` 的资料阶段自动下载、归档和索引，助手必须核对返回的 `content_sync` 与资料报告；已完成不再重复运行。资料阶段被跳过或失败时先说明原因，需补齐且已获重试授权时再运行 `node tools/moodle/run.mjs library-sync --snapshot "本轮独立快照路径"`。只同步信息（`info_only`）不执行资料下载。下载、索引、核读分别说明，缺口保留。
 
 ## 主动教用户使用
 

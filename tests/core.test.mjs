@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { initialize, normalizeSite, ReadOnlyClient } from '../tools/moodle/core.mjs';
@@ -17,7 +17,8 @@ test('initialization is blank, portable and preserves existing state', () => {
     for (const name of ['review_sessions','review_attempts','learning_feedback','exam_profiles','mock_exams','mock_attempts'])
       assert.deepEqual(state[name], []);
     assert.equal(state.settings.learning_loop.enabled, true);
-    assert.equal(state.settings.exam_preparation.auto_download_materials, false);
+  assert.equal(state.settings.exam_preparation.auto_download_materials, false);
+  assert.deepEqual(state.settings.course_content_sync, {version: 1, grants: []});
     assert.equal(state.settings.moodle_refresh_policy.mode, 'first_learning_turn_or_explicit_request');
     assert.equal(state.settings.moodle_refresh_policy.unrelated_tasks, 'skip_learning_entry');
     assert.equal(state.settings.moodle_refresh_policy.maintenance, 'diagnosis_only');
@@ -74,4 +75,27 @@ test('collection supports one configured course and flags partial failures', asy
   assert.equal(result.reviewed, false);
   assert.equal(result.errors[0].scope, 'quiz_catalog');
   await assert.rejects(collectRefresh(client, {courses: [], tasks: []}), /course/i);
+});
+
+for (const client of ['codex', 'deepseek']) test(`release ${client} writes only its client configuration and preserves existing files`, () => {
+  const root = mkdtempSync(join(tmpdir(), 'client-release-'));
+  try {
+    writeFileSync(join(root, 'client-target.json'), JSON.stringify({version: 1, client}));
+    initialize(root);
+    assert.equal(existsSync(join(root, '.codex/config.toml')), client === 'codex');
+    const state = readFileSync(join(root, 'Study/_System/state.json'));
+    mkdirSync(join(root, '.codex'), {recursive: true});
+    writeFileSync(join(root, '.codex/config.toml'), '# USER CONFIG');
+    initialize(root);
+    assert.equal(readFileSync(join(root, '.codex/config.toml'), 'utf8'), '# USER CONFIG');
+    assert.deepEqual(readFileSync(join(root, 'Study/_System/state.json')), state);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+test('invalid release target fails before creating state or configuration', () => {
+  const root = mkdtempSync(join(tmpdir(), 'bad-release-'));
+  try {
+    writeFileSync(join(root, 'client-target.json'), '{"version":1,"client":"unknown"}');
+    assert.throws(() => initialize(root), /Invalid client/);
+    assert.equal(existsSync(join(root, 'Study')), false);
+  } finally { rmSync(root, {recursive: true, force: true}); }
 });
