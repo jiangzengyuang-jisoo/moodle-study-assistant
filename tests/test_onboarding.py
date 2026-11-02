@@ -168,6 +168,21 @@ class OnboardingTests(unittest.TestCase):
             row = self.checks(self.app.inspect())['course_content']
             self.assertEqual('unknown', row['status'], change)
 
+    def test_new_library_consent_does_not_reuse_old_ready_report(self):
+        self.content_fixture()
+        path = self.root / 'Study/_System/state.json'
+        for mode in ('full', 'info_only'):
+            state = read(path)
+            state['settings']['course_library_authorization'] = {
+                'schema': 1, 'courses': {'synthetic': {'mode': mode, 'moodle_courseid': 9}}}
+            atomic(path, state)
+            before = self.tree()
+            row = self.checks(self.app.inspect())['course_content']
+            self.assertEqual('unknown', row['status'])
+            self.assertEqual(before, self.tree())
+            if mode == 'full': self.assertIn('LibrarySync', row['next_step'])
+            else: self.assertIn('只同步信息', row['message'])
+
     def test_credential_is_only_statted_in_local_diagnosis(self):
         self.prepared()
         original = Path.open

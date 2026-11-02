@@ -1,5 +1,12 @@
 # 更新日志
 
+## DeepSeek 分支合并补充
+
+- 保留独立客户端配置，合入 Chrome 登录与 SSO 授权续接修复、课程资料库初始化。
+- 正常刷新识别新旧课程授权；新“只同步信息”选择优先于旧授权，选课初始化避免重复下载。
+- 保留旧版资料安装、来源引用与版本归档兼容，并校正诊断报告位置。
+
+
 这里记录每次更新对学习体验的影响。日期按香港时间（UTC+8）的代码提交日期排列；此前的记录于 2026-10-30 根据提交历史补齐，不代表当时已经发布过独立安装包。
 
 已有用户请先看[保留学习记录的升级步骤](docs/新手使用指南.md#从旧版更新)。直接下载新版代码不会自动更新你电脑上的旧文件夹。
@@ -16,6 +23,32 @@
 | [2026-09-22](#2026-09-22) | 首次发布：Windows 安装、学校账号连接、课程信息与学习记录 |
 
 ## 2026-11-02
+
+
+### 课程级授权与资料初始化
+
+- 0.4.0 新增“课程级一次授权 + 自动初始化和增量同步”。选课入口 `courses`（`choose-courses.cmd`、start.cmd 第 6 项“调整课程与资料授权”）现在先列出课程，再显示“课程级资料授权范围”，由本人选择：`1` 完整初始化（同步课程信息 + 下载/归档/建立索引）、`2` 只同步课程信息（不下载）、`0` 取消。确认后保存到 `state.settings.course_library_authorization`，每个课程页面记录 `mode`（`full`/`info_only`）、`moodle_courseid`、`authorized_at`、`scope_version`；新增课程页面必须重新授权，没有后台刷新或定时任务。
+- 完整初始化自动复用 6 小时内的完整快照，否则先运行一次只读采集（`refresh`），再枚举、下载、归档并建立资料索引；采集与核读仍分离。之后用 `library-sync`（可选 `--course`、`--snapshot`、`--no-snapshot`、`--max-bytes`、`--batch-size`、`--dry-run`）做增量同步，只读 API，不开始测验尝试、不提交作业、不发帖、不发邮件、不修改学校状态。
+- 非交互入口 `courses --select … --mode full|info_only --yes [--refresh] [--no-sync] [--chat …]` 仅供 AI 在用户当前对话已明确授权后使用；`--yes` 表示用户已确认该课程范围，不是程序自行授权。
+- 下载当前账号可直接获取的课程文件（课件、作业附件、论坛附件、正文内联图片、可直接下载的音视频等），并保存公告、作业要求、讨论文字及准确出处；流媒体、外部网站、额外登录和权限受限内容只保留入口与原因（如 `quiz_questions_require_attempt_not_started`、`external_streaming_not_downloaded`、`restricted_by_course_permission`）。
+- 归档沿用 `Study/<course_id>/<category>/<原文件名>`，先入 `_Inbox` 暂存、按内容哈希去重、旧版进 `_Archive`；同一课程/目录下同名不同内容使用 `module-<模块编号>` 子目录，绝不覆盖；相同字节不同来源记 `duplicate_of`，同一来源新字节建立 `supersedes` 版本关系，保留来源页面与 SHA-256。
+- 同一科多页面合并：MATH1013 `146265`（主）+`142648`（副）按 `moodle-146265`，ECON1210 `146739`（主）+`146748`（副）按 `moodle-146739`；材料 `course_id` 记主学科，`source_pages` 保留各页面来源；`library.cmd search/outline --course` 和 `library.py sync --course` 对副页面沿 `merged_into` 解析到主学科，`read`/`render` 按 material ID 读取。
+- 逐项状态与断点续跑：`installed`、`identical`、`duplicate`、`already_current`、`failed`、`skipped`、`blocked` 记入 `Study/_System/LibrarySync/ledger.json`；最近报告与人工缺口清单为同目录的 `latest.json`、`资料缺口.md`；中断后再次同步只补未完成、新增或变更项，失败项重试，已完成项不重复下载。
+- 索引与核读区分：下载成功（`installed`）、解析成功（catalog `indexed`）都不等于已核读或已掌握；OCR/抽取始终未核验，音视频和压缩包只归档不解析（索引中标注原因）。`library-sync` 安装后统一重建 catalog，助手再按课程、文件、单元页定位并核读原页。
+- 安全边界不变：不读取或导出浏览器 Cookie，Token 不写聊天/状态/日志/Git，下载内容只存本地被 Git 忽略的 `Study/`，不上传；不导入其他电脑的个人资料。
+- 受限 shell（如 DSH 沙箱）可能阻止 Node 子进程、DPAPI 解密或网络下载；真实同步请在正常终端（start.cmd、choose-courses.cmd 或经用户批准的完整访问命令）运行。
+- 升级保留已有 `Study/`、学习记录和授权；再次运行 `courses` 确认授权即可使用，不需要重建档案；旧资料不批量迁移，新同步按增量安装。详见 [课程级资料授权与自动同步](docs/COURSE_LIBRARY.md)。
+- 验证：在 7 个已选课程页面上执行真实完整初始化（Moodle 教学页 369 个模块；枚举 304 个可直接文件、44 个文本捕获、153 个带原因跳过；304 个文件候选中 300 个独立文件安装、4 个相同字节去重、0 失败；首轮下载约 214 MB）。首次完整同步后继续运行同步，最后两次均为 0 下载、348 项全部 `already_current`、0 失败，验证断点续跑不重复下载。本地索引 394 条材料行、4623 个单元、4358 个有文字单元，全部 `indexed`；MATH1013、ACCT1101、ECON1220、ECON1210、CCGL9019 五个学科各用真实课件检索定位到具体文件与页码，并回读该页文字核对关键词，未把检索成功当作核读或掌握。新增 Node 回归 `tests/course-library.test.mjs` 与 Python 回归 `tools/study/test_course_library.py`，覆盖授权写入/合并、重复授权幂等、批量安装、同名不同内容分目录、重复内容去重、同来源改版归档、merged 学科检索、缺口报告、失败重试与未授权课程阻止；`npm test` 56/56、`tests/` Python 78/78、`tools/study/` Python 全量 437/437 通过。测试使用隔离临时目录和虚构数据，不连接学校、不读取个人资料；限制是未验证真实学校服务端零写入（客户端只用只读接口且无写函数），受限 shell 下需在正常终端或经批准完整访问运行。
+
+### 登录浏览器启动修复
+
+- 学校登录后若停在 Moodle 首页，登录工具会在同一浏览器窗口恢复原授权请求一次，保留原会话校验参数；仍返回首页则明确报错，不无限重试。不读取或导出 Cookie。补充本地 Chrome 模拟测试：直接授权、登录后落到首页、连续返回首页。
+
+- `connect.cmd` 为本次登录进程使用项目内被 Git 忽略的 `tmp/auth-runtime` 临时目录，避免系统临时目录不可用时浏览器尚未弹出就失败；不修改 Windows 全局环境变量。无法创建目录时给出明确提示。
+- `connect.cmd` 默认使用 Chrome；需要临时切换时可运行 `connect.cmd --browser msedge`。
+- 更新后重新双击 `connect.cmd`，由本人在学校网页完成登录；无需重装浏览器或迁移学习记录。已复现原临时目录错误，并验证修复后的 Edge/Chrome 空白浏览器可启动；实际学校登录仍需本人完成。
+
+
 
 ### 客户端发行分支
 

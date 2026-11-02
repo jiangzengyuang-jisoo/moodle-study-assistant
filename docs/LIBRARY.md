@@ -4,6 +4,8 @@
 
 `state.json` 仍是唯一学习状态。这里的缓存只保存资料定位、抽取文字、OCR候选和原页图片，不写进度、错题、FSRS评级或学校状态。所有资料仍以原件为准。
 
+课程资料的自动初始化、增量同步和缺口记录见 [课程级资料授权与自动同步](COURSE_LIBRARY.md)：选课时保存课程级完整授权后，`node tools/moodle/run.mjs library-sync` 负责从 Moodle 枚举、下载、归档并登记资料，最后统一重建下列 catalog；`library.cmd sync` 只按 state.materials 重建解析缓存。两者都不写掌握状态。
+
 ## 跨章节学习证据定位
 
 判断某个概念是否讲过前，可运行 `tools/study/library.cmd evidence --course 课程ID --query "知识点或别名"`。它从最新状态搜索本科的知识观察、历史笔记、教学游标及历史、待复习项、覆盖核对、反馈、错题和复习作答；不按当前章节过滤。
@@ -58,9 +60,19 @@
 
 首次初始化 `sync` 无课程参数，登记现有全部materials；以后只在新增、变更或缓存故障时重建本科。每次使用校验源文件完整SHA-256和缓存摘要，文件大小/修改时间相同也不能绕过；失效时拒用旧文本。`sync` 只重解析变化文件。抽取器行为改变须提高 `EXTRACTOR_VERSION` 后同步，不能无版本变更复用旧结果。
 
+下载成功、解析成功、已核读和已掌握是四个不同状态：`library-sync` 报告 `installed`、`catalog` 状态为 `indexed`，都不等于核读或掌握，也不会写 `verified` 或 FSRS。文字抽取与 OCR 始终未核验，公式、图表和题号要核对原页；音视频与压缩包只归档不解析，索引中标注 `unsupported_format`、`unsupported_archive` 等警告。缺口逐项保存在 `Study/_System/LibrarySync/资料缺口.md` 和 `latest.json`，未列出的资料不等于不存在，未获取项会写入口和原因。
+
 `ocr` 使用Windows本机识别，补PDF无文本页及图片文件，按源哈希、单元、语言与OCR版本复用。默认 `en-US`，需要中文时传 `--language zh-Hans-CN`；未安装语言会报错，不自动安装。OCR保留原图与错误信息，不覆盖抽取正文；数字、符号和表格列序可能有错，必须看原页。识别空字符串也不能证明页面为空。新增DOCX/PPTX的嵌图仍按原件视觉读取。
 
+`Study/_System/Library/catalog.json` 是全库累计索引，包含当前版本行和 `_Archive` 归档版本行；报告里的 `materials` 总数不等于某一门课的当前材料数，单科当前材料以 `state.materials`、`outline --course` 或缺口清单中的逐课程统计为准。
+
 Moodle在每个新对话开始时完整检查一次，用户明确要求刷新或查询最新学校信息时再次检查；同一对话后续消息复用已核验结果，切换课程、跨日、上下文压缩和重新打开旧对话不另触发，不设固定间隔。网络只读采集使用全局最多4个并发请求，各论坛分页顺序、正文/回复数量和权限检查保留。需要刷新时可与本地context/定位并行，依赖此次学校检查的结论须等刷新与变更核读完成。刷新成功不自动表示内容已审阅，复用旧结果不写成当前刚完成检查。
+
+## 学科合并与缺口
+
+同一科的公共课程页和个人班级页可归入一个学科：MATH1013 页面 `146265`（主）+ `142648`（副）按 `moodle-146265` 组织，ECON1210 `146739`（主）+ `146748`（副）按 `moodle-146739` 组织。主学科课程记录保存 `linked_page_ids`，副页面用 `merged_into` 指向主学科；材料的 `course_id` 记主学科，`source_pages` 保留各页面来源。`search`、`outline` 的 `--course` 以及 `library.py sync --course` 传副页面或 state 课程 ID 时会沿 `merged_into` 解析到主学科再处理；`read`/`render` 用 material ID 读取，材料本身的 `course_id` 已是主学科。
+
+资料缺口以 `Study/_System/LibrarySync/资料缺口.md` 为准：逐课程列出未获取、未解析或解析有警告的项目及原因，详细字段在 `latest.json`。缺口表示本次授权范围内没有取得或无法安全获取，不等于课程没有该资料；需要时按 [COURSE_LIBRARY.md](COURSE_LIBRARY.md) 的入口人工处理。
 
 ## 文件与恢复
 

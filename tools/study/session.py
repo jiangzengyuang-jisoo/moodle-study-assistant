@@ -153,6 +153,8 @@ class Session:
 
     def sync_content(self, snapshot_path):
         """A separate, resumable stage; metadata collection keeps its own limit."""
+        if os.environ.get('STUDY_DEFER_CONTENT_SYNC') == '1':
+            return {'status': 'not_authorized', 'reason': 'deferred_to_course_chooser', 'automatic_retry': False}
         snapshot = read(snapshot_path)
         account = snapshot.get('account_scope', {})
         state = read(self.state)
@@ -166,13 +168,23 @@ class Session:
                         and grant.get('user_id') == account.get('user_id')
                         and grant.get('moodle_course_id') in selected & captured
                         for grant in grants) if isinstance(grants, list) else False
+        library_policy = state.get('settings', {}).get('course_library_authorization')
+        library_mode = 'course_library_authorization' in state.get('settings', {})
+        if library_mode:
+            library_grants = library_policy.get('courses', {}) if isinstance(library_policy, dict) and library_policy.get('schema') == 1 else {}
+            permitted = isinstance(library_grants, dict) and any(
+                isinstance(library_grants.get(course.get('id')), dict)
+                and library_grants[course['id']].get('mode') == 'full'
+                and library_grants[course['id']].get('moodle_courseid') in set(course.get('moodle_course_ids', [])) & captured
+                for course in state.get('courses', []))
         if not permitted:
             return {'status': 'not_authorized', 'automatic_retry': False}
         node = os.environ.get('STUDY_NODE') or shutil.which('node')
         if not node:
             raise ValueError('未找到 Node')
+        report_folder = 'LibrarySync' if library_mode else 'CourseContent'
         print(json.dumps({'stage': 'course_content_sync',
-                          'message': '正在下载、归档课程资料并建立索引，首次可能需要较长时间。进度保存在 Study/_System/CourseContent/latest.json；失败的资料可在明确刷新时增量补齐。'},
+                          'message': f'正在下载、归档课程资料并建立索引，首次可能需要较长时间。结果保存在 Study/_System/{report_folder}/latest.json；失败的资料可在明确刷新时增量补齐。'},
                          ensure_ascii=False), flush=True)
         result = subprocess.run([node, str(self.root / 'tools/moodle/run.mjs'), 'content-sync',
                                  '--snapshot', str(snapshot_path)], cwd=self.root,
@@ -186,7 +198,7 @@ class Session:
         if output.get('status') not in {'complete', 'partial', 'not_authorized'}:
             raise ValueError('课程资料同步状态无效')
         return {'status': output['status'], 'counts': output.get('counts', {}),
-                'report_path': str(self.state.parent / 'CourseContent/latest.json'), 'automatic_retry': False}
+                'report_path': str(self.state.parent / report_folder / 'latest.json'), 'automatic_retry': False}
 
     def start(self, explicit=False, subtask=False, collector=None, content_collector=None):
         if subtask:

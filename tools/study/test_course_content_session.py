@@ -80,3 +80,35 @@ class CourseContentSessionTests(unittest.TestCase):
             result = self.session.start(collector=self.collect)
         process.assert_not_called()
         self.assertEqual('interrupted', result['content_sync']['reason'])
+
+    def library_authorize(self, mode='full'):
+        self.authorize()
+        state = read(self.session.state)
+        state['settings']['course_library_authorization'] = {
+            'schema': 1, 'courses': {'C': {'mode': mode, 'moodle_courseid': 9}}}
+        atomic(self.session.state, state)
+
+    def test_library_consent_runs_managed_stage_and_returns_library_report(self):
+        self.library_authorize()
+        done = subprocess.CompletedProcess([], 0, b'{"status":"complete","counts":{"installed":3}}', b'')
+        with patch('session.subprocess.run', return_value=done) as process, patch('session.shutil.which', return_value='node'):
+            result = self.session.start(collector=self.collect)
+            self.assertEqual('complete', result['content_sync']['status'])
+            self.assertIn('LibrarySync', result['content_sync']['report_path'])
+            self.session.start(collector=self.collect)
+            process.assert_called_once()
+
+    def test_new_info_only_consent_overrides_old_full_grants(self):
+        self.library_authorize('info_only')
+        with patch('session.subprocess.run') as process:
+            result = self.session.start(collector=self.collect)
+        process.assert_not_called()
+        self.assertEqual('not_authorized', result['content_sync']['status'])
+
+    def test_course_chooser_defers_download_until_its_own_library_stage(self):
+        self.library_authorize()
+        with patch.dict('os.environ', {'STUDY_DEFER_CONTENT_SYNC': '1'}), patch('session.subprocess.run') as process:
+            result = self.session.start(collector=self.collect)
+        process.assert_not_called()
+        self.assertEqual('deferred_to_course_chooser', result['content_sync']['reason'])
+        self.assertEqual('collected', result['phase'])

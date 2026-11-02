@@ -16,6 +16,19 @@ POLICY = {"enabled": True, "archive_days": 30, "cleanup_on_use": True,
           "referenced_versions": "keep", "modified_versions": "keep",
           "background_task": False}
 
+# One directory level only; a course page may reuse a filename across modules.
+ARCHIVE_SUBDIR = re.compile(r"[A-Za-z0-9._-]{1,80}")
+
+
+def archive_subdir_name(value):
+    """Validate a single safe directory segment used to separate same-name files."""
+    if value is None:
+        return None
+    if (not isinstance(value, str) or not ARCHIVE_SUBDIR.fullmatch(value)
+            or value in {".", ".."}):
+        raise ValueError("Unsafe archive subdirectory name")
+    return value
+
 
 def current(row):
     return not row.get("superseded_by") and row.get("version_status") not in {"archived", "deleted"}
@@ -260,6 +273,10 @@ def promote(state_path, incoming, old_id=None, at=None):
         subdir = incoming.get("source_subdirectory")
         if subdir is not None and (not isinstance(subdir, str) or not re.fullmatch(r"source-[a-f0-9]{24}", subdir)):
             raise ValueError("Invalid source subdirectory")
+        archive_subdir = archive_subdir_name(incoming.get("archive_subdir"))
+        if subdir and archive_subdir and subdir != archive_subdir:
+            raise ValueError("Conflicting source subdirectory formats")
+        subdir = subdir or archive_subdir
         target = safe(study, Path(course) / category / subdir / name if subdir else Path(course) / category / name)
         moves, edits = [], []
         archived = None

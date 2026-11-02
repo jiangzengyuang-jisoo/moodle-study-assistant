@@ -78,6 +78,15 @@ def store_token(token):
         raise ValueError('无法保存本机加密 Token')
 
 
+def is_moodle_landing(current_url, site):
+    """Only resume on this Moodle site's home/dashboard, never an identity provider."""
+    current, expected = urlsplit(current_url), urlsplit(site)
+    base = expected.path.rstrip('/')
+    return (current.scheme == expected.scheme and current.netloc.lower() == expected.netloc.lower()
+            and current.path in {base, base + '/', base + '/index.php',
+                                 base + '/my/', base + '/my/index.php'})
+
+
 def browser_token(site, channel):
     from playwright.sync_api import sync_playwright
     passport = str(secrets.randbelow(900000000) + 100000000)
@@ -110,8 +119,23 @@ def browser_token(site, channel):
             page.goto(url, wait_until='domcontentloaded', timeout=60000)
             print('请在弹出的学校网页完成登录和验证。如提示打开 App，请先完成学校页面上的确认。', flush=True)
             deadline = time.monotonic() + 600
+            resumed = False
+            landing_ticks = 0
             while not result and time.monotonic() < deadline and not page.is_closed():
                 page.wait_for_timeout(250)
+                if result or page.is_closed():
+                    break
+                landing_ticks = landing_ticks + 1 if is_moodle_landing(page.url, site) else 0
+                if landing_ticks < 2:
+                    continue
+                if resumed:
+                    raise ValueError('学校页面仍返回首页，未完成 API 授权；已停止自动重试。请检查学校移动服务授权是否可用。')
+                # SSO can lose the original return URL (including after a manual refresh).
+                # Reuse this browser context and the original passport; never read cookies.
+                resumed = True
+                landing_ticks = 0
+                print('检测到学校首页，正在继续本次 API 授权，请保留此窗口。', flush=True)
+                page.goto(url, wait_until='domcontentloaded', timeout=60000)
             if 'token' not in result:
                 raise ValueError('未收到有效授权；可重试，或使用 connect.cmd --manual 输入官方 Token。')
             return result['token']

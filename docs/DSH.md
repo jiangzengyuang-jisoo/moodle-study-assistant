@@ -1,7 +1,7 @@
 # 在 DeepSeek Harness（DSH）中使用
 
 
-本指南用于 `deepseek` 分支。安装只配置 DeepSeek Harness；学习引擎、状态协议与证据规则和 Codex 分支共用。本分支来自公开源码基线，不代表 D 盘独立部署的后续修复已自动合并；新部署仍需实际验收。
+本指南用于 `deepseek` 分支。安装只配置 DeepSeek Harness；学习引擎、状态协议与证据规则和 Codex 分支共用。本分支来自公开源码基线，已合入 D 盘至 6cdf2b1 的公开源码更新；新部署仍需实际验收。
 
 ## 1. 已实测环境
 
@@ -146,3 +146,5 @@ DSH 适配新增的测试：
 - 真实学校 SSO/MFA、Windows OCR 中文语言包、PPTX/DOCX 经 `office-render` 的清晰度仍需按实际课件验证。
 - 如果 DSH 默认模型不是支持图片输入的 DeepSeek 模型，`read_image` 会明确拒绝；请在校内设置中确认模型（本版按 DeepSeek V4.1 验证）。
 - 在 Windows 受限环境（如本仓库之外的沙箱）运行测试命令可能失败，属于执行环境限制，不是学习工具回归。
+
+课程资料库初始化和增量同步见 [COURSE_LIBRARY.md](COURSE_LIBRARY.md)。

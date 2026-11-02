@@ -54,6 +54,27 @@ def read_json(path):
     return json.loads(Path(path).read_text(encoding='utf-8-sig'))
 
 
+def resolve_course(state, course_id):
+    """Resolve a linked/merged course page to its primary subject course id.
+
+    Secondary section pages share the primary subject's materials and index;
+    unknown or cyclic merges return the last known course id unchanged.
+    """
+    courses = {course.get('id'): course for course in state.get('courses', [])
+               if isinstance(course, dict) and course.get('id')}
+    current = course_id
+    seen = set()
+    while current in courses and current not in seen:
+        seen.add(current)
+        merged = courses[current].get('merged_into')
+        if not isinstance(merged, str) or not merged or merged == current:
+            break
+        if merged not in courses:
+            break
+        current = merged
+    return current
+
+
 def atomic_json(path, data):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,8 +164,10 @@ class Library:
         rows = state.get('materials', [])
         if len({m['id'] for m in rows}) != len(rows):
             raise ValueError('Duplicate material IDs in state; library not rebuilt')
-        if course and course not in {c['id'] for c in state.get('courses', [])}:
-            raise ValueError('Unknown course: '+course)
+        if course:
+            course = resolve_course(state, course)
+            if course not in {c['id'] for c in state.get('courses', [])}:
+                raise ValueError('Unknown course: '+course)
         extracted = reused = 0
         with build_lock(self.folder):
             previous = {m['id']:m for m in self.catalog()['materials']}
@@ -222,6 +245,9 @@ class Library:
     def fresh_rows(self, course=None, mid=None, include_archived=False):
         from learning_library.versions import current as is_current
         state = self.state()
+        # A merged section page reads through to its primary subject's materials.
+        if course:
+            course = resolve_course(state, course)
         registered = {m['id']:m for m in state.get('materials',[])}
         catalog = self.catalog()
         from learning_library.extract import EXTRACTOR_VERSION
@@ -366,6 +392,7 @@ class Library:
 
     def outline(self, course, include_solutions=False):
         state,rows,issues = self.fresh_rows(course)
+        resolved = resolve_course(state, course)
         result=[]
         for row in rows:
             data = self.data(row)
@@ -376,7 +403,7 @@ class Library:
                            'headings':[] if hidden else [{'unit':p['page'],'heading':p.get('heading',''),
                                'flags':p.get('flags',[])} for p in data['pages']],
                            'warnings':row.get('warnings',[]),'verified':False})
-        c=next((c for c in state.get('courses',[]) if c['id']==course),None)
+        c=next((c for c in state.get('courses',[]) if c['id']==resolved),None)
         if c is None: raise ValueError('Unknown course: '+course)
         return {'course':course,'state_revision':state.get('revision'),'current_topic':c.get('current_topic'),
                 'assignment_focus':c.get('assignment_focus'),'materials':result,'unavailable':issues,
