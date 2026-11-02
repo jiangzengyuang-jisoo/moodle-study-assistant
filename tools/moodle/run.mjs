@@ -10,6 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { initialize, atomicJSON, ReadOnlyClient } from './core.mjs';
 import { collectRefresh } from './refresh.mjs';
+import {chatCourseOptions, courseCatalog, selectCoursesInChat} from './chat-course-selection.mjs';
 import {
   SCOPE_TEXT, SCOPE_VERSION, authorizeCourses, authorizationReport, newestSnapshotPath,
   readJSON, selectedPages, syncCourseLibrary,
@@ -238,6 +239,7 @@ async function runLibrarySync(client, options) {
 async function main() {
   const mode = process.argv[2] ?? 'check';
   if (mode === 'init') { initialize(root); console.log('空白档案和本地 MCP 配置已准备好；已有档案保留。'); return; }
+  const chatOptions = mode === 'courses' ? chatCourseOptions(process.argv.slice(3), process.stdin.isTTY) : null;
   if (!existsSync(statePath)) throw new Error('请先运行 setup.cmd');
   if (mode === 'refresh') {
     const args = process.argv.slice(3);
@@ -272,6 +274,14 @@ async function main() {
   const client = await new ReadOnlyClient(config.moodle_url, tokenFromWindows(bundle?.credential)).connect();
   if (mode === 'check') { console.log('Moodle API 已连接。'); return; }
   if (mode === 'courses') {
+    if (chatOptions) {
+      const context = {client, readState: loadState,
+        writeState: (expected, state) => saveState(root, 'replace', {expected, state})};
+      const result = chatOptions.action === 'list' ? await courseCatalog(context)
+        : await selectCoursesInChat({...context, selection: json(chatOptions.file)});
+      console.log(JSON.stringify(result));
+      return;
+    }
     const args = process.argv.slice(3);
     const selectIndex = args.indexOf('--select');
     const modeIndex = args.indexOf('--mode');

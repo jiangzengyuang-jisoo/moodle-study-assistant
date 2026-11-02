@@ -159,7 +159,7 @@ def main():
         raise ValueError('Token 格式无效')
     verify_token(site, token)
     store_token(token)
-    print('Moodle API 已验证并加密保存。下一步运行 choose-courses.cmd。')
+    print('Moodle API 已验证并加密保存。请回到当前 Harness 聊天，助手会接着列出课程，让你在聊天中选择并讲解系统用法。')
 
 
 if __name__ == '__main__':
