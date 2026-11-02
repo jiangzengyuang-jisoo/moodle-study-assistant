@@ -55,6 +55,14 @@ class PlanningTests(unittest.TestCase):
         state["deadlines"][1]["status"] = "Completed"
         self.assertNotIn("New work", planning.render_views(state, "2026-10-11T12:00:00+08:00")["Today Plan.md"])
 
+    def test_null_assignment_focus_does_not_crash_planning(self):
+        state = fixture()
+        state["courses"][0]["assignment_focus"] = None
+        meta = planning.refresh_plan_state(state, "2026-10-11T12:00:00+08:00")
+        self.assertIn("candidate_task_ids", meta)
+        views = planning.render_views(state, "2026-10-11T12:00:00+08:00")
+        self.assertIn("New work", views["Today Plan.md"])
+
     def test_unknown_capacity_stays_null_and_date_only_has_no_invented_clock(self):
         state = fixture()
         original = deepcopy(state["daily_plans"])

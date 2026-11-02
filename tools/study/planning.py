@@ -298,7 +298,7 @@ def _priorities(state, now, rows):
     ordered.extend(r["task"]["id"] for r in rows if r["task"].get("id") and not r["past"] and
                    r["date"] and r["date"] <= horizon)
     for course in state.get("courses", []):
-        ordered.extend(_list(course.get("assignment_focus", {}).get("task_ids")))
+        ordered.extend(_list((course.get("assignment_focus") or {}).get("task_ids")))
     result, seen = [], set()
     for task_id in ordered:
         task = tasks.get(task_id)
@@ -324,7 +324,7 @@ def _task_line(task, row, state):
     chapters = task.get("required_chapters")
     if not chapters:
         course = next((c for c in state.get("courses", []) if c.get("id") == task.get("course_id")), {})
-        focus = course.get("assignment_focus", {})
+        focus = course.get("assignment_focus") or {}
         if task.get("id") in _list(focus.get("task_ids")):
             chapters = focus.get("required_chapters")
     if chapters:
