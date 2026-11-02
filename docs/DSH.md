@@ -19,6 +19,8 @@
 
 ## 2. 一次性安装
 
+默认在本项目的 Harness 聊天中说“帮我安装并教我怎么用”，助手按 [CHAT_ONBOARDING.md](CHAT_ONBOARDING.md)运行无交互步骤、打开学校网页、在聊天列课程让本人选择，完成后主动教学。以下命令主要供助手执行和排错，不能把另开 CMD 或菜单操作当作必经步骤。
+
 前置：Node ≥ 22、Python ≥ 3.11；先在本项目目录运行过 `setup.cmd`（创建 `.venv`、`node_modules`、空白 `Study/`，已有学习档案会保留）。
 
 ### 2.1 合并 DSH 配置

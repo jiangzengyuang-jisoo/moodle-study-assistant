@@ -218,8 +218,9 @@ class Session:
         with self.timing('local_context'):
             from learning_library.context import build_context
             state = read(self.state)
+            from product_tour import tour_status
             return {'context': build_context(state, course), 'state_sha256': digest(state),
-                    'read_only': True}
+                    'read_only': True, 'product_onboarding': tour_status(state)}
 
     def acknowledge(self, snapshot_hash, proposal):
         """AI supplies a fully reviewed draft and the hash of its base state.
