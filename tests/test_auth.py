@@ -28,6 +28,15 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(auth.find_callback('<a id="launchapp" href="moodlestudy://token=YWJj">Open</a>'), 'moodlestudy://token=YWJj')
         self.assertIsNone(auth.find_callback('<p>token=abc</p>'))
 
+    def test_resume_only_matches_this_sites_landing_pages(self):
+        site = 'https://school.example/moodle'
+        for suffix in ('', '/', '/index.php', '/my/', '/my/index.php'):
+            self.assertTrue(auth.is_moodle_landing(site + suffix, site))
+        for url in ('https://login.example/', 'http://school.example/moodle/',
+                    'https://school.example/moodle/login/index.php',
+                    'https://school.example/moodle/course/view.php?id=1'):
+            self.assertFalse(auth.is_moodle_landing(url, site))
+
     @unittest.skipUnless(sys.platform == 'win32', 'DPAPI is Windows-only')
     def test_dpapi_stores_ciphertext_and_round_trips_without_plaintext_file(self):
         with tempfile.TemporaryDirectory(prefix='study auth ') as directory:
