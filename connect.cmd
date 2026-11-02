@@ -17,5 +17,5 @@ if not exist "tmp\auth-runtime" (
 )
 set "TEMP=%CD%\tmp\auth-runtime"
 set "TMP=%TEMP%"
-".venv\Scripts\python.exe" tools\moodle\auth.py %*
+".venv\Scripts\python.exe" tools\moodle\auth.py --browser chrome %*
 pause
