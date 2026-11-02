@@ -1,6 +1,6 @@
 # Moodle Study Assistant
 
-**Codex 版，分支 `codex`。** 下载前先选择此分支；DeepSeek Harness 使用独立目录中的 `deepseek` 分支。本分支安装只配置 Codex。[分支维护说明](docs/BRANCHES.md)。
+**DeepSeek Harness 版，分支 `deepseek`。** 下载前选择此分支；Codex 请使用独立目录中的 `codex` 分支。本分支安装只配置 Harness。[分支维护说明](docs/BRANCHES.md)。
 
 **结合你的课程资料、老师要求和真实学习进度，让 AI 陪你持续学习。**
 
@@ -8,9 +8,9 @@
 
 [为什么使用](#为什么使用) · [学习示例](#学习示例) · [安装与开始使用](#安装与开始使用) · [常见问题与隐私](#常见问题与隐私) · [最近更新](#最近更新)
 
-这是一个在 **Codex 聊天窗口里使用的个人课程学习工作区**。课件、讲义、习题和学习记录保存在自己的电脑上，再结合 Moodle 中的作业要求、截止日期、公告和讨论，为讲解、练习和备考提供依据。
+这是一个在 **DeepSeek Harness 聊天窗口里使用的个人课程学习工作区**。课件、讲义、习题和学习记录保存在自己的电脑上，再结合 Moodle 中的作业要求、截止日期、公告和讨论，为讲解、练习和备考提供依据。
 
-适合希望围绕大学课程持续学习一个学期的同学。目前按 **Windows 10/11 + ChatGPT 桌面版的 Codex 本地项目模式**提供使用说明与支持。学习就在聊天里进行，无需另行部署网页应用。
+适合希望围绕大学课程持续学习一个学期的同学。目前按 **Windows 10/11 + DeepSeek Harness 桌面版的本地工作区**提供使用说明与支持。学习就在聊天里进行，无需另行部署网页应用。
 
 ## 为什么使用
 
@@ -72,13 +72,13 @@
 
 ## 安装与开始使用
 
-### 1. 打开 Codex 本地项目
+### 1. 打开 DeepSeek Harness 工作区
 
-按 [OpenAI 官方 Windows 指南](https://learn.chatgpt.com/docs/app/windows)安装 ChatGPT 桌面版并登录。在 ChatGPT 下拉菜单中选择 **Codex**，再将 **Work in** 设为 **This computer（本机）**。具体见[官方入口说明](https://learn.chatgpt.com/docs/environments/modes)，可用功能以账号和工作区权限为准。
+在仓库选择 `deepseek` 分支，下载并解压到独立文件夹，再在已安装的 DeepSeek Harness 桌面版中打开。项目根目录应能看到 `AGENTS.md`、`README.md` 和 `start.cmd`。模型由你在 Harness 中选择，项目不会自动更换模型。
 
-在本仓库点 **Code → Download ZIP**，完整解压到固定文件夹，例如 `D:\MoodleStudy`。将能直接看到 `README.md`、`AGENTS.md` 和 `start.cmd` 的那层文件夹作为本地项目打开，按提示允许访问。仅在普通聊天里粘贴仓库链接，不会完成电脑上的安装。
+运行 `setup.cmd` 准备依赖并合并 Harness 的 MCP/技能配置，修改前会备份。重启后实际确认技能与 Moodle 工具加载成功；本分支不生成 Codex 配置。路径冲突、移动项目及运行验收见 [Harness 指南](docs/DSH.md)。
 
-### 2. 让 Codex 帮你完成设置
+### 2. 让 DeepSeek 帮你完成设置
 
 你负责必要的权限确认、学校登录和选课，助手可以检查环境并执行安装步骤。
 
@@ -134,7 +134,7 @@
 
 **只有网页版或手机端可以吗？支持其他 AI 客户端和系统吗？**
 
-本分支提供上述 Windows 本地 Codex 项目流程。尚未验证仅靠网页版或手机端完成安装、其他 AI 客户端或其他操作系统的完整流程。
+本分支提供上述 Windows 本地 DeepSeek Harness 工作区流程。尚未验证仅靠网页版或手机端完成安装、其他 AI 客户端或其他操作系统的完整流程。
 
 **需要 API Key 或额外订阅吗？**
 

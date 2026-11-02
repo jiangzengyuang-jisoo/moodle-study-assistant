@@ -1,8 +1,7 @@
 # 在 DeepSeek Harness（DSH）中使用
 
-> 当前 `codex` 分支不使用这份安装流程。此文件作为兼容实现的参考保留；实际安装请使用独立目录中的 `deepseek` 分支。
 
-本项目同时支持 Codex 本地项目和 DeepSeek Harness 桌面版。学习引擎、状态协议、Moodle 只读工具和证据规则完全相同；DSH 适配只增加**客户端接线**，不改学习逻辑，也不改变 Codex 用法。
+本指南用于 `deepseek` 分支。安装只配置 DeepSeek Harness；学习引擎、状态协议与证据规则和 Codex 分支共用。本分支来自公开源码基线，不代表 D 盘独立部署的后续修复已自动合并；新部署仍需实际验收。
 
 ## 1. 已实测环境
 
@@ -46,7 +45,7 @@
 
 - 不读取、不写入任何学习数据、凭据或 Cookie。
 
-也可以运行 `setup.ps1`：检测到 DSH 环境（`DSH_SESSION_ID`/`DSH_HOME`）时会自动执行上述合并；在普通终端双击 `setup.cmd` 时不会改动 DSH 配置。
+本分支运行 `setup.cmd` 或 `setup.ps1` 时都会按 `client-target.json` 执行上述合并；无需先在 Harness 内运行。合并失败会停止并报告未完成，不冒充安装成功。
 
 <details>
 <summary>手动配置示例（脚本不可用时）</summary>
@@ -77,7 +76,7 @@
 诊断中 `dsh`/`client` 的分工：
 
 - `dsh` 行只报告**配置结构**：MCP 条目是否指向本项目的 `tools/moodle/run.mjs`、技能目录是否加入 `customSkillDirs`、现有配置是否冲突/无法解析；`status --json` 里的 `configuration_ok` 表示配置正确，`runtime_loaded` 固定为 `unverified`——**配置检测不等于运行成功**。
-- `client` 行表示当前项目至少有一种可用客户端配置（Codex 的 `.codex/config.toml` 或 DSH profile），同样不代表运行时已加载；是否真正加载需重启后在新聊天中实际确认。
+- `client` 行只表示当前 DeepSeek 分支的 DSH profile 配置可用，同样不代表运行时已加载；是否真正加载需重启后在新聊天中实际确认。
 - 若 profile patch 无法解析或缺少 YAML 依赖，诊断只给 warning 并明确“未修改任何配置”，不会报成“配置正确”。
 - 已有同名 MCP 冲突、技能目录未加入、profile 无法解析时，按 `status --json` 的 `warnings` 与上文手动处理。
 
@@ -135,7 +134,7 @@ DSH 适配新增的测试：
 
 - `tests/test_dsh_integration.py`：聊天身份解析、DSH profile 合并/备份/幂等/冲突保护、CLI 行为；
 - `tests/chat-identity.test.mjs`：Node 侧身份解析（`refresh` 入口）；
-- `tests/test_onboarding.py`：诊断同时识别 Codex 与 DSH 配置。
+- `tests/test_onboarding.py`：按发行目标诊断，避免另一客户端配置掩盖本端缺失。
 
 注意：在 DSH 的受限 shell 里直接运行 `node --test` 或 Python `tempfile` 相关测试可能被沙箱拒绝（Windows 管道/临时目录权限），这不代表代码失败；请在普通终端运行完整回归。
 

@@ -1,6 +1,6 @@
 # Moodle Study Assistant
 
-**Codex edition — branch `codex`.** Select this branch before downloading. For DeepSeek Harness use branch `deepseek` in a separate folder. Setup configures Codex only. [Branch maintenance](docs/BRANCHES.md).
+**DeepSeek Harness edition — branch `deepseek`.** Select this branch before downloading. For Codex use branch `codex` in a separate folder. Setup configures Harness only. [Branch maintenance](docs/BRANCHES.md).
 
 **Study with your course materials, your instructor's requirements, and a record of what you have actually learned.**
 
@@ -8,9 +8,9 @@
 
 [Why use it?](#why-use-it) · [Study examples](#study-examples) · [Get started](#get-started) · [FAQ and privacy](#faq-and-privacy) · [Updates](#recent-updates)
 
-A personal course workspace used through a **Codex chat**. Keep slides, handouts, exercises, and learning records on your computer. Connect Moodle to bring in assignment requirements, deadlines, announcements, and discussions, then use that context for explanations, practice, and exam preparation.
+A personal course workspace used through a **DeepSeek Harness chat**. Keep slides, handouts, exercises, and learning records on your computer. Connect Moodle to bring in assignment requirements, deadlines, announcements, and discussions, then use that context for explanations, practice, and exam preparation.
 
-Designed for students following university courses over a semester. The documented setup is **Windows 10/11 + Codex local project mode in the ChatGPT desktop app**. You study in the chat; there is no separate web app to deploy.
+Designed for students following university courses over a semester. The documented setup is **Windows 10/11 + DeepSeek Harness desktop with local workspace access**. You study in the chat; there is no separate web app to deploy.
 
 ## Why use it?
 
@@ -72,13 +72,13 @@ Moodle is collected when a chat first enters course learning, review, or study p
 
 ## Get started
 
-### 1. Open a local Codex project
+### 1. Open a DeepSeek Harness workspace
 
-Install the [ChatGPT desktop app for Windows](https://learn.chatgpt.com/docs/app/windows) and sign in. In the app, select **Codex** from the ChatGPT dropdown and choose **Work in → This computer**. See the [official environment guide](https://learn.chatgpt.com/docs/environments/modes); availability depends on your account and workspace permissions.
+Select branch `deepseek`, download and extract it to a dedicated folder, and open that folder in your installed DeepSeek Harness desktop app. The workspace root contains `AGENTS.md`, `README.md`, and `start.cmd`. Choose your DeepSeek model in Harness; the project does not switch the model for you.
 
-Download this repository with **Code → Download ZIP**, extract it to a stable location such as `D:\MoodleStudy`, and open the folder containing `README.md`, `AGENTS.md`, and `start.cmd` as the local project. Allow access to that project when prompted. Pasting the repository link into an ordinary chat does not install it on your computer.
+Run `setup.cmd` to prepare dependencies and merge the Harness MCP/skill configuration with a backup. Restart Harness and verify both the skill and Moodle tool actually load. No Codex configuration is generated. See the [Harness guide](docs/DSH.md) for conflicts, moving a project, and runtime verification.
 
-### 2. Ask Codex to set it up
+### 2. Ask DeepSeek to finish setup
 
 You handle necessary permission prompts, school sign-in, and course selection; the assistant can inspect the environment and run the setup steps.
 
@@ -136,7 +136,7 @@ If setup stalls, share the error text without passwords or tokens and ask the as
 
 **Can I use only the web or mobile app, another AI client, or another operating system?**
 
-This branch provides the Windows local Codex project setup described above. Browser-only/mobile-only setup, other AI clients, and other operating systems have not been validated for this workflow.
+This branch provides the Windows local DeepSeek Harness setup described above. Browser-only/mobile-only setup, other AI clients, and other operating systems have not been validated for this workflow.
 
 **Do I need an API key or a separate subscription?**
 
