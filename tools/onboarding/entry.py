@@ -32,7 +32,7 @@ TIPS = '''学习时请记住：
 3. 换聊天前保存实际进度、原答、卡点和下一步，确认保存成功；关键作答不要等到聊天快满才保存。
 4. 新聊天首次进入学习时先读取记录并检查一次 Moodle；无关问答跳过，维修只做必要诊断。
 5. 同聊天追问复用上次检查；要看老师刚发的内容，明确说“刷新 Moodle”。没有后台监控。
-6. 课件自己放入 Study/_Inbox，或明确授权下载指定资料；核对完整题设、原页、公式与图表。
+6. 选课时会说明课程级资料授权范围：完整初始化会自动下载并整理所选课程的可获取资料，之后同步沿用授权、不逐份请示；也可只同步课程信息。新增课程需单独授权。核对完整题设、原页、公式与图表。
 7. 看过答案、提示后答对不算独立掌握；告诉 AI 哪些是你独立完成的，保留原答。
 8. 升级前备份 Study 和配置，保留个人目录；不要把整个使用文件夹、密码或 Token 发给别人。
 完整说明：docs/使用须知.md。学习仍在可操作本地项目的 AI 客户端中进行。'''
@@ -441,10 +441,10 @@ def guide(app, ask=input, output=print):
     while True:
         action = report['next_action']
         labels = {'repair': '先修复环境、配置或档案', 'install_runtime': '先安装 Node.js / npm', 'setup': '安装或更新依赖',
-                  'connect': '连接学校', 'courses': '选择课程', 'handoff': '进入 AI 学习（不重复安装或刷新）',
+                  'connect': '连接学校', 'courses': '选择课程并设置资料授权', 'handoff': '进入 AI 学习（不重复安装或刷新）',
                   'connection_help': '处理学校连接问题；已有本地资料仍可复习'}
         output('\n下一步：' + labels[action])
-        output('1 继续下一步　2 本地诊断　3 联网检查　4 学习注意事项\n5 重新连接学校　6 调整课程　7 安装或更新依赖　0 退出')
+        output('1 继续下一步　2 本地诊断　3 联网检查　4 学习注意事项\n5 重新连接学校　6 调整课程与资料授权　7 安装或更新依赖　0 退出')
         choice = ask('请选择：').strip()
         if choice == '0':
             return 0
@@ -478,6 +478,10 @@ def guide(app, ask=input, output=print):
             action = {'1': 'edge', '2': 'chrome', '3': 'manual'}.get(ask('选择连接方式：').strip())
             if not action:
                 continue
+        if action == 'courses':
+            output('选课后会明确显示课程级资料授权范围：完整初始化会同步课程信息，并自动下载、归档、建立索引；'
+                   '也可只同步课程信息。后续同步沿用已保存授权、不逐份请示；新增课程需要单独授权。'
+                   '不会自动开始测验尝试、提交作业、发帖或修改学校状态。')
         _, message = app.act(action)
         output(message)
         report = app.inspect()

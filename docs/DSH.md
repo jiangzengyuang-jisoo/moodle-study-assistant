@@ -114,7 +114,8 @@
 
 ## 5. 只读与数据边界
 
-- Moodle 工具仍是只读集合；不注册下载、提交、发帖、改完成状态等写操作。普通刷新不下载附件，下载需本人明确指定模块。
+- Moodle 工具仍是只读集合；不注册提交、发帖、改完成状态等写操作。普通刷新不下载附件。选课时保存的课程级完整授权允许在已选课程页面内自动下载、归档和建立索引（`courses` 完整初始化 / `library-sync`），但不会开始测验尝试、提交作业、发帖或修改学校状态；未授权或只同步信息的课程不下载，范围外资料仍需本人明确指定。
+- 受限 shell 可能阻止 Node 子进程、DPAPI 解密或网络下载：真实课程初始化/资料同步应在普通终端（`start.cmd`、`choose-courses.cmd`，或经用户批准的完整访问命令）运行；DSH 会话内可用只读的 `library.cmd context --read-only`、`search`、`read` 等。命令失败先按执行环境限制判断，不据此修改学习记录。规则见 [COURSE_LIBRARY.md](COURSE_LIBRARY.md)。
 - 所有学习状态写入仍走 `study.cmd review` / `state_io.py` 等正式入口：锁、版本哈希、快照绑定、操作去重、历史证据保护不变；助手不直接改写 `state.json`。
 - 普通问答、查询或纠正本地记忆不触发 Moodle 联网；只有学习启动或本人明确刷新才检查学校信息。
 - DSH 配置里只有本机路径和 `serverName`，不含凭据；Moodle Token 仍由 Windows DPAPI 加密保存在 `.private/`，不进入聊天、状态或 Git。
@@ -135,7 +136,7 @@ DSH 适配新增的测试：
 - `tests/chat-identity.test.mjs`：Node 侧身份解析（`refresh` 入口）；
 - `tests/test_onboarding.py`：诊断同时识别 Codex 与 DSH 配置。
 
-注意：在 DSH 的受限 shell 里直接运行 `node --test` 或 Python `tempfile` 相关测试可能被沙箱拒绝（Windows 管道/临时目录权限），这不代表代码失败；请在普通终端运行完整回归。
+注意：在 DSH 的受限 shell 里直接运行 `node --test` 或 Python `tempfile` 相关测试可能被沙箱拒绝（Windows 管道/临时目录权限），需要 Node 子进程、DPAPI 或网络下载的课程完整初始化/资料同步也可能失败；这不代表代码失败，请在普通终端运行完整回归和真实同步。
 
 ## 7. 已知限制与待验证
 

@@ -11,6 +11,42 @@ from library import DEFAULT_STATE, Library, build_lock, is_solution
 from learning_library import versions
 
 
+# Download metadata may enrich a material row, never redefine its identity.
+EXTRA_FIELDS = {"kind", "capture", "source_pages"}
+RESERVED_FIELDS = {"id", "course_id", "filename", "relative_path", "sha256", "bytes",
+                   "page_map", "moodle_file_sources", "version", "archive_subdir",
+                   "contains_solutions", "version_status", "supersedes", "superseded_by",
+                   "original_relative_path", "archive_sha256", "archived_at",
+                   "verified", "mastery"}
+
+
+def _download_extra(extra):
+    """Whitelist non-identity provenance supplied by the course collector."""
+    if extra is None:
+        return {}
+    if not isinstance(extra, dict):
+        raise ValueError("Download metadata must be a JSON object")
+    fields = {}
+    for key, value in extra.items():
+        if key in RESERVED_FIELDS:
+            raise ValueError("Reserved material field cannot be supplied by download metadata: " + str(key))
+        if key not in EXTRA_FIELDS:
+            continue
+        if key == "kind":
+            if not isinstance(value, str) or not value.strip() or len(value) > 120:
+                raise ValueError("Invalid material kind")
+            fields["kind"] = value.strip()
+        elif key == "capture":
+            if not isinstance(value, dict):
+                raise ValueError("Capture metadata must be a JSON object")
+            fields["capture"] = value
+        elif key == "source_pages":
+            if not isinstance(value, list) or not all(isinstance(page, dict) for page in value):
+                raise ValueError("Source page provenance must be a list of objects")
+            fields["source_pages"] = value
+    return fields
+
+
 @locked
 def configure(path, days=30):
     if days < 30:
@@ -50,8 +86,13 @@ def _reuse_identical(path, incoming, material_id):
 
 
 @locked
-def install_download(path, data):
-    """Only consume an explicitly authorized download already staged inside Study."""
+def install_download(path, data, sync=True):
+    """Only consume an explicitly authorized download already staged inside Study.
+
+    ``sync=False`` lets the course batch stage many verified downloads and run a
+    single catalog rebuild afterwards. ``data["extra"]`` carries whitelisted
+    collector provenance; identity fields stay derived from the source.
+    """
     path = Path(path).resolve()
     cleanup = versions.cleanup(path)
     state = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -60,10 +101,11 @@ def install_download(path, data):
     if not module:
         raise ValueError("Missing stable source module identity")
     filename = source["filename"]
-    file_source = {"module_id": module, "remote_filename": filename,
+    file_source = {"course_id": source["course_id"], "module_id": module,
+                   "remote_filename": filename,
                    "filepath": source.get("filepath", "/"),
-                   "url": source.get("fileurl") or source.get("source_url"),
-                   "activity_url": source.get("module_url"),
+                   "url": source.get("url") or source.get("fileurl") or source.get("source_url"),
+                   "activity_url": source.get("module_url") or source.get("activity_url"),
                    "verified_sha256": data["sha256"], "checked_at": versions.instant().isoformat()}
     for address in [file_source.get("url"), file_source.get("activity_url")]:
         if address and any(k.lower() in {"token", "wstoken", "sesskey"} for k in parse_qs(urlparse(address).query)):
@@ -76,6 +118,12 @@ def install_download(path, data):
            "contains_solutions": source.get("contains_solutions")
                if isinstance(source.get("contains_solutions"), bool) else None,
            "moodle_file_sources": [file_source]}
+    # A verified subdirectory separates same-name files from different modules.
+    subdir = source.get("archive_subdir", data.get("archive_subdir"))
+    subdir = versions.archive_subdir_name(subdir)
+    if subdir:
+        row["archive_subdir"] = subdir
+    row.update(_download_extra(data.get("extra")))
     if is_solution(row):
         row["contains_solutions"] = True
     staged = versions.safe(path.parent.parent, row["relative_path"])
@@ -92,10 +140,16 @@ def install_download(path, data):
         if result["status"] == "identical":
             result = _reuse_identical(path, row, result["material_id"])
     result["state_written"] = bool(result.get("state_written") or cleanup.get("deleted"))
-    if result["status"] == "identical":
-        # Cached text still uses fresh registry labels in Library.fresh_rows.
+    if result["status"] in {"identical", "already_promoted"}:
+        # Cached text still uses fresh registry labels in Library.fresh_rows;
+        # identical installs stay byte-for-byte state-neutral.
+        if "relative_path" not in result:
+            final = json.loads(path.read_text(encoding="utf-8-sig"))
+            result["relative_path"] = next(m["relative_path"] for m in final["materials"]
+                                           if m["id"] == result["material_id"])
         return result
-    Library(path).sync(row["course_id"])
+    if sync:
+        Library(path).sync(row["course_id"])
     final = json.loads(path.read_text(encoding="utf-8-sig"))
     result["relative_path"] = next(m["relative_path"] for m in final["materials"] if m["id"] == result["material_id"])
     return result

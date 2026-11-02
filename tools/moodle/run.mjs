@@ -10,13 +10,229 @@ import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { initialize, atomicJSON, ReadOnlyClient } from './core.mjs';
 import { collectRefresh } from './refresh.mjs';
+import {
+  SCOPE_TEXT, SCOPE_VERSION, authorizeCourses, authorizationReport, newestSnapshotPath,
+  readJSON, selectedPages, syncCourseLibrary,
+} from './course-library.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const statePath = join(root, 'Study/_System/state.json');
 const json = path => JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
+const loadState = () => json(statePath);
 
 function tokenFromWindows(ciphertext = null) {
   return decryptWindowsToken(ciphertext ?? readFileSync(join(root, '.private/moodle-token.dpapi')));
+}
+
+function parseIds(value) {
+  return [...new Set(String(value ?? '').trim().split(/[,，\s]+/).filter(Boolean).map(Number))];
+}
+
+function ensureIds(ids, available) {
+  if (!ids.length) throw new Error('请至少选择一个课程页面');
+  if (ids.some(id => !Number.isInteger(id) || !available.some(course => course.id === id)))
+    throw new Error('课程 ID 不在当前账户的列表中');
+  return ids;
+}
+
+function applyCourseSelection(state, available, ids) {
+  for (const course of state.courses) {
+    course.moodle_course_ids = (course.moodle_course_ids ?? []).filter(id => ids.includes(id));
+  }
+  const added = [];
+  for (const id of ids) {
+    if (state.courses.some(course => course.moodle_course_ids?.includes(id))) continue;
+    const source = available.find(course => course.id === id);
+    const previous = state.courses.find(course => course.id === `moodle-${id}`);
+    if (previous) previous.moodle_course_ids = [id];
+    else state.courses.push({id: `moodle-${id}`, name: source.fullname, shortname: source.shortname,
+      moodle_course_ids: [id], assignment_focus: null, current_topic: null, teaching_cursor: null, orientation: null});
+    added.push(id);
+  }
+  return added;
+}
+
+function saveSelection(ids, available) {
+  const original = readFileSync(statePath, 'utf8');
+  const state = JSON.parse(original);
+  const added = applyCourseSelection(state, available, ids);
+  saveState(root, 'replace', {expected: JSON.parse(original), state});
+  return {state: loadState(), added};
+}
+
+function authorizeSelected(state, mode) {
+  const pages = selectedPages(state);
+  const courses = pages.map(page => ({
+    course_id: page.courseId, moodle_courseid: page.moodleCourseid,
+  }));
+  return authorizeCourses({root, statePath, mode, scope: SCOPE_TEXT, scopeVersion: SCOPE_VERSION, courses});
+}
+
+function refreshForCourseSync(chat, explicit) {
+  const args = [join(root, 'tools/moodle/run.mjs'), 'refresh'];
+  if (chat) args.push('--chat', chat);
+  const result = spawnSync(process.execPath, args, {
+    cwd: root, stdio: 'inherit', windowsHide: true,
+    env: {...process.env, STUDY_PYTHON: python(root)},
+  });
+  return result.status ?? 1;
+}
+
+function snapshotSummary(snapshotPath) {
+  if (!snapshotPath || !existsSync(snapshotPath)) return null;
+  try {
+    const snapshot = json(snapshotPath);
+    return {path: snapshotPath.replaceAll('\\', '/'),
+      run_id: snapshot.collection_binding?.run_id ?? null,
+      collection_complete: snapshot.collection_complete === true,
+      collected_at: snapshot.finished_at ?? snapshot.started_at ?? null,
+      pages: snapshot.pages?.length ?? 0, threads: snapshot.threads?.length ?? 0};
+  } catch { return null; }
+}
+
+function courseSyncReuse(rootPath) {
+  const candidate = newestSnapshotPath(rootPath, 360);
+  if (!candidate) return null;
+  const info = snapshotSummary(candidate);
+  return info && info.collection_complete ? info : null;
+}
+
+async function runCourses(client, options) {
+  const available = await client.call('core_enrol_get_users_courses', {userid: client.userId});
+  for (const course of available) console.log(`${course.id}  ${course.fullname} (${course.shortname})`);
+  const prompt = createInterface({input: process.stdin, output: process.stdout});
+  try {
+    let ids;
+    if (options.select) ids = ensureIds(parseIds(options.select), available);
+    else {
+      const answer = await prompt.question('输入本学期需要跟踪的课程 ID，用逗号分隔（直接回车取消）：');
+      if (!answer.trim()) {
+        console.log('未选择课程，未保存授权。');
+        return;
+      }
+      ids = ensureIds(parseIds(answer), available);
+    }
+    let mode = options.mode;
+    if (mode && !['full', 'info_only'].includes(mode)) throw new Error('--mode 只能是 full 或 info_only');
+    if (!mode) {
+      console.log('');
+      console.log('课程级资料授权范围（一次授权，适用于上面选中的课程页面）：');
+      console.log(SCOPE_TEXT);
+      console.log('说明：授权后，正常课程同步会沿用该授权自动补齐新增或更新的资料，不再逐份询问；新增课程需要单独授权。');
+      console.log('不开始测验尝试、不提交作业、不发帖、不修改学校状态；流媒体/外部网站/额外登录/权限受限内容只保留入口和原因。');
+      console.log('1 完整初始化（同步课程信息 + 下载/归档/建立索引）');
+      console.log('2 只同步课程信息（不下载资料）');
+      console.log('0 取消（不保存）');
+      const choice = (await prompt.question('请选择：')).trim();
+      if (choice === '0' || choice === '') { console.log('已取消，未保存授权。'); return; }
+      if (choice !== '1' && choice !== '2') throw new Error('请输入 1、2 或 0');
+      mode = choice === '1' ? 'full' : 'info_only';
+    }
+    if (!options.yes) {
+      const confirm = (await prompt.question(`确认保存课程级授权（${mode === 'full' ? '完整初始化' : '只同步信息'}）并继续？输入 Y 确认，其他返回：`)).trim().toLowerCase();
+      if (confirm !== 'y') { console.log('未确认，未保存授权。'); return; }
+    }
+    const selectedIds = ids;
+    saveSelection(selectedIds, available);
+    const authorization = authorizeSelected(loadState(), mode);
+    console.log(`课程级授权已保存：${authorization.authorized_courses.length} 个课程页面，模式 ${authorization.mode}。`);
+    if (options.noSync) { console.log('已按 --no-sync 停止；未运行课程同步。'); return; }
+    let snapshotPath = null;
+    let refreshStatus = null;
+    if (mode === 'info_only') {
+      if (options.refresh || !courseSyncReuse(root)) {
+        console.log('正在同步课程信息（只读采集，不下载资料）…');
+        refreshStatus = refreshForCourseSync(options.chat, true);
+      } else {
+        const reuse = courseSyncReuse(root);
+        snapshotPath = reuse.path;
+        console.log(`课程信息同步复用本机最近一次完整快照：${reuse.run_id ?? 'unknown'}，采集于 ${reuse.collected_at ?? 'unknown'}。`);
+      }
+      if (snapshotPath) {
+        console.log('已保存“只同步信息”授权；没有下载任何资料。');
+      } else if (refreshStatus === 0) {
+        const latest = snapshotSummary(join(root, 'Study/_System/refresh-latest.json'));
+        console.log(`课程信息已采集：${latest?.pages ?? 0} 个页面、${latest?.threads ?? 0} 个讨论；资料未下载。请让 AI 核读本次快照。`);
+      } else {
+        console.log('课程信息采集未完整成功；旧记录保留。请让 AI 检查原因后明确重试，未下载资料。');
+        process.exitCode = 2;
+      }
+      return;
+    }
+    let reuse = options.refresh ? null : courseSyncReuse(root);
+    if (reuse) {
+      snapshotPath = reuse.path;
+      console.log(`课程信息同步复用本机最近一次完整快照：${reuse.run_id ?? 'unknown'}，采集于 ${reuse.collected_at ?? 'unknown'}。`);
+    } else {
+      console.log('正在同步课程信息（只读采集）…');
+      refreshStatus = refreshForCourseSync(options.chat, true);
+      const latest = snapshotSummary(join(root, 'Study/_System/refresh-latest.json'));
+      if (latest?.collection_complete) snapshotPath = latest.path;
+      else if (refreshStatus !== 0) console.log('课程信息采集未完整成功；继续尝试资料枚举与下载，缺口会逐项记录。');
+    }
+    console.log('正在枚举、下载、归档并建立资料索引（可中断，再次同步会续跑）…');
+    const state = loadState();
+    const report = await syncCourseLibrary({client, root, state, snapshotPath});
+    printLibrarySummary(report);
+    if (!report.ok) process.exitCode = 2;
+    const latestSnapshot = snapshotPath ? snapshotSummary(snapshotPath) : null;
+    if (latestSnapshot && !latestSnapshot.collection_complete) process.exitCode = 2;
+    console.log('下一步：让 AI 核读本轮学校快照中的作业要求、公告与讨论，再开始学习；下载/解析成功不等于已核读或已掌握。');
+  } finally { prompt.close(); }
+}
+
+function printLibrarySummary(report) {
+  const totals = report.totals ?? {};
+  console.log(JSON.stringify({
+    run_id: report.run_id, ok: report.ok === true, text_source: report.text_source,
+    totals, blocked: report.blocked ?? [],
+    index: Object.fromEntries(Object.entries(report.index?.courses ?? {}).map(([course, value]) =>
+      [course, {materials: value.materials, units: value.units, text_units: value.text_units, status_counts: value.status_counts}])),
+    report_paths: ['Study/_System/LibrarySync/latest.json', 'Study/_System/LibrarySync/资料缺口.md'],
+    no_school_writes: true,
+  }, null, 2));
+}
+
+async function runLibrarySync(client, options) {
+  const state = loadState();
+  const args = process.argv.slice(3);
+  const courseIds = [];
+  for (let index = 0; index < args.length; index++) {
+    if (args[index] === '--course' && args[index + 1]) courseIds.push(args[index + 1]);
+  }
+  const snapshotIndex = args.indexOf('--snapshot');
+  let snapshotPath = snapshotIndex >= 0 ? args[snapshotIndex + 1] : null;
+  if (snapshotPath && !existsSync(snapshotPath)) throw new Error('快照文件不存在');
+  if (!snapshotPath && !args.includes('--no-snapshot')) {
+    const recent = newestSnapshotPath(root, 30);
+    if (recent) {
+      try {
+        const snapshot = json(recent);
+        // Only a complete collection may replace a live read for announcements,
+        // assignment requirements and discussions; partial snapshots fall back.
+        if (snapshot.collection_complete === true) {
+          snapshotPath = recent;
+          console.log('使用最近 30 分钟内的完整快照作为公告/作业/讨论文字来源。');
+        } else {
+          console.log('最近快照采集不完整，本次改用只读 API 现场读取公告/作业/讨论。');
+        }
+      } catch {
+        console.log('最近快照无法解析，本次改用只读 API 现场读取公告/作业/讨论。');
+      }
+    }
+  }
+  const maxIndex = args.indexOf('--max-bytes');
+  const batchIndex = args.indexOf('--batch-size');
+  const report = await syncCourseLibrary({
+    client, root, state,
+    courseIds: courseIds.length ? courseIds : null,
+    snapshotPath,
+    maxBytes: maxIndex >= 0 ? Number(args[maxIndex + 1]) : undefined,
+    batchSize: batchIndex >= 0 ? Number(args[batchIndex + 1]) : undefined,
+    dryRun: args.includes('--dry-run'),
+  });
+  printLibrarySummary(report);
+  if (!report.ok) process.exitCode = 2;
 }
 
 async function main() {
@@ -56,29 +272,22 @@ async function main() {
   const client = await new ReadOnlyClient(config.moodle_url, tokenFromWindows(bundle?.credential)).connect();
   if (mode === 'check') { console.log('Moodle API 已连接。'); return; }
   if (mode === 'courses') {
-    const available = await client.call('core_enrol_get_users_courses', {userid: client.userId});
-    for (const course of available) console.log(`${course.id}  ${course.fullname} (${course.shortname})`);
-    const prompt = createInterface({input: process.stdin, output: process.stdout});
-    let answer;
-    try { answer = await prompt.question('输入本学期需要跟踪的课程 ID，用逗号分隔（直接回车取消）：'); }
-    finally { prompt.close(); }
-    if (!answer.trim()) return;
-    const ids = [...new Set(answer.trim().split(/[,，\s]+/).map(Number))];
-    if (ids.some(id => !Number.isInteger(id) || !available.some(c => c.id === id))) throw new Error('课程 ID 不在当前账户的列表中');
-    const original = readFileSync(statePath, 'utf8');
-    const state = JSON.parse(original);
-    // Keep learning history; selection only changes which pages are refreshed.
-    for (const course of state.courses) course.moodle_course_ids = (course.moodle_course_ids ?? []).filter(id => ids.includes(id));
-    for (const id of ids) {
-      if (state.courses.some(c => c.moodle_course_ids?.includes(id))) continue;
-      const source = available.find(c => c.id === id);
-      const previous = state.courses.find(c => c.id === `moodle-${id}`);
-      if (previous) previous.moodle_course_ids = [id];
-      else state.courses.push({id: `moodle-${id}`, name: source.fullname, shortname: source.shortname,
-        moodle_course_ids: [id], assignment_focus: null, current_topic: null, teaching_cursor: null, orientation: null});
-    }
-    saveState(root, 'replace', {expected: JSON.parse(original), state});
-    console.log('课程选择已保存；原有学习记录保留。');
+    const args = process.argv.slice(3);
+    const selectIndex = args.indexOf('--select');
+    const modeIndex = args.indexOf('--mode');
+    const chatIndex = args.indexOf('--chat');
+    await runCourses(client, {
+      select: selectIndex >= 0 ? args[selectIndex + 1] : null,
+      mode: modeIndex >= 0 ? args[modeIndex + 1] : null,
+      chat: chatIndex >= 0 ? args[chatIndex + 1] : null,
+      yes: args.includes('--yes'),
+      noSync: args.includes('--no-sync'),
+      refresh: args.includes('--refresh'),
+    });
+    return;
+  }
+  if (mode === 'library-sync') {
+    await runLibrarySync(client);
     return;
   }
   if (mode === 'collect') {
@@ -102,7 +311,7 @@ async function main() {
     return;
   }
   if (mode === 'mcp') { const { serve } = await import('./server.mjs'); await serve(client); return; }
-  throw new Error('用法：run.mjs init | check | courses | refresh | mcp | download <module-id> [...] --authorized');
+  throw new Error('用法：run.mjs init | check | courses [--select IDS --mode full|info_only --yes] | library-sync [--course ID] [--snapshot PATH] [--dry-run] | refresh | mcp | download <module-id> [...] --authorized');
 }
 main().catch(error => {
   // Stable, allowlisted code for diagnostics; never expose arbitrary properties.

@@ -14,7 +14,7 @@ Designed for students following university courses over a semester. The document
 
 ### A course library you can keep using
 
-Add your course files and ask the assistant to organize them. It can search registered materials by course, read surrounding pages, and check original figures and formulas when needed. Explanations can be traced to a file and page or slide, so you can compare them with what your instructor actually taught.
+Authorise course-level material sync while selecting courses, or add your own files and ask the assistant to organize them. It can search registered materials by course, read surrounding pages, and check original figures and formulas when needed. Explanations can be traced to a file and page or slide, so you can compare them with what your instructor actually taught.
 
 The library supports PDF, PPTX, DOCX, HTML, text, and images. Updated materials can become the current version while older notes and mistakes retain their original references. Parsing and OCR still need verification against the source. [How the library works](docs/LIBRARY.md).
 
@@ -49,7 +49,7 @@ You can provide this context manually in a chat. This project organizes it for r
 
 ## Study examples
 
-After setup, place your files in `Study/_Inbox/` and ask the assistant to organize them. Then use requests like these:
+After setup, authorised course materials are synced automatically; place any extra files in `Study/_Inbox/` and ask the assistant to organize them. Then use requests like these:
 
 | Goal | What to say |
 | --- | --- |
@@ -99,8 +99,11 @@ Do not ask me to paste credentials or tokens into chat or read .private contents
 Use the unified study entry point to collect course information, then read and
 verify assignment requirements, deadlines, and announcements.
 Ask what I have completed, where I stopped, and how much time I have available.
-I will provide course materials; do not download files without my request.
-Do not submit assignments, answer school quizzes, post, or send email for me.
+When I select courses, explain the course-level material authorization and let me
+choose full initialisation or course information only. Only download, archive, or
+index materials on the course pages I authorised; ask before anything outside them.
+Do not start school quiz attempts, submit assignments, answer school quizzes, post,
+or send email for me.
 
 Report what is ready, what has been checked, and what I still need to do.
 Carry out the available setup steps and explain them in plain English.
@@ -114,7 +117,9 @@ The default school is HKU Moodle, where the core API collection has been used. F
 
 ### 3. Add your materials and start learning
 
-Put your files in `Study/_Inbox/`, then ask the assistant to organize them and begin a topic. Ordinary Moodle refreshes do not download course files. To request a download, identify the course and specific material.
+During course selection you choose a **course-level material authorization**: full initialisation synchronises course information and downloads, archives, and indexes the course files your account can access directly; information-only syncs course information without downloading. A saved full authorization lets later syncs fill in new or changed materials without per-file requests, and adding a course page requires a new authorization. Ordinary Moodle refreshes still do not download files, and downloads outside the authorized course pages require your explicit request. Downloaded or parsed material is not yet reviewed or mastered. See [course-level library sync](docs/COURSE_LIBRARY.md) (Chinese).
+
+You can also put your own files in `Study/_Inbox/`, then ask the assistant to organize them and begin a topic.
 
 Setup is ready when the assistant has verified the local tools and school connection, confirmed your selected courses, and collected **and reviewed** the course information. A successful connection alone does not mean course content has been reviewed.
 
@@ -155,7 +160,7 @@ Your materials and records are saved locally. `Study/`, credentials, and machine
 
 **What does the assistant do on Moodle?**
 
-The tools are read-only. They do not submit work, answer school quizzes, post, change school completion status, or send email. Course downloads require an explicit request. Passwords and verification codes stay on the school's sign-in page.
+The tools use read-only Moodle APIs. With a course-level full authorization saved during course selection, they can download the course materials your account can access directly, archive them in your local `Study/` folder, and build the local index; that is one-time authorization plus incremental sync, not a per-file request. They still do not start school quiz attempts, submit assignments, answer school quizzes, post, change school completion status, or send email. Downloads outside the authorized course pages require your explicit request. Passwords and verification codes stay on the school's sign-in page.
 
 **What still needs checking?**
 
@@ -169,9 +174,11 @@ Ask the assistant to back up and preserve `Study/`, configuration, credentials, 
 
 ## Recent updates
 
+Current public version: **0.4.0**.
+
 | Date | Change |
 | --- | --- |
-| [2026-11-02](CHANGELOG.md#2026-11-02) | Inspect and correct memory; optional DeepSeek Harness desktop support with stable chat identity, validated profile-safe MCP/skill wiring, and Chrome login by default, temporary-folder fixes, and authorization recovery after landing on the Moodle home page |
+| [2026-11-02](CHANGELOG.md#2026-11-02) | **0.4.0**: course-level one-time material authorization with full initialisation (download, archive, index directly accessible materials), information-only mode and incremental sync; memory inspection; optional DeepSeek Harness desktop support with stable chat identity, validated profile-safe MCP/skill wiring, Chrome login by default, temporary-folder fixes, and authorization recovery after landing on the Moodle home page |
 | [2026-11-01](CHANGELOG.md#2026-11-01) | English and Chinese READMEs explain the course library and study continuity; narrower startup scope and clearer Moodle diagnostics |
 | [2026-10-31](CHANGELOG.md#2026-10-31) | Stronger learning-record protection, cross-chapter continuity, and Chinese setup diagnostics |
 
@@ -181,7 +188,7 @@ Offline tests do not validate real school login or every installation environmen
 
 Detailed guides are currently primarily in Chinese:
 
-[Study workflow](docs/使用须知.md) · [Tutoring](docs/TUTORING.md) · [Material library](docs/LIBRARY.md) · [Version management](docs/MATERIAL_VERSIONS.md) · [Exam preparation](docs/EXAM_PREP.md) · [Session recovery](docs/SESSION.md) · [DeepSeek Harness](docs/DSH.md) · [Tools and tests](docs/TOOLS.md)
+[Study workflow](docs/使用须知.md) · [Tutoring](docs/TUTORING.md) · [Material library](docs/LIBRARY.md) · [Course library sync](docs/COURSE_LIBRARY.md) · [Version management](docs/MATERIAL_VERSIONS.md) · [Exam preparation](docs/EXAM_PREP.md) · [Session recovery](docs/SESSION.md) · [DeepSeek Harness](docs/DSH.md) · [Tools and tests](docs/TOOLS.md)
 
 For a bug report or improvement, [open an issue](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/issues). Describe the expected behavior, actual result, and reproduction steps without credentials, private course content, or learning records. Code changes should follow [AGENTS.md](AGENTS.md) and the checks in [docs/TOOLS.md](docs/TOOLS.md#验证与发布).
 

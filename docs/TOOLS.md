@@ -8,31 +8,53 @@
 node tools/moodle/run.mjs init
 node tools/moodle/run.mjs check
 node tools/moodle/run.mjs courses
+node tools/moodle/run.mjs library-sync
 node tools/moodle/run.mjs refresh
 node tools/moodle/run.mjs mcp
 ```
 
-`init` 只创建缺失的配置/空白状态，不覆盖已有资料。`courses` 交互选择跟踪页面，保留未选页面的既有历史。`refresh` 采集到 `Study/_System/Runtime/runs/<run_id>/snapshot.json`，完整成功另存 `refresh-last-complete.json`；不直接更新个人掌握、作业完成或 AI 核读状态。退出码2表示部分采集失败。
+`init` 只创建缺失的配置/空白状态，不覆盖已有资料。`courses` 交互选择跟踪页面，并确认课程级资料授权（完整初始化或只同步课程信息），保留未选页面的既有历史；完整初始化、非交互入口和授权保存位置见 [课程级资料授权与自动同步](COURSE_LIBRARY.md)。`library-sync` 对已保存完整授权的课程页面增量枚举、下载、归档、登记并建立索引；学校接口仍只用只读调用，不开始测验尝试、不提交作业、不发帖、不修改学校状态。`refresh` 采集到 `Study/_System/Runtime/runs/<run_id>/snapshot.json`，完整成功另存 `refresh-last-complete.json`；不直接更新个人掌握、作业完成或 AI 核读状态。退出码2表示部分采集失败。
 
 AI 按新对话开始或用户明确要求调用 `refresh`，不会每条追问重复执行；命令本身始终进行真实采集。采集器全局最多同时执行4个 API 请求，每个论坛的分页仍按顺序读取，完整正文、回复和权限核对保留。不要把没有重新联网的缓存复用记为新的检查。
 
 MCP 暴露课程、作业、测验、论坛只读查询；全论坛分页用 `study_all_discussions`，回复用 `study_discussion_posts`。上游 recent discussions 只有最近20条，不能替代完整采集。不注册学校写操作；默认刷新和普通 MCP 查询不会下载文件。
 
+### 课程级授权与资料初始化
+
+在选课入口 `courses` 中，命令先列出课程，再让本人选择页面并确认“课程级资料授权”模式：`1` 完整初始化（同步课程信息 + 下载/归档/建立索引）、`2` 只同步课程信息（不下载）、`0` 取消。确认后授权保存到 `state.settings.course_library_authorization`；之后日常同步沿用授权增量补齐，新增课程页面须重新授权。完整初始化若本机有 6 小时内完整快照则直接复用，否则先跑只读 `refresh`，再执行资料同步；采集与核读仍分离，下载/解析成功不等于已核读或已掌握。详细范围、归档、学科合并和缺口规则见 [COURSE_LIBRARY.md](COURSE_LIBRARY.md)。
+
+非交互入口仅供 AI 在用户当前对话已明确授权后使用，`--yes` 表示用户已确认该课程范围，不是程序自行授权：
+
+```powershell
+# 完整初始化；只同步信息时把 full 换成 info_only
+node tools/moodle/run.mjs courses --select 146265,142648 --mode full --yes
+# 可选参数：--refresh 忽略 6 小时快照重新采集；--no-sync 只保存授权；
+# --chat 原始聊天ID 把原始用户聊天 ID 传给采集（子任务用主聊天 ID 并加 --subtask）
+```
+
+日常增量同步：
+
+```powershell
+node tools/moodle/run.mjs library-sync [--course 课程ID ...] [--snapshot 路径] [--no-snapshot] [--max-bytes N] [--batch-size 1-20] [--dry-run]
+```
+
+`--course` 使用 state 课程 ID（如 `moodle-146265`），可重复；`--snapshot` 必须位于 `Study/` 内，省略时优先使用最近 30 分钟内的完整快照，没有完整快照则用只读 API 现场读取，`--no-snapshot` 强制使用只读 API；`--max-bytes` 默认 64 MiB；`--batch-size` 1–20，默认 8；`--dry-run` 只统计不下载。逐项状态写入 `Study/_System/LibrarySync/ledger.json`，最近报告和缺口清单为同目录的 `latest.json`、`资料缺口.md`。中途停止后再次运行只补未完成/新增/变更项，失败项自动重试。
+
 ### 明确授权的资料下载
 
-用户明确提出“下载某章课件/某份老师说明”后，先从所选课程的实际模块列表识别对应资源，再调用独立入口：
+已保存课程级完整授权的课程页面由资料同步自动处理，不需要逐份下载。用户明确请求授权范围以外或点名单份“某章课件/某份老师说明”时，先从所选课程的实际模块列表识别对应资源，再调用独立入口：
 
 ```powershell
 node tools/moodle/run.mjs download 123 --authorized
 ```
 
-`123` 只是示例模块编号，不能照抄；多个模块必须逐个明确列出。`--authorized` 表示助手已经收到用户对这些资料的明确下载请求，不是程序替用户授权。仅限当前所选课程的 resource/folder 模块；不扩大成全课程抓取，不通过输入任意 URL 获取其他文件。
+`123` 只是示例模块编号，不能照抄；多个模块必须逐个明确列出。`--authorized` 表示助手已经收到用户对这些资料的明确下载请求，不是程序替用户授权。仅限当前所选课程的 resource/folder 模块；不扩大成课程级授权范围外的抓取，不通过输入任意 URL 获取其他文件。
 
 下载先落到 `Study/_Inbox/`，保留官方文件名，按内容哈希去重，同名不同内容保留为不同文件。成功下载不代表已经核读或掌握。AI 随后检查实际文件、课程归属和页数，按用户目录约定归档并更新 `materials`；下载器本身不替 AI 作语义判断。账号、权限或站点限制导致失败时如实说明，不绕过限制。
 
 ## 复习、复测、反馈和当前计划
 
-资料初始化和快速读取另见 [LIBRARY.md](LIBRARY.md)：`tools/study/library.cmd context` 直接读取最新状态，`sync` 构建或更新资料缓存，`search/read/render/outline` 定位并核对完整原页。这些命令不写学习进度、作答或 FSRS。
+资料初始化和快速读取另见 [LIBRARY.md](LIBRARY.md)：`tools/study/library.cmd context` 直接读取最新状态，`sync` 构建或更新资料缓存，`search/read/render/outline` 定位并核对完整原页。课程资料的自动初始化、增量同步与缺口见 [COURSE_LIBRARY.md](COURSE_LIBRARY.md)。这些命令不写学习进度、作答或 FSRS。
 
 ```powershell
 & '.venv/Scripts/python.exe' 'tools/study/daily.py' run
@@ -110,7 +132,7 @@ node tools/moodle/run.mjs download 123 --authorized
 
 `install` 以**实际 YAML 结构**处理 profile patch（依赖 PyYAML，由 setup 安装）：注释不算配置，合法的空列表 `[]` 会被正常归一化；写入前完整解析并校验合并结果，解析或校验失败时保留原文件不替换；用 `# >>> ... >>>` 标记段幂等更新，重复运行只改本段。遇到同名 `moodle_study` MCP 或用户自定义 `skill-filesystem` 覆盖时默认不覆盖，只提示手动合并；确认旧条目是本项目旧部署时，可用 `install --update-existing` 只更新该条目的 `run.mjs` 路径。`status --json` 的 `configuration_ok` 只表示配置结构正确，`runtime_loaded` 恒为 `unverified`——配置检测不等于运行成功，必须重启 DSH 后在新聊天实际确认。修改后需重启 DSH 才加载。`study.cmd`/`session.py` 的 `--chat` 可省略：按“显式 `--chat` → 环境变量 `STUDY_CHAT_ID`（与本人约定的会话名）→ DSH 主聊天 `DSH_SESSION_ID`”解析；DSH 内部子会话的裸 UUID 会被拒绝，子任务必须显式传主聊天 ID 并加 `--subtask`。完整说明见 [DSH.md](DSH.md)。
 
-在受限 shell（例如 DSH 自己的沙箱）里，`node --test` 与部分 Python `tempfile` 测试可能因管道/临时目录权限失败；完整回归请在真实终端执行。
+在受限 shell（例如 DSH 自己的沙箱）里，`node --test`、部分 Python `tempfile` 测试，以及需要 Node 子进程、DPAPI 解密或网络下载的 `courses` 完整初始化和 `library-sync`，可能因管道/临时目录/进程权限失败；这不代表实现错误。真实资料同步请在正常终端（`start.cmd`、`choose-courses.cmd`，或经用户批准的完整访问命令）运行，完整回归也在真实终端执行。
 
 ## 验证与发布
 
@@ -122,7 +144,7 @@ npm test
 & '.venv/Scripts/python.exe' -m unittest discover -s tools/study -p 'test_*.py'
 ```
 
-测试使用虚构课程和临时状态，不连接学校，不读取个人 Token。可选 `tests/browser_smoke.py` 只访问本机模拟服务，使用无界面 Edge，不验证学校真实 SSO；真实连接需本人登录后运行 `node tools/moodle/run.mjs check`。
+测试使用虚构课程和临时状态，不连接学校，不读取个人 Token。课程级授权与资料同步的新增回归为 `tests/course-library.test.mjs`（Node）和 `tools/study/test_course_library.py`（Python），随上面的命令执行。可选 `tests/browser_smoke.py` 只访问本机模拟服务，使用无界面 Edge，不验证学校真实 SSO；真实连接需本人登录后运行 `node tools/moodle/run.mjs check`。
 
 发布前从通用源码文件清单建立提交，检查 `git status`。不得加入 `Study/`、`.private/`、本地配置、依赖环境、个人附件、真实题库或状态备份，不用 `git add -f` 绕过忽略规则。Node 依赖锁在 package-lock.json；Python 固定版本见 requirements.txt。
 

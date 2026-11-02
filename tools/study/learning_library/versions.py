@@ -16,6 +16,19 @@ POLICY = {"enabled": True, "archive_days": 30, "cleanup_on_use": True,
           "referenced_versions": "keep", "modified_versions": "keep",
           "background_task": False}
 
+# One directory level only; a course page may reuse a filename across modules.
+ARCHIVE_SUBDIR = re.compile(r"[A-Za-z0-9._-]{1,80}")
+
+
+def archive_subdir_name(value):
+    """Validate a single safe directory segment used to separate same-name files."""
+    if value is None:
+        return None
+    if (not isinstance(value, str) or not ARCHIVE_SUBDIR.fullmatch(value)
+            or value in {".", ".."}):
+        raise ValueError("Unsafe archive subdirectory name")
+    return value
+
 
 def current(row):
     return not row.get("superseded_by") and row.get("version_status") not in {"archived", "deleted"}
@@ -256,7 +269,13 @@ def promote(state_path, incoming, old_id=None, at=None):
         name = incoming.get("filename") or source.name
         if Path(name).name != name or any(c in name for c in '/\\:<>|?*'):
             raise ValueError("Unsafe original filename")
-        target = safe(study, Path(course) / category / name)
+        # Course libraries may hold different modules with the same filename.
+        # A verified single-segment subdirectory keeps them from overwriting.
+        subdir = archive_subdir_name(incoming.get("archive_subdir"))
+        target_folder = Path(course) / category
+        if subdir:
+            target_folder = target_folder / subdir
+        target = safe(study, target_folder / name)
         moves, edits = [], []
         archived = None
         if old:
