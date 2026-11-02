@@ -2,7 +2,7 @@
 
 `codex` 面向 Codex，`deepseek` 面向 DeepSeek Harness。两端分别下载、安装和验收；`client-target.json` 是随分支发布的客户端选择，setup 与诊断不会根据另一个客户端的配置宣称本端可用。通用兼容辅助代码可保留，但不会被选中分支的默认安装调用。
 
-当前 `main` 保留分支拆分前已发布的兼容版本；新分支的创建不改变 GitHub 默认分支。只有明确发布后才可让用户从对应远端分支下载。
+GitHub 默认分支为 `codex`，仓库首页与默认下载对应 Codex 版；DeepSeek Harness 用户选择 `deepseek` 分支下载。旧 `main` 分支已删除，其提交历史完整保留在两个发行分支中。
 
 ## 使用与已有部署
 
