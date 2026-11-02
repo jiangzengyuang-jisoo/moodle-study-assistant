@@ -92,7 +92,7 @@ export function selectedPages(state, courseIds = null) {
   return pages;
 }
 
-export function authorizationReport(state, pages, account = null) {
+export function authorizationReport(state, pages) {
   const authorization = state.settings?.course_library_authorization ?? null;
   const grants = authorization?.courses ?? {};
   const authorized = [], blocked = [];
@@ -100,11 +100,7 @@ export function authorizationReport(state, pages, account = null) {
     const grant = grants[page.courseId];
     if (!grant) blocked.push({page, reason: 'course_not_authorized'});
     else if (grant.mode !== 'full') blocked.push({page, reason: 'authorization_info_only'});
-    else if (grant.account_scope && (!account || grant.account_scope.site !== account.site
-        || grant.account_scope.user_id !== account.user_id)) blocked.push({page, reason: 'authorization_account_changed'});
-    else if (Array.isArray(grant.moodle_courseids)
-        ? !grant.moodle_courseids.includes(page.moodleCourseid)
-        : Number(grant.moodle_courseid) !== Number(page.moodleCourseid)) blocked.push({page, reason: 'authorization_scope_changed'});
+    else if (Number(grant.moodle_courseid) !== Number(page.moodleCourseid)) blocked.push({page, reason: 'authorization_scope_changed'});
     else authorized.push(page);
   }
   return {authorization, authorized, blocked};
@@ -920,8 +916,7 @@ export async function syncCourseLibrary({
   const pages = selectedPages(state, courseIds);
   if (!pages.length) throw new Error('No selected course pages to sync');
   for (const page of pages) page.baseUrl = client.baseUrl;
-  const {authorization, authorized, blocked} = authorizationReport(state, pages,
-    {site: String(client.baseUrl).replace(/\/+$/, ''), user_id: client.userId});
+  const {authorization, authorized, blocked} = authorizationReport(state, pages);
   if (blocked.length) {
     blocked.forEach(entry => { entry.page.status = STATUS.blocked; });
   }

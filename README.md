@@ -6,9 +6,9 @@
 
 [Why use it?](#why-use-it) · [Study examples](#study-examples) · [Get started](#get-started) · [FAQ and privacy](#faq-and-privacy) · [Updates](#recent-updates)
 
-A personal course workspace used through a **DeepSeek Harness chat**. Keep slides, handouts, exercises, and learning records on your computer. Connect Moodle to bring in assignment requirements, deadlines, announcements, and discussions, then use that context for explanations, practice, and exam preparation.
+A personal course workspace used through a **Codex chat**. Keep slides, handouts, exercises, and learning records on your computer. Connect Moodle to bring in assignment requirements, deadlines, announcements, and discussions, then use that context for explanations, practice, and exam preparation.
 
-Designed for students following university courses over a semester. The documented setup is **Windows 10/11 + DeepSeek Harness local project mode**. You study in the chat; there is no separate web app to deploy.
+Designed for students following university courses over a semester. The documented setup is **Windows 10/11 + Codex local project mode in the ChatGPT desktop app**. You study in the chat; there is no separate web app to deploy.
 
 ## Why use it?
 
@@ -70,15 +70,13 @@ Moodle is collected when a chat first enters course learning, review, or study p
 
 ## Get started
 
-For this DeepSeek Harness deployment, open this folder as your chat workspace and say **“Install this and teach me how to use it.”** The assistant handles setup, presents courses and sync modes in chat, and teaches the workflow afterward. School sign-in stays in the school browser page. No CMD menu is required. See [chat onboarding](docs/CHAT_ONBOARDING.md).
+### 1. Open a local Codex project
 
-### 1. Open the project in Harness
-
-Open this project folder as the workspace in DeepSeek Harness and allow the required project access. Existing users should reopen their current folder and preserve its records. See [DSH.md](docs/DSH.md) for configuration and restart guidance.
+Install the [ChatGPT desktop app for Windows](https://learn.chatgpt.com/docs/app/windows) and sign in. In the app, select **Codex** from the ChatGPT dropdown and choose **Work in → This computer**. See the [official environment guide](https://learn.chatgpt.com/docs/environments/modes); availability depends on your account and workspace permissions.
 
 Download this repository with **Code → Download ZIP**, extract it to a stable location such as `D:\MoodleStudy`, and open the folder containing `README.md`, `AGENTS.md`, and `start.cmd` as the local project. Allow access to that project when prompted. Pasting the repository link into an ordinary chat does not install it on your computer.
 
-### 2. Complete setup in the current chat
+### 2. Ask Codex to set it up
 
 You handle necessary permission prompts, school sign-in, and course selection; the assistant can inspect the environment and run the setup steps.
 
@@ -136,9 +134,9 @@ If setup stalls, share the error text without passwords or tokens and ask the as
 
 ## Use with DeepSeek Harness (optional)
 
-These details are for the assistant to diagnose Harness configuration; users can stay in the current chat:
+The same project works in a **DeepSeek Harness** desktop chat, and the Codex instructions above keep working:
 
-1. The assistant runs `setup.ps1` in the current chat; users do not open CMD.
+1. Finish the normal setup (`setup.cmd`) in this folder.
 2. In a Harness chat, run `python tools/onboarding/dsh_integration.py install` (running `setup` inside Harness also merges it). It appends an MCP stdio entry and a skill directory to your Harness profile, keeps every existing entry, and writes a backup. It never touches study records or credentials.
 3. Restart DeepSeek Harness and open this folder as the chat workspace.
 4. No chat ID is typed per message: the stable Harness session ID is used, so continuing the same chat reuses verified information while a genuinely new chat collects once. Internal delegated tasks must receive the original chat ID explicitly and add `--subtask`.
@@ -180,7 +178,7 @@ Current public version: **0.4.0**.
 
 | Date | Change |
 | --- | --- |
-| [2026-11-02](CHANGELOG.md#2026-11-02) | Chat-based setup, course selection and proactive usage teaching; existing material library retained |
+| [2026-11-02](CHANGELOG.md#2026-11-02) | **0.4.0**: course-level one-time material authorization with full initialisation (download, archive, index directly accessible materials), information-only mode and incremental sync; memory inspection; optional DeepSeek Harness desktop support with stable chat identity, validated profile-safe MCP/skill wiring, Chrome login by default, temporary-folder fixes, and authorization recovery after landing on the Moodle home page |
 | [2026-11-01](CHANGELOG.md#2026-11-01) | English and Chinese READMEs explain the course library and study continuity; narrower startup scope and clearer Moodle diagnostics |
 | [2026-10-31](CHANGELOG.md#2026-10-31) | Stronger learning-record protection, cross-chapter continuity, and Chinese setup diagnostics |
 

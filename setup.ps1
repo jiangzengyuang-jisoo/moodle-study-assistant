@@ -39,11 +39,9 @@ if ($env:DSH_SESSION_ID -or $env:DSH_HOME) {
     Write-Host 'Detected DeepSeek Harness; merging MCP and skill configuration (existing entries preserved, backup written).'
     & '.venv/Scripts/python.exe' tools/onboarding/dsh_integration.py install
     if ($LASTEXITCODE -ne 0) {
-        throw 'DeepSeek Harness configuration did not complete. Continue diagnosis in this chat; preserve existing files.'
+        Write-Host 'DeepSeek Harness configuration was not changed. Run python tools/onboarding/dsh_integration.py status --json and follow docs/DSH.md.'
     } else {
         Write-Host 'DeepSeek Harness configuration merged. Restart DeepSeek Harness and reopen this folder as the workspace.'
     }
 }
-& '.venv/Scripts/python.exe' tools/study/product_tour.py status
-if ($LASTEXITCODE -ne 0) { throw 'Usage guide status needs repair. Preserve existing study records.' }
-Write-Host 'Setup complete. Continue in this chat: follow docs/CHAT_ONBOARDING.md, finish school connection and chat course selection, then proactively teach the user how to use this system. Do not send the user to a CMD menu.'
+Write-Host 'Setup complete. Next: start.cmd. Read docs/START.md. Existing study records are preserved.'
