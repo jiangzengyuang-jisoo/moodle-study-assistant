@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { initialize, atomicJSON, ReadOnlyClient } from './core.mjs';
 import { collectRefresh } from './refresh.mjs';
-import {chooseCourses} from './course-selection.mjs';
+import {chooseCourses, courseCatalog, selectCoursesInChat, parseCourseOptions} from './course-selection.mjs';
 import {normalizeSite} from './content-policy.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -24,6 +24,7 @@ function tokenFromWindows(ciphertext = null) {
 async function main() {
   const mode = process.argv[2] ?? 'check';
   if (mode === 'init') { initialize(root); console.log('空白档案和本地 MCP 配置已准备好；已有档案保留。'); return; }
+  const courseOptions = mode === 'courses' ? parseCourseOptions(process.argv.slice(3), process.stdin.isTTY) : null;
   if (!existsSync(statePath)) throw new Error('请先运行 setup.cmd');
   if (mode === 'refresh') {
     const args = process.argv.slice(3);
@@ -58,6 +59,14 @@ async function main() {
   const client = await new ReadOnlyClient(config.moodle_url, tokenFromWindows(bundle?.credential)).connect();
   if (mode === 'check') { console.log('Moodle API 已连接。'); return; }
   if (mode === 'courses') {
+    if (courseOptions.action !== 'interactive') {
+      const context = {client, readState: () => json(statePath),
+        writeState: (expected, state) => saveState(root, 'replace', {expected, state})};
+      const result = courseOptions.action === 'list' ? await courseCatalog(context)
+        : await selectCoursesInChat({...context, selection: json(courseOptions.file)});
+      console.log(JSON.stringify(result));
+      return;
+    }
     const chatIndex = process.argv.indexOf('--chat');
     const identity = resolveChatId(chatIndex >= 0 ? process.argv[chatIndex + 1] : '', process.env);
     // A standalone setup window has no chat. Its explicit initialization run

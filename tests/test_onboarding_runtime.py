@@ -54,6 +54,7 @@ Add-Type -TypeDefinition 'public class BrokenPip { public static int Main(string
         for name in ('review.py', 'daily.py', 'library.py'):
             (study_tools / name).write_text('from pathlib import Path\n'
                 'with Path("post-install.log").open("a",encoding="utf-8") as f: f.write(Path(__file__).name+"\\n")\n', encoding='utf-8')
+        (study_tools / 'product_tour.py').write_text('print(\'{"pending":true,"next_action":"teach_in_current_chat"}\')', encoding='utf-8')
         self.env = {**os.environ, 'PATH': os.pathsep.join([str(binaries), str(Path(sys._base_executable).parent),
                       str(Path(os.environ['SystemRoot']) / 'System32')]),
                     'PYTHONUTF8': '1', 'PYTHONIOENCODING': 'utf-8', 'PYTHONDONTWRITEBYTECODE': '1',
@@ -89,6 +90,9 @@ Add-Type -TypeDefinition 'public class BrokenPip { public static int Main(string
         (self.root / 'tools/onboarding/dsh_integration.py').write_text('raise SystemExit(91)', encoding='utf-8')
         result = self.run_ps(self.root / 'setup.ps1')
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn('teach_in_current_chat', result.stdout)
+        self.assertIn('docs/CHAT_ONBOARDING.md', result.stdout)
+        self.assertNotIn('Next: start.cmd', result.stdout)
         self.assertEqual(0, self.pip_version().returncode)
         self.assertEqual(['review.py', 'daily.py', 'library.py'], self.completed_steps())
 

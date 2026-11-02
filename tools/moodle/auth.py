@@ -102,7 +102,7 @@ def browser_token(site, channel):
                     route.fulfill(response=response)
             except Exception:
                 result['error'] = True
-                route.fulfill(status=400, body='Authentication callback failed. Return to the terminal.')
+                route.fulfill(status=400, body='Authentication callback failed. Return to your AI chat.')
 
         # Only the school's official launch endpoint is intercepted; SSO credentials remain in the browser.
         context.route(launch + '?*', intercept)
@@ -135,7 +135,7 @@ def main():
         raise ValueError('Token 格式无效')
     verify_token(site, token)
     store_token(token)
-    print('Moodle API 已验证并加密保存。下一步运行 choose-courses.cmd。')
+    print('Moodle API 已验证并加密保存。请回到当前 AI 聊天；助手接着列出课程，让你在聊天中选择并讲解系统用法。')
 
 
 if __name__ == '__main__':

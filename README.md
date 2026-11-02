@@ -72,6 +72,8 @@ Moodle is collected when a chat first enters course learning, review, or study p
 
 ## Get started
 
+In the project chat, say **“Install this and teach me how to use it.”** The assistant runs setup, lets you choose courses and sync mode in chat, and opens the school website for your sign-in. It then introduces planning, studying, materials, answer review, refresh, and continuity, and helps with your first task. No CMD menu is required. Say “Continue setup” after an interruption. [Chat onboarding](docs/CHAT_ONBOARDING.md).
+
 ### 1. Open a local Codex project
 
 Install the [ChatGPT desktop app for Windows](https://learn.chatgpt.com/docs/app/windows) and sign in. In the app, select **Codex** from the ChatGPT dropdown and choose **Work in → This computer**. See the [official environment guide](https://learn.chatgpt.com/docs/environments/modes); availability depends on your account and workspace permissions.
@@ -164,7 +166,7 @@ Ask the assistant to back up and preserve `Study/`, configuration, credentials, 
 
 | Date | Change |
 | --- | --- |
-| [2026-11-02](CHANGELOG.md#2026-11-02) | Course-authorized automatic downloads, filing and indexing; inspect and correct memory; separate Codex and DeepSeek release branches |
+| [2026-11-02](CHANGELOG.md#2026-11-02) | Chat-based setup and course selection with a proactive usage tour; authorized material sync; memory inspection and correction; separate client editions |
 | [2026-11-01](CHANGELOG.md#2026-11-01) | English and Chinese READMEs explain the course library and study continuity; narrower startup scope and clearer Moodle diagnostics |
 | [2026-10-31](CHANGELOG.md#2026-10-31) | Stronger learning-record protection, cross-chapter continuity, and Chinese setup diagnostics |
 

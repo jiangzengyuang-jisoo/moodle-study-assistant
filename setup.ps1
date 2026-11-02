@@ -45,4 +45,6 @@ if ($clientTarget.client -eq 'deepseek') {
         Write-Host 'DeepSeek Harness configuration merged. Restart DeepSeek Harness and reopen this folder as the workspace.'
     }
 }
-Write-Host 'Setup complete. Next: start.cmd. Read docs/START.md. Existing study records are preserved.'
+& '.venv/Scripts/python.exe' tools/study/product_tour.py status
+if ($LASTEXITCODE -ne 0) { throw 'Setup files are ready, but the usage guide status needs repair. Preserve existing study records.' }
+Write-Host 'Setup complete. Continue in the current AI chat: read docs/CHAT_ONBOARDING.md, finish connection/course selection, and actively teach the user how to use the system. Do not send the user to a CMD menu.'
