@@ -21,6 +21,7 @@ client has loaded it": only a restarted client can prove runtime loading.
 """
 
 import argparse
+import copy
 import json
 import os
 import re
@@ -422,6 +423,14 @@ def _compose(base_text, project, add_mcp, add_skills):
     base_text, _ = _strip_generated(base_text)
     base_data = _load_document(base_text, '移除生成段后的 profile patch')
     normalised = _normalise_empty_list(base_text, base_data)
+    if not add_mcp and not add_skills:
+        # An adopted existing entry changed other text already; do not append a
+        # generated block, but still validate the complete document.
+        new_text = normalised.rstrip('\n') + '\n'
+        final_data = _load_document(new_text, '更新现有条目后的 profile patch')
+        if final_data != base_data:
+            raise PatchError('更新现有条目后的 profile 结构与预期不一致，未做任何修改。')
+        return new_text, base_data, []
     block = _render_block(project, add_mcp=add_mcp, add_skills=add_skills)
     generated = _load_document(block, '生成的配置段')
     if not isinstance(generated, list) or len(generated) != (int(add_mcp) + int(add_skills)):
@@ -444,56 +453,154 @@ def _compose(base_text, project, add_mcp, add_skills):
     return new_text, base_data, generated
 
 
-def _adopt_existing_mcp(base_text, base_data, project):
-    """Repoint an existing generated-style moodle MCP entry to this project.
+def _entry_region(lines, start, end):
+    """Return (entry_start, entry_end, indent) for the server line inside a block."""
+    index = None
+    for candidate in range(start, end):
+        if re.match(r'\s*serverName:\s*[\'"]?' + re.escape(SERVER_NAME) + r'[\'"]?\s*(?:#.*)?$',
+                    lines[candidate]):
+            index = candidate
+            break
+    if index is None:
+        return None
+    server_indent = len(lines[index]) - len(lines[index].lstrip(' \t'))
+    entry_start = start
+    entry_indent = 0
+    for candidate in range(index - 1, start - 1, -1):
+        match = re.match(r'^([ \t]*)-\s', lines[candidate])
+        if match and len(match.group(1)) < server_indent:
+            entry_start = candidate
+            entry_indent = len(match.group(1))
+            break
+    entry_end = entry_start + 1
+    prefix = ' ' * entry_indent
+    while entry_end < end and not re.match('^' + re.escape(prefix) + r'-[ \t]', lines[entry_end]):
+        entry_end += 1
+    return entry_start, entry_end, entry_indent
 
-    Only used with ``--update-existing`` and only when the existing entry is a
-    DSH MCP client for the same server name whose argument is another
-    ``tools/moodle/run.mjs`` deployment. The old path token is replaced
-    textually; a folded scalar path is handled by replacing the whole
-    ``- insert:`` entry block. The full result is re-parsed and validated by the
-    caller afterwards.
+
+def _find_args_region(lines, start, end):
+    """Locate the ``args:`` value region inside one MCP entry."""
+    for index in range(start, end):
+        match = re.match(r'^([ \t]*)args\s*:(.*)$', lines[index])
+        if not match:
+            continue
+        indent = match.group(1)
+        rest = match.group(2).strip()
+        if rest:
+            depth = 0
+            quote = None
+            escaped = False
+            cursor = index
+            text = rest
+            while True:
+                for char in text:
+                    if quote:
+                        if escaped:
+                            escaped = False
+                        elif char == '\\' and quote == '"':
+                            escaped = True
+                        elif char == quote:
+                            quote = None
+                        continue
+                    if char in '\'"':
+                        quote = char
+                    elif char in '[{':
+                        depth += 1
+                    elif char in ']}':
+                        depth -= 1
+                if depth <= 0 and quote is None:
+                    return index, cursor + 1, indent
+                cursor += 1
+                if cursor >= end:
+                    return None
+                text = lines[cursor]
+        region_end = index + 1
+        cursor = index + 1
+        indent_width = len(indent)
+        while cursor < end:
+            line = lines[cursor]
+            if not line.strip():
+                cursor += 1
+                continue
+            line_indent = len(line) - len(line.lstrip(' \t'))
+            if line_indent <= indent_width:
+                break
+            region_end = cursor + 1
+            cursor += 1
+        return index, region_end, indent
+    return None
+
+
+def _adopt_existing_mcp(base_text, base_data, project):
+    """Update only the target Moodle MCP entry's ``args`` field.
+
+    Returns ``(new_text, changed, problem)``. The update is limited to the
+    ``args`` value of the one MCP client entry whose ``serverName`` is
+    ``moodle_study``; other entries, comments, fields and settings are kept
+    byte-for-byte. The caller re-parses and validates the complete result.
     """
     current = (Path(project) / 'tools/moodle/run.mjs').resolve()
-    changed = 0
-    for config in _mcp_entries(base_data):
-        args = config.get('args')
-        if not isinstance(args, list) or len(args) < 2 or str(args[1]) != 'mcp':
-            continue
-        old = str(args[0])
-        if not old.replace('\\', '/').endswith('/tools/moodle/run.mjs'):
-            continue
-        try:
-            if Path(old).expanduser().resolve() == current:
-                continue
-        except (OSError, ValueError):
-            continue
-        occurrences = base_text.count(old)
-        if occurrences:
-            base_text = base_text.replace(old, current.as_posix())
-            changed += occurrences
-    if changed:
-        return base_text, changed
-    # Fallback for a folded/quoted long path: replace the whole insert entry.
+    entries = _mcp_entries(base_data)
+    if len(entries) != 1:
+        return base_text, 0, '无法唯一定位现有的 moodle_study MCP 条目'
+    args = entries[0].get('args')
+    if not isinstance(args, list) or len(args) < 2 or str(args[1]) != 'mcp':
+        return base_text, 0, '现有 moodle_study 条目的 args 结构不可识别'
+    old = str(args[0])
+    if not old.replace('\\', '/').endswith('/tools/moodle/run.mjs'):
+        return base_text, 0, '现有 moodle_study 条目的 args 不是本项目 run.mjs'
+    try:
+        if Path(old).expanduser().resolve() == current:
+            return base_text, 0, ''
+    except (OSError, ValueError):
+        return base_text, 0, '现有 moodle_study 条目的 args 路径不可解析'
+    if any(not isinstance(value, (str, int, float, bool)) for value in args):
+        return base_text, 0, '现有 moodle_study 条目的 args 含非标量值，未自动改写'
+
     lines = base_text.split('\n')
-    server_lines = [index for index, line in enumerate(lines)
-                    if re.match(r'\s*serverName:\s*' + re.escape(SERVER_NAME) + r'\s*$', line)]
-    if len(server_lines) != 1:
-        return base_text, 0
-    index = server_lines[0]
-    start = index
-    while start - 1 >= 0 and (lines[start - 1].startswith((' ', '\t')) or not lines[start - 1].strip()):
-        start -= 1
-    if start > 0 and re.match(r'-\s+insert:\s*$', lines[start - 1]):
-        start -= 1
-    elif not re.match(r'-\s+(insert|id):', lines[start].strip()):
-        return base_text, 0
-    end = index + 1
-    while end < len(lines) and not re.match(r'^-\s', lines[end]):
-        end += 1
-    block = _render_block(project, add_mcp=True, add_skills=False, plain=True).rstrip('\n').split('\n')
-    new_lines = lines[:start] + block + lines[end:]
-    return '\n'.join(new_lines), 1
+    blocks = []
+    index = 0
+    while index < len(lines):
+        if re.match(r'^-[ \t]', lines[index]):
+            block_end = index + 1
+            while block_end < len(lines) and not re.match(r'^-[ \t]', lines[block_end]):
+                block_end += 1
+            if any(re.search(r'name:\s*[\'"]?' + re.escape(MCP_CLIENT), line)
+                   for line in lines[index:block_end]):
+                if any(re.match(r'\s*serverName:\s*[\'"]?' + re.escape(SERVER_NAME), line)
+                       for line in lines[index:block_end]):
+                    blocks.append((index, block_end))
+            index = block_end
+        else:
+            index += 1
+    if len(blocks) != 1:
+        return base_text, 0, '无法唯一定位现有的 moodle_study MCP 条目'
+    block_start, block_end = blocks[0]
+    region = _entry_region(lines, block_start, block_end)
+    if region is None:
+        return base_text, 0, '现有条目缺少 serverName'
+    entry_start, entry_end, _ = region
+    args_region = _find_args_region(lines, entry_start, entry_end)
+    if args_region is None:
+        return base_text, 0, '现有条目缺少可识别的 args 字段'
+    args_line, args_end, indent = args_region
+    new_args = [current.as_posix()] + [value for value in args[1:]]
+    replacement = [indent + 'args:'] + [
+        indent + '  - ' + _yaml_quote(value) for value in new_args]
+    new_text = '\n'.join(lines[:args_line] + replacement + lines[args_end:])
+    try:
+        after = _load_document(new_text, '更新现有 MCP 条目后的 profile patch')
+    except PatchError as error:
+        return base_text, 0, str(error)
+    expected = copy.deepcopy(base_data)
+    expected_configs = _mcp_entries(expected)
+    if len(expected_configs) != 1:
+        return base_text, 0, '内部校验无法定位目标条目'
+    expected_configs[0]['args'] = new_args
+    if after != expected:
+        return base_text, 0, '替换 args 会改变目标以外的配置，未做任何修改'
+    return new_text, 1, ''
 
 
 def install(project=None, env=None, dry_run=False, update_existing=False):
@@ -531,11 +638,15 @@ def install(project=None, env=None, dry_run=False, update_existing=False):
     try:
         base_text, _ = _strip_generated(original)
         base_data = _load_document(base_text, '现有 profile patch')
+        adopted = 0
+        adopt_problem = ''
         if update_existing:
-            base_text, replaced = _adopt_existing_mcp(base_text, base_data, root)
-            if replaced:
+            base_text, adopted, adopt_problem = _adopt_existing_mcp(base_text, base_data, root)
+            if adopted:
                 base_data = _load_document(base_text, '更新现有 MCP 条目后的 profile patch')
-                base['warnings'].append('已将现有 moodle_study MCP 条目的 run.mjs 路径更新为当前项目（只改该路径）。')
+                base['warnings'].append('已将现有 moodle_study MCP 条目的 args 路径更新为当前项目；只改该字段。')
+            elif adopt_problem:
+                base['warnings'].append('未能自动更新现有条目：' + adopt_problem + '；未覆盖任何配置。')
         existing_mcp = _mcp_entries(base_data)
         matching_mcp = [config for config in existing_mcp if _entry_path_matches(config, root)]
         if matching_mcp:
@@ -554,17 +665,20 @@ def install(project=None, env=None, dry_run=False, update_existing=False):
             add_skills = False
             base['warnings'].append('已有用户自定义 skill-filesystem 配置但未包含当前项目 skills 目录；'
                                     '未覆盖，请按 docs/DSH.md 手动合并。')
-        if not add_mcp and not add_skills:
-            base.update(status='unchanged' if not update_existing else 'unchanged',
-                        reason='现有配置已满足要求，未修改文件。')
+        if not add_mcp and not add_skills and not adopted:
+            base.update(status='unchanged', reason='现有配置已满足要求，未修改文件。')
             return base
         new_text, base_data, generated = _compose(base_text, root, add_mcp=add_mcp, add_skills=add_skills)
+        if adopted and not [config for config in _mcp_entries(base_data)
+                            if _entry_path_matches(config, root)]:
+            raise PatchError('更新现有条目后仍未发现指向当前项目的 MCP 配置，保留原文件。')
     except PatchError as error:
         base.update(status='error', reason=str(error))
         return base
 
     base['mcp_added'] = add_mcp
     base['skills_added'] = add_skills
+    base['updated_existing'] = bool(adopted)
     base['restart_required'] = True
     if patch.exists() and new_text.rstrip('\n') == original.rstrip('\n'):
         base.update(status='unchanged', reason='现有配置与生成内容一致，未修改文件。')

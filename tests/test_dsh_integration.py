@@ -225,7 +225,7 @@ class DshProfileTests(unittest.TestCase):
 
     def test_update_existing_handles_folded_old_path(self):
         old_path = (self.other / 'tools/moodle/run.mjs').as_posix()
-        folded = old_path[:60] + '\n      ' + old_path[60:]
+        folded = old_path[:60] + '\n              ' + old_path[60:]
         original = ('- insert:\n    - id: moodle-study\n      name: \'@deepseek-ai/dsh-mcp-client\'\n'
                     '      config:\n        serverName: moodle_study\n        transport: stdio\n'
                     "        command: 'node'\n        args:\n          - '" + folded + "'\n"
@@ -235,7 +235,7 @@ class DshProfileTests(unittest.TestCase):
         result = dsh.install(self.root, self.env, update_existing=True)
         self.assertEqual('installed', result['status'])
         text = self.patch.read_text(encoding='utf-8')
-        self.assertNotIn('!!js process.cwd()', text)
+        self.assertIn('!!js process.cwd()', text)
         self.assertIn('enabled: true', text)
         self.assertEqual('configured', dsh.inspect(self.root, self.env)['mcp']['status'])
 
@@ -285,6 +285,86 @@ class DshProfileTests(unittest.TestCase):
         data = dsh._load_document(text)
         self.assertIsInstance(data, list)
         self.assertEqual('configured', dsh.inspect(self.root, self.env)['mcp']['status'])
+
+    def _existing_skills_text(self):
+        return ("- id: skill-filesystem\n  name: '@deepseek-ai/dsh-skill-filesystem'\n"
+                '  config:\n    customSkillDirs:\n      - ' + (self.root / 'skills').as_posix() + '\n')
+
+    def test_update_existing_persists_change_when_skills_already_configured(self):
+        self._write(self._mcp_entry_text() + self._existing_skills_text())
+        skill_dir = (self.root / 'skills').as_posix()
+        result = dsh.install(self.root, self.env, update_existing=True)
+        # No new entries are needed, but the in-memory MCP path change must be saved.
+        self.assertEqual('installed', result['status'])
+        self.assertTrue(result['updated_existing'])
+        self.assertFalse(result['mcp_added'])
+        self.assertFalse(result['skills_added'])
+        self.assertTrue(Path(result['backup']).exists())
+        data = _yaml_load(self.patch.read_text(encoding='utf-8'))
+        configs = dsh._mcp_entries(data)
+        self.assertEqual(1, len(configs))
+        self.assertEqual((self.root / 'tools/moodle/run.mjs').resolve(),
+                         Path(configs[0]['args'][0]).resolve())
+        self.assertEqual('mcp', configs[0]['args'][1])
+        self.assertIn(skill_dir, self.patch.read_text(encoding='utf-8'))
+        first_text = self.patch.read_text(encoding='utf-8')
+        second = dsh.install(self.root, self.env)
+        self.assertEqual('unchanged', second['status'])
+        self.assertEqual(first_text, self.patch.read_text(encoding='utf-8'))
+
+    def test_update_existing_only_changes_target_args(self):
+        old_path = (self.other / 'tools/moodle/run.mjs').as_posix()
+        unrelated = ('# unrelated comment still references ' + old_path + '\n'
+                     "- id: unrelated-mcp\n  name: '@deepseek-ai/dsh-mcp-client'\n"
+                     '  config:\n    serverName: other_server\n    transport: stdio\n'
+                     "    command: node\n    args: ['" + old_path + "', 'mcp']\n"
+                     "- id: ui-settings\n  name: '@deepseek-ai/dsh-client-ui-settings'\n"
+                     '  config:\n    enabled: true\n')
+        self._write(self._mcp_entry_text() + unrelated)
+        result = dsh.install(self.root, self.env, update_existing=True)
+        self.assertEqual('installed', result['status'])
+        self.assertTrue(result['updated_existing'])
+        text = self.patch.read_text(encoding='utf-8')
+        self.assertIn('# unrelated comment still references ' + old_path, text)
+        self.assertIn("args: ['" + old_path + "', 'mcp']", text)
+        self.assertIn('enabled: true', text)
+        data = _yaml_load(text)
+        target = next(config for config in dsh._mcp_entries(data)
+                      if config.get('serverName') == 'moodle_study')
+        self.assertEqual((self.root / 'tools/moodle/run.mjs').resolve(),
+                         Path(target['args'][0]).resolve())
+        unrelated_config = next(config for config in dsh._walk_dicts(data)
+                                if config.get('serverName') == 'other_server')
+        self.assertEqual(old_path, unrelated_config['args'][0])
+
+    def test_update_existing_flow_style_args_keeps_other_fields(self):
+        old_path = (self.other / 'tools/moodle/run.mjs').as_posix()
+        folded = old_path[:60] + '\n              ' + old_path[60:]
+        original = ("# temporary validation block\n- insert:\n    - id: moodle-study\n"
+                    "      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n"
+                    '        serverName: moodle_study\n        transport: stdio\n'
+                    '        command: node\n        args:\n          [\n'
+                    "            '" + folded + "',\n            'mcp'\n          ]\n"
+                    '        env: {}\n        cwd: !!js process.cwd()\n')
+        self._write(original)
+        result = dsh.install(self.root, self.env, update_existing=True)
+        self.assertEqual('installed', result['status'])
+        text = self.patch.read_text(encoding='utf-8')
+        self.assertIn('!!js process.cwd()', text)
+        self.assertIn('transport: stdio', text)
+        self.assertNotIn(old_path, text)
+        config = dsh._mcp_entries(dsh._load_document(text))[0]
+        self.assertEqual((self.root / 'tools/moodle/run.mjs').resolve(),
+                         Path(config['args'][0]).resolve())
+
+    def test_update_existing_dry_run_reports_content_without_writing(self):
+        self._write(self._mcp_entry_text() + self._existing_skills_text())
+        before = self.patch.read_bytes()
+        result = dsh.install(self.root, self.env, update_existing=True, dry_run=True)
+        self.assertEqual('dry-run', result['status'])
+        self.assertTrue(result['updated_existing'])
+        self.assertIn((self.root / 'tools/moodle/run.mjs').as_posix(), result['content'])
+        self.assertEqual(before, self.patch.read_bytes())
 
     def test_status_without_harness_is_harmless(self):
         empty = Path(self.temp.name) / 'no-dsh'
