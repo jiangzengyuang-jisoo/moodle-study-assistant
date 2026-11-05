@@ -22,7 +22,7 @@ Codex 版已在本机源码目录实现共同部分：
 
 已检查的 DeepSeek 分支有独立 `runCourses`、`course-library.mjs`、`content-sync-router.mjs` 和 `settings.course_library_authorization`，使用 `full / info_only`；Codex 参考实现使用 `course_content_sync` 与 `full / metadata`。请重新核对你实际版本，保留 DeepSeek 已有的下载、断点恢复、归档和索引能力，正确适配聊天入口与模式，不能只引入 Codex 授权后被旧路由忽略，也不能取消下载后仍被另一份旧授权继续下载。
 
-不要整目录覆盖、直接整分支合并或把客户端切成 Codex。两端保持各自 `client-target.json`。正常聊天不要调用会 pause/readline 等待终端输入的包装脚本；后台进程由助手启动和等待，进度用中文反馈。沿用原始 Harness 聊天身份，不生成临时聊天导致重复首次刷新。安装中断、授权失败、缺依赖或重启后根据实际状态恢复，不清空档案。
+不要整目录覆盖、直接整分支合并或把客户端切成 Codex。两端保持各自 `client-target.json`。正常聊天不要调用会 pause/readline 等待终端输入的包装脚本；后台进程由助手启动和等待，进度用中文反馈。沿用原始 Harness 聊天身份，不生成临时聊天导致重复章节核对。安装中断、授权失败、缺依赖或重启后根据实际状态恢复，不清空档案。
 
 课程选择必须来自真实账号的可见课程，下载须有本人对具体课程与方式的明确授权；缺省参数、取消、账号切换或状态变化不能扩大权限。密码、验证码、Token 不进聊天，不读 Cookie。不提交学校作业、不发帖、不发邮件。
 
