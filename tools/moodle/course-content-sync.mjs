@@ -60,12 +60,12 @@ function fileEndpoint(site, value) {
   if (!url.pathname.startsWith(prefix + '/webservice/pluginfile.php/')) throw new Error('external_or_unsupported_download');
   url.search = ''; url.searchParams.set('forcedownload', '1'); return url;
 }
-async function hashFile(path) {
+export async function hashFile(path) {
   const hash = createHash('sha256'); for await (const bytes of createReadStream(path)) hash.update(bytes); return hash.digest('hex');
 }
 
 // Only this run's UUID staging folder may be cleaned; never recursively delete.
-async function cleanOwnedStaging(root, stagedPath, installed) {
+export async function cleanOwnedStaging(root, stagedPath, installed) {
   try {
     const directory = resolve(stagedPath, '..');
     if (resolve(directory, '..') !== join(root, '_Inbox', '.course-content')
@@ -189,7 +189,7 @@ export function enumerateCourseContent(sections, {pageId, courseId, site, snapsh
   return {files: [...files.values()], documents, gaps};
 }
 
-async function stageDownload(client, item, {studyRoot, site, timeoutMs, maxBytes}) {
+export async function stageDownload(client, item, {studyRoot, site, timeoutMs, maxBytes}) {
   const url = fileEndpoint(site, item.fileurl); url.searchParams.set('token', client.token);
   const directory = join(studyRoot, '_Inbox', '.course-content', randomUUID());
   mkdirSync(directory, {recursive: true}); contained(studyRoot, directory);

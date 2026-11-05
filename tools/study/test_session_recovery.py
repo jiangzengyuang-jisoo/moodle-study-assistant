@@ -42,7 +42,7 @@ class SessionRecoveryTests(unittest.TestCase):
 
     def reviewed(self, session=None):
         session = session or self.session
-        run = session.start(collector=self.collect)
+        run = session.start(explicit=True, collector=self.collect)
         session.acknowledge(run['snapshot_sha256'], self.proposal())
         return run
 
@@ -71,7 +71,7 @@ class SessionRecoveryTests(unittest.TestCase):
                            'answer': 'PRIVATE_LEARNING_ANSWER'}]
         atomic(self.session.state, state)
         before_scope = self.session.scope()
-        result = self.session.start(collector=self.collect)
+        result = self.session.start(explicit=True, collector=self.collect)
         request = read(Path(result['snapshot_path']).with_name('request.json'))
         self.assertEqual(request['collect_state']['tasks'], [{'source': {
             'url': 'https://school.example/mod/quiz/view.php?id=21'}}])
@@ -88,7 +88,7 @@ class SessionRecoveryTests(unittest.TestCase):
             wrong = copy.deepcopy(self.snapshot); wrong['pages'][0]['courseid'] = 2
             write_snapshot(path, wrong)
             atomic(self.session.state, state)
-        result = self.session.start(collector=collector)
+        result = self.session.start(explicit=True, collector=collector)
         self.assertFalse(result['scope_changed'])
         self.assertEqual(result['phase'], 'failed')
         self.assertFalse(result['binding_valid'])
@@ -96,7 +96,7 @@ class SessionRecoveryTests(unittest.TestCase):
             self.session.acknowledge(result['snapshot_sha256'], self.proposal())
 
     def test_unbound_or_modified_request_cannot_be_reviewed(self):
-        result = self.session.start(collector=lambda path: atomic(path, self.snapshot))
+        result = self.session.start(explicit=True, collector=lambda path: atomic(path, self.snapshot))
         self.assertFalse(result['binding_valid'])
         with self.assertRaisesRegex(ValueError, '绑定'):
             self.session.acknowledge(result['snapshot_sha256'], self.proposal())
@@ -108,13 +108,13 @@ class SessionRecoveryTests(unittest.TestCase):
 
     def test_complete_collection_requires_all_requested_pages(self):
         value = copy.deepcopy(self.snapshot); value['pages'] = []
-        result = self.session.start(collector=lambda path: write_snapshot(path, value))
+        result = self.session.start(explicit=True, collector=lambda path: write_snapshot(path, value))
         self.assertFalse(result['binding_valid'])
         self.assertEqual(result['phase'], 'failed')
 
     def test_partial_failure_preserves_evidence_and_blocks_exam_once(self):
         sources = copy.deepcopy(self.initial['exam_profiles'][0]['sources'])
-        result = self.session.start(collector=lambda path: write_snapshot(path,
+        result = self.session.start(explicit=True, collector=lambda path: write_snapshot(path,
             {'collection_complete': False, 'pages': [], 'errors': ['offline']}))
         self.assertEqual(result['phase'], 'failed')
         self.assertTrue(result['binding_valid'])
@@ -130,7 +130,7 @@ class SessionRecoveryTests(unittest.TestCase):
 
     def test_transport_exception_also_blocks_exam_without_dropping_evidence(self):
         def fail(_): raise OSError('synthetic offline')
-        with self.assertRaises(OSError): self.session.start(collector=fail)
+        with self.assertRaises(OSError): self.session.start(explicit=True, collector=fail)
         after = read(self.session.state)
         self.assertEqual(after['exam_profiles'][0]['verification_status'], 'needs_review')
         self.assertEqual(after['exam_profiles'][0]['sources'], self.initial['exam_profiles'][0]['sources'])
@@ -143,7 +143,7 @@ class SessionRecoveryTests(unittest.TestCase):
             raise OSError('response lost after commit')
         with patch.object(review, 'save', committed_then_crash):
             with self.assertRaises(OSError):
-                self.session.start(collector=lambda path: write_snapshot(path, {'collection_complete': False}))
+                self.session.start(explicit=True, collector=lambda path: write_snapshot(path, {'collection_complete': False}))
         before = self.session.state.read_bytes()
         self.session.start()
         self.assertEqual(before, self.session.state.read_bytes())
@@ -154,11 +154,11 @@ class SessionRecoveryTests(unittest.TestCase):
         def slow_failure(path):
             self.reviewed(other)
             write_snapshot(path, {'collection_complete': False})
-        self.session.start(collector=slow_failure)
+        self.session.start(explicit=True, collector=slow_failure)
         self.assertEqual(read(self.session.state)['exam_profiles'][0]['verification_status'], 'verified')
 
     def test_readonly_subtask_does_not_write_failure_to_learning_state(self):
-        result = self.session.start(collector=self.collect)
+        result = self.session.start(explicit=True, collector=self.collect)
         path = Path(result['snapshot_path']); path.unlink()
         manifest = path.with_name('manifest.json'); value = read(manifest)
         value.pop('snapshot_sha256'); value['phase'] = 'collecting'; atomic(manifest, value)
@@ -184,7 +184,7 @@ def collect(path):
  (root/'child-pid').write_text(str(child.pid))
  print('child-started',flush=True)
  time.sleep(60)
-Session(root,'root-chat').start(collector=collect)
+Session(root,'root-chat').start(explicit=True, collector=collect)
 """
         env = os.environ.copy(); env['PYTHONPATH'] = str(HERE)
         parent = subprocess.Popen([sys.executable, '-c', parent_code, str(self.root), child_code],

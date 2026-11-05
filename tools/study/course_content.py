@@ -89,13 +89,15 @@ def restore_missing(study, row, staged):
     return True
 
 
-def index_course(state_path, course):
+def index_course(state_path, course, material_ids=None):
     from library import Library
     from learning_library.versions import current
     lib = Library(state_path)
-    result = lib.sync(course)
+    result = lib.sync(course, material_ids=material_ids)
     state = lib.state()
-    registered = [m for m in state.get('materials', []) if m.get('course_id') == course and current(m)]
+    selected = set(material_ids) if material_ids is not None else None
+    registered = [m for m in state.get('materials', []) if m.get('course_id') == course and current(m)
+                  and (selected is None or m['id'] in selected)]
     catalog = {row['id']: row for row in lib.catalog()['materials']}
     rows = []
     for material in registered:
@@ -122,8 +124,10 @@ def main():
     commands = parser.add_subparsers(dest='command', required=True)
     index = commands.add_parser('index')
     index.add_argument('--course', required=True)
+    index.add_argument('--material', action='append', dest='material_ids',
+                       help='Index only this current material ID; repeat for several files')
     args = parser.parse_args()
-    print(json.dumps(index_course(args.state, args.course), ensure_ascii=False))
+    print(json.dumps(index_course(args.state, args.course, args.material_ids), ensure_ascii=False))
 
 
 if __name__ == '__main__':

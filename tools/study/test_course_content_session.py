@@ -32,7 +32,7 @@ class CourseContentSessionTests(unittest.TestCase):
 
     def test_legacy_metadata_only_selection_does_not_launch_downloader(self):
         with patch('session.subprocess.run') as process:
-            result = self.session.start(collector=self.collect)
+            result = self.session.start(explicit=True, collector=self.collect)
         process.assert_not_called()
         self.assertEqual('not_authorized', result['content_sync']['status'])
         self.assertEqual('collected', result['phase'])
@@ -41,7 +41,7 @@ class CourseContentSessionTests(unittest.TestCase):
         self.authorize()
         completed = subprocess.CompletedProcess([], 0, json.dumps({'status': 'complete', 'counts': {'downloaded': 2}}).encode(), b'')
         with patch('session.subprocess.run', return_value=completed) as process, patch('session.shutil.which', return_value='node'):
-            result = self.session.start(collector=self.collect)
+            result = self.session.start(explicit=True, collector=self.collect)
             self.assertEqual('complete', result['content_sync']['status'])
             self.assertEqual('collected', result['phase'])
             self.assertTrue(result['school_evidence_pending'])
@@ -54,7 +54,7 @@ class CourseContentSessionTests(unittest.TestCase):
     def test_content_timeout_preserves_collected_snapshot_and_does_not_automatically_retry(self):
         self.authorize()
         with patch('session.subprocess.run', side_effect=subprocess.TimeoutExpired('node', 7200)) as process, patch('session.shutil.which', return_value='node'):
-            result = self.session.start(collector=self.collect)
+            result = self.session.start(explicit=True, collector=self.collect)
             self.assertEqual('partial', result['content_sync']['status'])
             self.assertEqual('collected', result['phase'])
             self.assertTrue(Path(result['snapshot_path']).is_file())
@@ -67,11 +67,11 @@ class CourseContentSessionTests(unittest.TestCase):
         state['settings']['course_content_sync']['grants'][0]['user_id'] = 18
         atomic(self.session.state, state)
         with patch('session.subprocess.run') as process:
-            self.session.start(collector=self.collect)
+            self.session.start(explicit=True, collector=self.collect)
         process.assert_not_called()
 
     def test_interrupted_content_stage_is_reported_without_retry(self):
-        result = self.session.start(collector=self.collect)
+        result = self.session.start(explicit=True, collector=self.collect)
         manifest = Path(result['snapshot_path']).with_name('manifest.json')
         value = read(manifest)
         value['content_sync'] = {'status': 'running'}

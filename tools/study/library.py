@@ -136,8 +136,9 @@ class Library:
         p = self.folder/'catalog.json'
         return read_json(p) if p.exists() else {'schema':SCHEMA,'materials':[],'state_revision':None}
 
-    def sync(self, course=None, force=False):
+    def sync(self, course=None, force=False, material_ids=None):
         from learning_library.extract import EXTRACTOR_VERSION, extract_document
+        from learning_library.versions import current as is_current
         start = time.perf_counter()
         state = self.state()
         rows = state.get('materials', [])
@@ -145,6 +146,18 @@ class Library:
             raise ValueError('Duplicate material IDs in state; library not rebuilt')
         if course and course not in {c['id'] for c in state.get('courses', [])}:
             raise ValueError('Unknown course: '+course)
+        selected = None
+        if material_ids is not None:
+            if not isinstance(material_ids, (list, tuple, set, frozenset)) or not material_ids \
+                    or any(not isinstance(mid, str) or not mid.strip() for mid in material_ids):
+                raise ValueError('Material selection must be a nonempty collection of IDs')
+            selected = set(material_ids)
+            registered = {m['id']: m for m in rows}
+            for mid in selected:
+                material = registered.get(mid)
+                if material is None or not is_current(material) \
+                        or (course and material.get('course_id') != course):
+                    raise ValueError('Selected material is missing, archived, or outside the course: '+mid)
         extracted = reused = 0
         with build_lock(self.folder):
             previous = {m['id']:m for m in self.catalog()['materials']}
@@ -152,9 +165,16 @@ class Library:
                              if m.get('cache') and m.get('cache_sha256')}
             result = []
             for m in rows:
-                if course and m.get('course_id') != course:
+                if (course and m.get('course_id') != course) or (selected is not None and m['id'] not in selected):
                     if m['id'] in previous:
-                        result.append(previous[m['id']])
+                        kept = previous[m['id']]
+                        # A version installation moves the old original without changing its
+                        # bytes. Preserve its trusted cache for explicit historical reads,
+                        # while fresh_rows continues to hide it from normal teaching.
+                        if selected is not None and not is_current(m) \
+                                and m.get('sha256') == kept.get('sha256') == kept.get('registry_sha256'):
+                            kept = {**kept, 'relative_path': m['relative_path']}
+                        result.append(kept)
                     continue
                 row = {k:m.get(k) for k in ['id','course_id','title','filename','relative_path','kind','category','page_map','contains_solutions']}
                 row.update(registry_sha256=m.get('sha256'), indexed_at=now(), warnings=[], status='pending')

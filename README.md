@@ -68,7 +68,7 @@ An example request combining materials, scope, and progress:
 
 This is a sample prompt, not a transcript or a claim that a course has already been checked.
 
-Moodle is collected when a chat first enters course learning, review, or study planning; later turns reuse the checked evidence. Ask explicitly for a refresh to get newer information. Unrelated questions skip the study startup, and connection repair runs only necessary diagnostics. There is no background monitoring or scheduled refresh.
+Before teaching a chapter, the assistant checks only the selected lecture files against newly downloaded bytes, then teaches from the local library. The same chat reuses those checks; a newly requested file is checked once. Planning and latest-notice requests query only the relevant school information. A full Moodle refresh runs only when explicitly requested or needed for the whole task. Unrelated questions and connection diagnostics do not start it. There is no background monitoring. [Chapter checks](docs/CHAPTER_CHECK.md).
 
 ## Get started
 
@@ -166,9 +166,10 @@ Ask the assistant to back up and preserve `Study/`, configuration, credentials, 
 
 | Date | Change |
 | --- | --- |
+| [2026-11-05](CHANGELOG.md#2026-11-05) | Strict checks of selected chapter files before teaching; local continuation and same-chat reuse; task-scoped planning and notice queries |
 | [2026-11-02](CHANGELOG.md#2026-11-02) | Chat-based setup and course selection with a proactive usage tour; authorized material sync; memory inspection and correction; separate client editions |
 | [2026-11-01](CHANGELOG.md#2026-11-01) | English and Chinese READMEs explain the course library and study continuity; narrower startup scope and clearer Moodle diagnostics |
-| [2026-10-31](CHANGELOG.md#2026-10-31) | Stronger learning-record protection, cross-chapter continuity, and Chinese setup diagnostics |
+
 
 Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.md) for validation details and known limitations.
 

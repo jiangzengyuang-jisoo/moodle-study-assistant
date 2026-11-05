@@ -27,6 +27,7 @@ class Session:
         if not chat or not chat.strip():
             raise ValueError('请明确提供原始用户聊天 ID；不自动使用子任务 ID 或随机 ID')
         self.root = Path(root).resolve()
+        self.chat = chat
         self.state = self.root / 'Study/_System/state.json'
         self.runtime = self.state.parent / 'Runtime'
         self.key = digest(chat)
@@ -206,6 +207,12 @@ class Session:
                     atomic(self._manifest(manifest).with_name('review-status.json'), {'phase': 'complete'})
                     manifest['views_pending'] = False
                 return {**self.describe(manifest), 'network_started': False}
+            if not explicit:
+                # Teaching and local planning do not authorize a full school scan.
+                # A chapter check has its own receipt and never creates this manifest.
+                return {'phase': 'not_started', 'network_started': False,
+                        'school_evidence_pending': True, 'automatic_retry': False,
+                        'scope': 'full_refresh', 'next': '教学前仅核对当前章节课件；计划和通知按需查询。完整采集须明确 refresh。'}
             self.maintain()
             with workspace_lock(self.state):
                 prepare_state(self.state)
@@ -267,6 +274,36 @@ class Session:
             return {**self.describe(manifest), 'network_started': True}
         finally:
             lock.__exit__(None, None, None)
+
+    def verify_chapter(self, course, chapter, material_ids, force=False):
+        """Run only the selected chapter check; full-review state is untouched."""
+        if not course or not str(course).strip() or not chapter or not str(chapter).strip() \
+                or not material_ids or any(not isinstance(mid, str) or not mid.strip() for mid in material_ids):
+            raise ValueError('章节核对需要 --course、--chapter 和至少一份 --material 资料 ID')
+        node = os.environ.get('STUDY_NODE') or shutil.which('node')
+        if not node:
+            raise ValueError('未找到 Node；请先运行 setup.cmd')
+        command = [node, str(self.root / 'tools/moodle/run.mjs'), 'verify-chapter',
+                   '--chat', self.chat, '--course', course, '--chapter', chapter]
+        for material in material_ids:
+            command.extend(['--material', material])
+        if force:
+            command.append('--force')
+        with self.timing('chapter_verification'):
+            try:
+                process = subprocess.run(command, cwd=self.root, capture_output=True, timeout=900)
+            except subprocess.TimeoutExpired:
+                raise ValueError('章节核对超时；本次未核实更新，已有本地资料保留。不要因普通追问自动重试。') from None
+            try:
+                result = json.loads(process.stdout.decode('utf-8-sig').strip())
+            except (ValueError, UnicodeError):
+                raise ValueError('章节核对未返回有效回执；本次未核实更新，已有本地资料保留。') from None
+            if process.returncode not in (0, 1, 2) or not isinstance(result, dict) \
+                    or result.get('operation') != 'verify_chapter':
+                raise ValueError('章节核对未完成；本次未核实更新，已有本地资料保留。')
+            if process.returncode != 0 and result.get('ready_for_teaching') is True:
+                raise ValueError('章节核对回执与执行结果不一致；本次未核实更新。')
+            return result
 
     def context(self, course=None):
         with self.timing('local_context'):
@@ -347,10 +384,15 @@ def main():
     parser.add_argument('--root', type=Path, default=ROOT)
     parser.add_argument('--chat', help='原始用户聊天 ID；缺省时按稳定会话标识解析（见 docs/SESSION.md）')
     parser.add_argument('--subtask', action='store_true')
-    parser.add_argument('command', choices=['continue', 'today', 'refresh', 'status', 'review', 'maintain', 'operation-id', 'chat-id'])
+    parser.add_argument('command', choices=['continue', 'today', 'refresh', 'verify-chapter', 'status', 'review', 'maintain', 'operation-id', 'chat-id'])
     parser.add_argument('--course')
+    parser.add_argument('--chapter')
+    parser.add_argument('--material', action='append', dest='material_ids')
+    parser.add_argument('--force', action='store_true')
     parser.add_argument('--snapshot-hash')
     args = parser.parse_args()
+    if args.command != 'verify-chapter' and (args.chapter is not None or args.material_ids is not None or args.force):
+        parser.error('--chapter、--material 和 --force 仅用于 verify-chapter')
     try:
         chat, chat_source = resolve_chat_id(args.chat)
     except ChatIdentityError as error:
@@ -377,6 +419,8 @@ def main():
         output = session.maintain()
     elif args.command == 'review':
         output = session.acknowledge(args.snapshot_hash, json.load(sys.stdin))
+    elif args.command == 'verify-chapter':
+        output = session.verify_chapter(args.course, args.chapter, args.material_ids, args.force)
     else:
         # Emit local context before waiting on school networking. No school claim yet.
         output = session.context(args.course)
@@ -389,6 +433,8 @@ def main():
                 output['today'] = daily.execute(session.state, 'run', review.timestamp(), course=args.course)
             output['school_evidence_pending'] = output['school_check'].get('school_evidence_pending', True)
     print(json.dumps(output, ensure_ascii=False), flush=True)
+    if args.command == 'verify-chapter' and output.get('ready_for_teaching') is not True:
+        raise SystemExit(1)
 
 
 if __name__ == '__main__':

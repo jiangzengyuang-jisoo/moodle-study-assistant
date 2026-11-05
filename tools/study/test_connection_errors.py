@@ -29,7 +29,7 @@ class ConnectionTests(unittest.TestCase):
             result = subprocess.CompletedProcess([], 1, b'SECRET', error)
             with patch('session.shutil.which', return_value='node'), patch('session.subprocess.run', return_value=result) as child:
                 with self.assertRaisesRegex(ValueError, 'STUDY_DNS') as caught:
-                    session.start()
+                    session.start(explicit=True)
                 self.assertNotIn('SECRET', str(caught.exception))
                 self.assertEqual('failed', session.start()['phase'])
                 self.assertEqual(1, child.call_count)
@@ -45,7 +45,7 @@ class ConnectionTests(unittest.TestCase):
                     session.collect(Path(folder) / 'snapshot.json')
                 self.assertNotIn('SECRET', str(caught.exception))
 
-    def test_readonly_diagnosis_does_not_consume_first_learning_collection(self):
+    def test_readonly_diagnosis_and_local_continue_leave_explicit_refresh_available(self):
         with tempfile.TemporaryDirectory() as folder:
             session = Session(folder, 'original-chat')
             atomic(session.state, {'revision': 1, 'courses': [], 'mistakes': [], 'settings': {}})
@@ -53,6 +53,7 @@ class ConnectionTests(unittest.TestCase):
             with patch.object(session, 'collect') as network:
                 session.status()
                 session.context()
+                session.start()
                 session.start(subtask=True)
                 network.assert_not_called()
             self.assertFalse(session.record.exists())
@@ -61,6 +62,6 @@ class ConnectionTests(unittest.TestCase):
             def collect(path):
                 calls.append(path)
                 write_snapshot(path, {'collection_complete': True})
-            self.assertTrue(session.start(collector=collect)['network_started'])
+            self.assertTrue(session.start(explicit=True, collector=collect)['network_started'])
             self.assertFalse(session.start(collector=collect)['network_started'])
             self.assertEqual(1, len(calls))

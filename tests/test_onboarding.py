@@ -566,7 +566,7 @@ catch(error) { console.error(error.code + ': ' + error.message); process.exitCod
         session = Session(self.root, 'synthetic-chat')
         def collect(path):
             write_snapshot(path, {'collection_complete': True, 'threads': [], 'assignments': [], 'quizzes': []})
-        manifest = session.start(collector=collect)
+        manifest = session.start(explicit=True, collector=collect)
         self.assertEqual('warning', self.checks(self.app.inspect())['school']['status'])
         state = read(session.state)
         proposal = {'reviewed': True, 'base_sha256': digest(state), 'state': copy.deepcopy(state)}
@@ -582,7 +582,7 @@ catch(error) { console.error(error.code + ': ' + error.message); process.exitCod
     def test_scope_change_or_tampered_snapshot_cannot_show_reviewed(self):
         self.prepared()
         session = Session(self.root, 'scope-chat')
-        manifest = session.start(collector=lambda path: write_snapshot(path, {'collection_complete': True, 'threads': [], 'assignments': [], 'quizzes': []}))
+        manifest = session.start(explicit=True, collector=lambda path: write_snapshot(path, {'collection_complete': True, 'threads': [], 'assignments': [], 'quizzes': []}))
         state = read(session.state)
         session.acknowledge(manifest['snapshot_sha256'], {'reviewed': True, 'base_sha256': digest(state), 'state': state})
         snap_path = session._manifest(manifest).with_name('snapshot.json')
@@ -596,7 +596,7 @@ catch(error) { console.error(error.code + ': ' + error.message); process.exitCod
     def test_saved_review_is_authoritative_when_manifest_or_views_lag(self):
         self.prepared()
         session = Session(self.root, 'repair-views')
-        manifest = session.start(collector=lambda path: write_snapshot(path, {'collection_complete': True, 'threads': [], 'assignments': [], 'quizzes': []}))
+        manifest = session.start(explicit=True, collector=lambda path: write_snapshot(path, {'collection_complete': True, 'threads': [], 'assignments': [], 'quizzes': []}))
         state = read(session.state)
         session.acknowledge(manifest['snapshot_sha256'], {'reviewed': True, 'base_sha256': digest(state), 'state': state})
         path = session._manifest(manifest)

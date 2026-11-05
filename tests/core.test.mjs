@@ -19,7 +19,9 @@ test('initialization is blank, portable and preserves existing state', () => {
     assert.equal(state.settings.learning_loop.enabled, true);
   assert.equal(state.settings.exam_preparation.auto_download_materials, false);
   assert.deepEqual(state.settings.course_content_sync, {version: 1, grants: []});
-    assert.equal(state.settings.moodle_refresh_policy.mode, 'first_learning_turn_or_explicit_request');
+    assert.equal(state.settings.moodle_refresh_policy.mode, 'task_scoped_chapter_verification');
+    assert.equal(state.settings.moodle_refresh_policy.full_refresh_at_first_course_learning_turn, false);
+    assert.equal(state.settings.chapter_material_verification_policy.mode, 'strict_remote_binary_sha256');
     assert.equal(state.settings.moodle_refresh_policy.unrelated_tasks, 'skip_learning_entry');
     assert.equal(state.settings.moodle_refresh_policy.maintenance, 'diagnosis_only');
     assert.equal(state.settings.moodle_refresh_policy.automatic_interval_minutes, null);

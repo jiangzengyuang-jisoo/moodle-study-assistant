@@ -32,7 +32,7 @@ class SnapshotWriterTests(unittest.TestCase):
     def collect(self, session=None, source=None):
         session = session or self.session
         value = self.source if source is None else source
-        run = session.start(collector=lambda path: write_snapshot(path, value))
+        run = session.start(explicit=True, collector=lambda path: write_snapshot(path, value))
         return run, read(Path(run['snapshot_path']))
 
     def exam(self, count=10):

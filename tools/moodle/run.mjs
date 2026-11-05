@@ -26,6 +26,16 @@ async function main() {
   if (mode === 'init') { initialize(root); console.log('空白档案和本地 MCP 配置已准备好；已有档案保留。'); return; }
   const courseOptions = mode === 'courses' ? parseCourseOptions(process.argv.slice(3), process.stdin.isTTY) : null;
   if (!existsSync(statePath)) throw new Error('请先运行 setup.cmd');
+  if (mode === 'verify-chapter') {
+    const {runChapterCommand} = await import('./chapter-entry.mjs');
+    process.exitCode = await runChapterCommand(process.argv.slice(3), {root,
+      createClient: async identity => {
+        const config = json(join(root, 'config.local.json'));
+        process.env.TZ = config.timezone;
+        return new ReadOnlyClient(identity.site, tokenFromWindows()).connect();
+      }});
+    return;
+  }
   if (mode === 'refresh') {
     const args = process.argv.slice(3);
     const index = args.indexOf('--chat');
@@ -134,7 +144,7 @@ async function main() {
     return;
   }
   if (mode === 'mcp') { const { serve } = await import('./server.mjs'); await serve(client); return; }
-  throw new Error('用法：run.mjs init | check | courses | refresh | content-sync --snapshot <path> | mcp | download <module-id> [...] --authorized');
+  throw new Error('用法：run.mjs init | check | courses | refresh | verify-chapter --chat <id> --course <id> --chapter <chapter> --material <id> [--force] | content-sync --snapshot <path> | mcp | download <module-id> [...] --authorized');
 }
 main().catch(error => {
   // Stable, allowlisted code for diagnostics; never expose arbitrary properties.

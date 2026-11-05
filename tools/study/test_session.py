@@ -38,10 +38,15 @@ class SessionTests(unittest.TestCase):
         state = read(self.path)
         return {'reviewed': True, 'base_sha256': digest(state), 'state': state}
 
-    def test_same_chat_reopen_and_subtask_do_not_refresh(self):
-        self.assertFalse(self.session.start(subtask=True, collector=self.collect)['network_started'])
+    def test_new_chat_and_reopen_only_collect_after_explicit_refresh(self):
+        before = self.path.read_bytes()
+        for session in [self.session, Session(self.root, 'user-chat'), Session(self.root, 'new-user-chat')]:
+            self.assertFalse(session.start(subtask=True, collector=self.collect)['network_started'])
+            self.assertEqual(session.start(collector=self.collect)['phase'], 'not_started')
+            self.assertFalse(session.record.exists())
         self.assertEqual(self.calls, 0)
-        self.session.start(collector=self.collect)
+        self.assertEqual(before, self.path.read_bytes())
+        self.session.start(explicit=True, collector=self.collect)
         reopened = Session(self.root, 'user-chat')
         for _ in range(3):
             result = reopened.start(collector=self.collect)
@@ -51,7 +56,7 @@ class SessionTests(unittest.TestCase):
         self.session.start(explicit=True, collector=self.collect)
         self.assertEqual(self.calls, 2)
         Session(self.root, 'new-user-chat').start(collector=self.collect)
-        self.assertEqual(self.calls, 3)
+        self.assertEqual(self.calls, 2)
 
     def test_fresh_state_read_only_and_evidence_preserved(self):
         before = self.path.read_bytes()
@@ -64,7 +69,7 @@ class SessionTests(unittest.TestCase):
         state = read(self.path)
         state['mistakes'] = [{'id': 'KEEP', 'source': {'material_id': 'OLD', 'pages': [4]}}]
         atomic(self.path, state)
-        result = self.session.start(collector=self.collect)
+        result = self.session.start(explicit=True, collector=self.collect)
         proposal = self.proposal(); proposal['state']['mistakes'] = []
         with self.assertRaisesRegex(ValueError, '遗漏已有学习记录'):
             self.session.acknowledge(result['snapshot_sha256'], proposal)
@@ -74,7 +79,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(read(self.path), state)
 
     def test_scope_changes_require_explicit_refresh(self):
-        result = self.session.start(collector=self.collect)
+        result = self.session.start(explicit=True, collector=self.collect)
         state = read(self.path); state['courses'] = [{'id': 'C', 'moodle_course_ids': [3]}]
         atomic(self.path, state)
         self.assertTrue(self.session.start(collector=self.collect)['scope_changed'])
@@ -84,7 +89,7 @@ class SessionTests(unittest.TestCase):
 
     def test_failed_collection_does_not_retry_or_claim_review(self):
         def incomplete(path): write_snapshot(path, {'collection_complete': False, 'errors': ['offline']})
-        result = self.session.start(collector=incomplete)
+        result = self.session.start(explicit=True, collector=incomplete)
         self.assertEqual(result['phase'], 'failed')
         self.session.start(collector=self.collect)
         self.assertEqual(self.calls, 0)
@@ -92,7 +97,7 @@ class SessionTests(unittest.TestCase):
             self.session.acknowledge(result['snapshot_sha256'], self.proposal())
 
     def test_immutable_snapshot_and_base_conflicts(self):
-        result = self.session.start(collector=self.collect)
+        result = self.session.start(explicit=True, collector=self.collect)
         proposal = self.proposal()
         value = read(self.path); value['new_feedback'] = 'keep'; atomic(self.path, value)
         with self.assertRaisesRegex(ValueError, '状态已变化'):
@@ -108,9 +113,9 @@ class SessionTests(unittest.TestCase):
     def test_late_old_run_cannot_overwrite_newer_run(self):
         other = Session(self.root, 'new-chat')
         def delayed(path):
-            other.start(collector=lambda p: write_snapshot(p, {'collection_complete': True, 'source': 'new'}))
+            other.start(explicit=True, collector=lambda p: write_snapshot(p, {'collection_complete': True, 'source': 'new'}))
             write_snapshot(path, {'collection_complete': True, 'source': 'old'})
-        old = self.session.start(collector=delayed)
+        old = self.session.start(explicit=True, collector=delayed)
         with self.assertRaisesRegex(ValueError, '较新的检查'):
             self.session.acknowledge(old['snapshot_sha256'], self.proposal())
         self.assertNotEqual(old['run_id'], read(self.session.runtime / 'latest-request.json')['run_id'])
@@ -119,7 +124,7 @@ class SessionTests(unittest.TestCase):
     def test_actual_process_killed_during_collection_is_interrupted(self):
         script = "from session import Session; import sys,time; " \
                  "s=Session(sys.argv[1], 'killed-chat'); " \
-                 "s.start(collector=lambda p: (print('fetching',flush=True),time.sleep(60)))"
+                 "s.start(explicit=True, collector=lambda p: (print('fetching',flush=True),time.sleep(60)))"
         child = subprocess.Popen([sys.executable, '-c', script, str(self.root)], cwd=HERE,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
@@ -133,7 +138,7 @@ class SessionTests(unittest.TestCase):
             if child.poll() is None: child.kill(); child.communicate()
 
     def test_collect_crash_recovers_saved_snapshot_without_fetch(self):
-        result = self.session.start(collector=self.collect)
+        result = self.session.start(explicit=True, collector=self.collect)
         manifest = Path(result['snapshot_path']).with_name('manifest.json')
         value = read(manifest); value['phase'] = 'collecting'; value.pop('snapshot_sha256')
         atomic(manifest, value)
@@ -144,7 +149,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(self.calls, 1)
 
     def test_review_commit_crash_repairs_views_and_preserves_evidence(self):
-        result = self.session.start(collector=self.collect)
+        result = self.session.start(explicit=True, collector=self.collect)
         proposal = self.proposal()
         with patch.object(self.session, '_repair_views', side_effect=OSError('simulated crash')):
             with self.assertRaises(OSError):

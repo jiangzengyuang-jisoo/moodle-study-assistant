@@ -27,7 +27,7 @@ def main():
             time.sleep(0.25)  # Controlled simulated network, not measured school latency.
             write_snapshot(path, {'collection_complete': True, 'pages': [], 'threads': [], 'errors': []})
         started = time.perf_counter()
-        session.context(); session.start(collector=collect)
+        session.context(); session.start(explicit=True, collector=collect)
         first = (time.perf_counter()-started)*1000
         warm = []
         for _ in range(20):
