@@ -32,5 +32,6 @@
 ## 当前客户端分支：Codex
 
 - 本分支为 `codex`，安装与诊断以 `client-target.json` 为准，只配置 Codex。不要因为检测到 DSH 环境变量而修改 Harness 配置。
+- Codex 默认只维护本地版和公开版 `codex` 分支；DeepSeek 版本由 DeepSeek Harness 维护。只有用户明确要求修改 DeepSeek 版本时，才可修改或同步到 `deepseek` 分支；共同修复不构成跨分支修改授权。
 - 聊天 ID 由主助手传入；保留共同的会话、材料、记忆与状态协议。兼容辅助代码不代表本分支会自动启用其他客户端。
-- 需要 DeepSeek Harness 时使用 `deepseek` 分支及其安装说明。两个客户端使用独立目录；不要在含个人资料的目录里反复切分支。共同修复同步规则见 [分支维护](docs/BRANCHES.md)。
+- 需要 DeepSeek Harness 时使用 `deepseek` 分支及其安装说明。两个客户端使用独立目录；不要在含个人资料的目录里反复切分支。分工与获授权后的共同修复流程见 [分支维护](docs/BRANCHES.md)。
