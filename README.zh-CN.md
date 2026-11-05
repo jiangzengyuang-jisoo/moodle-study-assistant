@@ -164,6 +164,8 @@
 
 ## 最近更新
 
+完整历史：[中文更新日志](CHANGELOG.md) · [English changelog](CHANGELOG.en.md)。
+
 | 日期 | 更新内容 |
 | --- | --- |
 | [2026-11-05](CHANGELOG.md#2026-11-05) | 教学前严格核对当前章节课件；本地接续与同聊天复用；计划和通知按需查询。[Codex / DeepSeek 更新报告](docs/UPDATE_REPORT_2026-11-05.md) |
