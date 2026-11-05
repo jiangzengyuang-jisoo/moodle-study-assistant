@@ -353,14 +353,52 @@ class Session:
             from learning_library.versions import cleanup
             return cleanup(self.state)
 
+    def chapter_check(self, course, section=None, mode='quick', modules=None):
+        """Narrow, read-only verification of one chapter's already local files."""
+        if not course:
+            raise ValueError('请提供课程 ID；章节核对只查这一门课')
+        if not section and not modules:
+            raise ValueError('请提供章节名称/编号，或用 --module 指定模块')
+        if mode not in {'quick', 'strict'}:
+            raise ValueError('核对强度只能是 quick 或 strict')
+        node = os.environ.get('STUDY_NODE') or shutil.which('node')
+        if not node:
+            raise ValueError('未找到 Node；请先运行 setup.cmd')
+        command = [node, str(self.root / 'tools/moodle/run.mjs'), 'chapter-check',
+                   '--course', str(course), '--mode', mode]
+        if section:
+            command += ['--section', str(section)]
+        if modules:
+            command += ['--module', str(modules)]
+        with self.timing('chapter_check'):
+            result = subprocess.run(command, cwd=self.root, capture_output=True, timeout=900)
+        if result.returncode != 0 or not result.stdout.strip():
+            from connection_errors import safe_connection_error
+            detail = safe_connection_error(result.stderr)
+            if detail:
+                raise ValueError(f'{detail[0]}: {detail[1]} {detail[2]} 本地资料保留')
+            lines = [line for line in result.stderr.decode('utf-8-sig', 'replace').splitlines() if line.strip()]
+            raise ValueError(lines[-1] if lines else '章节核对失败；本地资料保留，可改用快速核对')
+        try:
+            receipt = json.loads(result.stdout.decode('utf-8-sig').strip())
+        except (ValueError, UnicodeError):
+            raise ValueError('章节核对未返回有效结果') from None
+        # A chapter check never touches learning state; it only writes its receipt.
+        receipt['learning_state_unchanged'] = True
+        return receipt
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=ROOT)
     parser.add_argument('--chat', help='原始用户聊天 ID；缺省时按稳定会话标识解析（见 docs/SESSION.md）')
     parser.add_argument('--subtask', action='store_true')
-    parser.add_argument('command', choices=['continue', 'today', 'refresh', 'status', 'review', 'maintain', 'operation-id', 'chat-id'])
+    parser.add_argument('command', choices=['continue', 'today', 'refresh', 'status', 'review', 'maintain',
+                                            'chapter-check', 'operation-id', 'chat-id'])
     parser.add_argument('--course')
+    parser.add_argument('--section')
+    parser.add_argument('--mode', choices=['quick', 'strict'])
+    parser.add_argument('--modules')
     parser.add_argument('--snapshot-hash')
     args = parser.parse_args()
     try:
@@ -389,6 +427,8 @@ def main():
         output = session.maintain()
     elif args.command == 'review':
         output = session.acknowledge(args.snapshot_hash, json.load(sys.stdin))
+    elif args.command == 'chapter-check':
+        output = session.chapter_check(args.course, args.section, args.mode or 'quick', args.modules)
     else:
         # Emit local context before waiting on school networking. No school claim yet.
         output = session.context(args.course)

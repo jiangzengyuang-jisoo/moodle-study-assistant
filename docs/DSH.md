@@ -95,16 +95,17 @@
 规则：
 
 - 同一聊天跨轮、重开、上下文压缩：ID 不变，第二次起复用已核验结果，**不会重复首次刷新**。
-- 真正新建聊天：新的 `DSH_SESSION_ID`，首次进入学习时正常采集一次。
+- 真正新建聊天：新的 `DSH_SESSION_ID`；需要校务信息时首次完整采集一次，开始教某一章只做 `chapter-check`。
 - **禁止**随机生成 ID，也**禁止**所有聊天共用一个固定 ID；无法可靠取得身份时按上表第 2 行与本人约定名称，或明确报错停下。
 - DSH 内部子会话/子代理拿到的是自己的裸 UUID，**不能**当原始聊天 ID：子任务必须由主助手把主聊天 ID 显式写进任务，并加 `--subtask`（只允许 `continue`/`status`，不联网、不写学习状态）。
 
 日常命令（在项目根执行，未传 `--chat` 时自动使用上面的稳定身份）：
 
 ```powershell
-.\study.cmd continue          # 学习接续；本聊天首次调用会完整采集一次
+.\study.cmd continue          # 需要校务信息的学习接续；本聊天首次调用会完整采集一次
 .\study.cmd today             # 接续 + 今日复习与视图
 .\study.cmd status            # 只看本地状态，不联网
+.\study.cmd chapter-check --course 课程ID --section "第8章" --mode strict   # 只核对本章文件，不完整采集
 .\study.cmd refresh           # 本人明确要求更新学校信息时才用
 ```
 

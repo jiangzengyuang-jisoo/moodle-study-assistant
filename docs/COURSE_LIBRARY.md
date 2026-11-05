@@ -83,7 +83,17 @@ node tools/moodle/run.mjs library-sync [--course 课程ID ...] [--snapshot 路�
 - `--max-bytes` 单文件大小上限（默认 67108864 字节，即 64 MiB）；`--batch-size` 每批安装数量（1–20，默认 8）；`--dry-run` 只枚举与统计，不下载、不写 state 或 ledger。
 - 网络只读：不开始测验尝试、不提交作业、不发帖、不发邮件、不修改学校状态；不读取或导出 Cookie。
 - 输出 JSON 摘要（`totals`、`blocked`、`index`）并写报告；部分失败时退出码 2。
-- 助手按 [WORKFLOW.md](WORKFLOW.md) 的时机（本聊天首次进入学习、用户明确刷新或要求同步、资料新增/变化）在已授权范围内运行增量同步，不逐份请示；没有后台轮询。
+- 助手按 [WORKFLOW.md](WORKFLOW.md) 的时机（需要校务信息时本聊天首次完整采集、用户明确刷新或要求同步、资料新增/变化）在已授权范围内运行增量同步，不逐份请示；没有后台轮询。
+
+## 只核对某一章（不建索引）
+
+```powershell
+node tools/moodle/run.mjs chapter-check --course 课程ID --section "第8章" [--mode quick|strict] [--module 501,502] [--no-persist]
+```
+
+- 只枚举这一门课的目录，比对本章已有文件：`quick` 比较服务器记录的大小与修改时间，`strict` 重新获取本章文件并比较内容哈希。工具只读，不写 `state.json` 或 ledger，不下载到 `_Inbox`，不重建 catalog；回执写在 `Study/_System/ChapterChecks/<课程>/<章节>.json`。
+- 不需要新的课程级授权：`quick` 只读课程元数据；`strict` 只允许已保存 `full` 授权的页面，`info_only` 或未授权页面会被明确拒绝，而不是静默下载。
+- 适合“开始教第8章前确认课件没变”；它不安装新文件、不补新增章节，也不读公告、作业、讨论或日历。发现变化后仍要按上面的增量同步或完整刷新处理，判定见 [WORKFLOW.md](WORKFLOW.md#单章资料核对不触发完整采集)。
 
 ## 下载范围与缺口
 

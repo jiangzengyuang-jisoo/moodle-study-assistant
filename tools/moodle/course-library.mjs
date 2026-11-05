@@ -256,7 +256,7 @@ export function newestSnapshotPath(root, maxAgeMinutes = SNAPSHOT_MAX_AGE_MINUTE
   return null;
 }
 
-function emptyTextSources() {
+export function emptyTextSources() {
   return {assignments: new Map(), quizzes: new Map(), threads: new Map(), collectedForums: new Set(),
     capturedAt: null, source: 'unavailable', snapshotRunId: null, errors: []};
 }
@@ -343,7 +343,8 @@ export async function enumerateCourse(client, page) {
   const modules = [];
   sections.forEach((section, index) => {
     const entry = {
-      name: section.name ?? '', index, summary: section.summary ?? '',
+      name: section.name ?? '', index, number: Number.isInteger(section.section) ? section.section : null,
+      summary: section.summary ?? '',
       uservisible: section.uservisible !== false,
       modules: [],
     };

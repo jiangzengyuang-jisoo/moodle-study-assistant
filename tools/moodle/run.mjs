@@ -302,6 +302,26 @@ async function main() {
     await runLibrarySync(client);
     return;
   }
+  if (mode === 'chapter-check') {
+    // Narrow verification: one course, one chapter. It never installs files or
+    // promotes a review receipt, so it cannot stand in for a full collection.
+    const {checkChapter} = await import('./chapter-check.mjs');
+    const args = process.argv.slice(3);
+    const option = flag => {
+      const index = args.indexOf(flag);
+      return index >= 0 ? args[index + 1] : null;
+    };
+    const moduleArg = option('--module');
+    const receipt = await checkChapter({
+      client, root, state: loadState(),
+      course: option('--course'), section: option('--section'),
+      modules: moduleArg ? moduleArg.split(',').map(value => Number(value.trim())) : null,
+      mode: option('--mode') ?? 'quick',
+      persist: !args.includes('--no-persist'),
+    });
+    console.log(JSON.stringify(receipt, null, 2));
+    return;
+  }
   if (mode === 'collect') {
     const result = bindCollection(bundle, await collectRefresh(client, bundle.state), client.userId);
     atomicJSON(output, result);
@@ -348,7 +368,7 @@ async function main() {
     return;
   }
   if (mode === 'mcp') { const { serve } = await import('./server.mjs'); await serve(client); return; }
-  throw new Error('用法：run.mjs init | check | courses [--select IDS --mode full|info_only --yes] | library-sync [--course ID] [--snapshot PATH] [--dry-run] | content-sync --snapshot PATH | refresh | mcp | download <module-id> [...] --authorized');
+  throw new Error('用法：run.mjs init | check | courses [--select IDS --mode full|info_only --yes] | library-sync [--course ID] [--snapshot PATH] [--dry-run] | chapter-check --course ID --section 章节 [--mode quick|strict] [--module IDS] [--no-persist] | content-sync --snapshot PATH | refresh | mcp | download <module-id> [...] --authorized');
 }
 main().catch(error => {
   // Stable, allowlisted code for diagnostics; never expose arbitrary properties.

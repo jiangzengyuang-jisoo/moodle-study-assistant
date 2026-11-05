@@ -211,4 +211,53 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(set(json.loads(text.splitlines()[0])), {'stage', 'elapsed_ms', 'ok', 'at'})
 
 
+class ChapterCheckTests(unittest.TestCase):
+    """A chapter check is a narrow read: no state write, no full collection."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='章节 test ', dir=HERE)
+        self.addCleanup(self.tmp.cleanup)
+        self.session = Session(Path(self.tmp.name), 'user-chat')
+
+    def test_arguments_are_checked_before_any_network_call(self):
+        with patch('session.subprocess.run') as run:
+            with self.assertRaisesRegex(ValueError, '请提供课程'):
+                self.session.chapter_check(None)
+            with self.assertRaisesRegex(ValueError, '章节名称'):
+                self.session.chapter_check('moodle-1')
+            with self.assertRaisesRegex(ValueError, 'quick 或 strict'):
+                self.session.chapter_check('moodle-1', '8', 'slow')
+            run.assert_not_called()
+
+    def test_receipt_is_returned_and_state_is_not_written(self):
+        atomic(self.session.state, {'revision': 1, 'courses': []})
+        before = self.session.state.read_bytes()
+        payload = {'verdict': 'unchanged', 'summary': {'files': 1, 'unchanged': 1},
+                   'receipt_path': 'Study/_System/ChapterChecks/moodle-1/8.json'}
+        completed = subprocess.CompletedProcess(args=[], returncode=0,
+                                                stdout=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
+                                                stderr=b'')
+        with patch('session.subprocess.run', return_value=completed) as run, \
+                patch.dict(os.environ, {'STUDY_NODE': 'node'}):
+            result = self.session.chapter_check('moodle-1', '8', 'strict')
+        self.assertTrue(result['learning_state_unchanged'])
+        self.assertEqual(result['verdict'], 'unchanged')
+        command = run.call_args[0][0]
+        self.assertIn('chapter-check', command)
+        self.assertEqual(command[command.index('--section') + 1], '8')
+        self.assertEqual(command[command.index('--mode') + 1], 'strict')
+        self.assertEqual(before, self.session.state.read_bytes())
+
+    def test_node_failure_surfaces_without_touching_state(self):
+        atomic(self.session.state, {'revision': 1, 'courses': []})
+        before = self.session.state.read_bytes()
+        completed = subprocess.CompletedProcess(args=[], returncode=1, stdout=b'',
+                                                stderr='没有匹配到章节“99”'.encode('utf-8'))
+        with patch('session.subprocess.run', return_value=completed), \
+                patch.dict(os.environ, {'STUDY_NODE': 'node'}):
+            with self.assertRaisesRegex(ValueError, '没有匹配到章节'):
+                self.session.chapter_check('moodle-1', '99')
+        self.assertEqual(before, self.session.state.read_bytes())
+
+
 if __name__ == '__main__': unittest.main()

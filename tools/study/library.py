@@ -564,7 +564,12 @@ def main():
         elif args.command=='render': result=lib.render(args.material_id,args.unit,max(72,min(300,args.dpi)),args.include_solutions,args.include_archived)
         elif args.command=='context':
             from learning_library.context import build_context
-            result=build_context(lib.state(),args.course,args.detail)
+            from product_tour import tour_status
+            state = lib.state()
+            result=build_context(state,args.course,args.detail)
+            # Local read-only entry now also serves chapter teaching, so it keeps
+            # the onboarding hint that the full continuation returns.
+            result['product_onboarding'] = tour_status(state)
         else:
             from learning_library.context import read_detail
             result=read_detail(lib.state(),args.collection,args.record_id)
