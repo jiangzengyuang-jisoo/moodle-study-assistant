@@ -168,14 +168,16 @@ Ask the assistant to back up and preserve `Study/`, configuration, credentials, 
 
 Current public version: **0.5.0**.
 
+Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANGELOG.md).
+
 | Date | Change |
 | --- | --- |
-| [2026-11-05](CHANGELOG.md#2026-11-05) | Chapter-scoped material check: teaching one chapter verifies only that chapter's files instead of collecting the whole school |
-| [2026-11-02](CHANGELOG.md#2026-11-02) | Chat-based setup, course selection and proactive usage teaching; existing material library retained |
-| [2026-11-01](CHANGELOG.md#2026-11-01) | English and Chinese READMEs explain the course library and study continuity; narrower startup scope and clearer Moodle diagnostics |
-| [2026-10-31](CHANGELOG.md#2026-10-31) | Stronger learning-record protection, cross-chapter continuity, and Chinese setup diagnostics |
+| [2026-11-05](CHANGELOG.en.md#2026-11-05) | Chapter-scoped material check: teaching one chapter verifies only that chapter's files instead of collecting the whole school |
+| [2026-11-02](CHANGELOG.en.md#2026-11-02) | Chat-based setup, course selection and proactive usage teaching; existing material library retained |
+| [2026-11-01](CHANGELOG.en.md#2026-11-01) | English and Chinese READMEs explain the course library and study continuity; narrower startup scope and clearer Moodle diagnostics |
+| [2026-10-31](CHANGELOG.en.md#2026-10-31) | Stronger learning-record protection, cross-chapter continuity, and Chinese setup diagnostics |
 
-Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.md) for validation details and known limitations.
+Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.en.md) for validation details and known limitations.
 
 ## Documentation and contributing
 
