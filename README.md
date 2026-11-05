@@ -166,7 +166,7 @@ Ask the assistant to back up and preserve `Study/`, configuration, credentials, 
 
 | Date | Change |
 | --- | --- |
-| [2026-11-05](CHANGELOG.md#2026-11-05) | Strict checks of selected chapter files before teaching; local continuation and same-chat reuse; task-scoped planning and notice queries |
+| [2026-11-05](CHANGELOG.md#2026-11-05) | Strict checks of selected chapter files before teaching; local continuation and same-chat reuse; task-scoped planning and notice queries. [Codex / DeepSeek update report](docs/UPDATE_REPORT_2026-11-05.md) |
 | [2026-11-02](CHANGELOG.md#2026-11-02) | Chat-based setup and course selection with a proactive usage tour; authorized material sync; memory inspection and correction; separate client editions |
 | [2026-11-01](CHANGELOG.md#2026-11-01) | English and Chinese READMEs explain the course library and study continuity; narrower startup scope and clearer Moodle diagnostics |
 
