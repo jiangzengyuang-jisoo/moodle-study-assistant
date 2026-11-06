@@ -8,6 +8,7 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 | Date | Main changes |
 | --- | --- |
+| [2026-11-07](#2026-11-07) | Port question-exposure, planning and source-change checks; add scoped queries; fix archived-material eligibility and interrupted chapter checks |
 | [2026-11-06](#2026-11-06) | Complete English changelog, language links, and English README navigation |
 | [2026-11-05](#2026-11-05) | Strict checks of current chapter files before teaching, same-chat reuse, local continuation, and task-scoped planning and notice queries |
 | [2026-11-02](#2026-11-02) | Chat-based setup and course selection, proactive usage guidance, authorized material sync, memory recall and corrections, and client integrations |
@@ -18,6 +19,18 @@ Existing users should first read the [upgrade steps that preserve learning recor
 | [2026-10-16](#2026-10-16) | Built-in self-study tutor with graded hints, Feynman explanations, transfer practice, and independent checks |
 | [2026-10-11](#2026-10-11) | Daily review questions, learning feedback, weekly reviews, exam coverage checks, and mock exams |
 | [2026-09-22](#2026-09-22) | Initial release: Windows installation, school account connection, course information, and learning records |
+
+## 2026-11-07
+
+### Learning improvements and shared reliability fixes
+
+- Ported same-question answer-exposure checks across review sets and mock exams, chronological exposure handling, and earlier exposure backfills from the personal edition. Retained public-edition timezone, complete-state and original-answer protections.
+- Recurring classes respect start/end dates. Overdue non-exam tasks remain priorities only with an explicit plan for today and evidence that work is unfinished. Exam-source indexes now detect image, link, attachment and edit-metadata changes and require re-review.
+- Added five read-only MCP tools for calendars, grades, notifications, resource listings and site information. Calendar queries paginate by event cursor and report completeness; notifications paginate without marking messages read. API allowlists, credential redaction and existing download authorization remain in place.
+- Normal material replacement now invalidates old papers, rejects old sources in new papers, and pauses unverified old-source review questions. Original papers, answers and backfilled answers actually completed before replacement are preserved; material IDs are never silently retargeted.
+- Chapter checks now use OS locks: live checks exclude competitors, killed checks can recover on explicit retry, and helper failure stops later writes. Legacy lock files without owner information require confirmation that old checks have stopped; age or `--force` never authorizes deletion.
+- Preserve profiles, configuration and credentials when upgrading; restart the project MCP connection to expose the new tools. The personal installation and DeepSeek branch are unchanged. See the [update report](docs/UPDATE_REPORT_2026-11-07.md) for scope and limitations.
+- Validation: all 724 offline Windows tests passed (130 Node, 92 Python setup/entry, 502 Python study). Coverage includes real version promotion, killed external chapter processes, concurrent exclusion, exposure backfills, source changes and paginated read-only queries. No real school connection was tested. Path-based evidence-binding migration, same-folder cross-school ID collisions and dependency advisories remain outside this change.
 
 ## 2026-11-06
 

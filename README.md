@@ -156,7 +156,7 @@ The tools are read-only. They do not submit work, answer school quizzes, post, c
 
 Missing permissions, incomplete materials, scanned pages, and complex formulas require attention. Collection is separate from review; software validation cannot prove that an explanation is correct or that you have mastered a topic.
 
-A known issue remains: backdating an answer-exposure event for a mock exam can be ignored as a duplicate. Check historical exposure times before treating such an attempt as independent.
+Known limitations remain: archiving a material can invalidate an original-answer binding that includes its file path, and reusing one profile for another school can collide on numeric course IDs. Earlier mock-exam exposure backfills are now retained. See the [current scope and limitations](docs/UPDATE_REPORT_2026-11-07.md).
 
 **How do I upgrade without losing my work?**
 
@@ -168,9 +168,9 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
+| [2026-11-07](CHANGELOG.en.md#2026-11-07) | Same-question exposure, planning and source checks; five scoped read tools; archived-material eligibility and chapter crash recovery |
+| [2026-11-06](CHANGELOG.en.md#2026-11-06) | Complete English changelog and bilingual navigation |
 | [2026-11-05](CHANGELOG.en.md#2026-11-05) | Strict checks of selected chapter files before teaching; local continuation and same-chat reuse; task-scoped planning and notice queries. [Codex / DeepSeek update report](docs/UPDATE_REPORT_2026-11-05.md) |
-| [2026-11-02](CHANGELOG.en.md#2026-11-02) | Chat-based setup and course selection with a proactive usage tour; authorized material sync; memory inspection and correction; separate client editions |
-| [2026-11-01](CHANGELOG.en.md#2026-11-01) | English and Chinese READMEs explain the course library and study continuity; narrower startup scope and clearer Moodle diagnostics |
 
 
 Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.en.md) for validation details and known limitations.

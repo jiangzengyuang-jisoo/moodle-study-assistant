@@ -71,6 +71,8 @@ const READ_METHODS = new Set([
   'mod_assign_get_assignments', 'mod_assign_get_submission_status', 'mod_quiz_get_quizzes_by_courses',
   'mod_quiz_get_user_attempts', 'mod_forum_get_forum_discussions', 'mod_forum_get_discussion_posts',
   'core_calendar_get_action_events_by_timesort', 'mod_page_get_pages_by_courses',
+  'core_calendar_get_action_events_by_course', 'gradereport_user_get_grade_items',
+  'message_popup_get_popup_notifications',
 ]);
 
 export class ReadOnlyClient extends MoodleClient {

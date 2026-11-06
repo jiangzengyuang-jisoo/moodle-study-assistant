@@ -1,11 +1,12 @@
 // A teaching check is scoped to explicitly selected originals, never a full refresh.
 import {createHash, randomUUID} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync, unlinkSync, openSync, closeSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync, unlinkSync} from 'node:fs';
 import {join, resolve, sep} from 'node:path';
 import {authorizedCoursePages, normalizeSite} from './content-policy.mjs';
 import {enumerateCourseContent, stageDownload, hashFile, cleanOwnedStaging} from './course-content-sync.mjs';
 import {installVersion} from './version-files.mjs';
+import {acquireChapterLock} from './chapter-lock.mjs';
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 const read = path => JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
@@ -63,6 +64,7 @@ function loadReceipt(options) {
 }
 
 function saveReceipt(options, receipt) {
+  options.assertLockHeld?.();
   const temporary = options.path + '.' + randomUUID() + '.tmp';
   try {writeFileSync(temporary, JSON.stringify(receipt, null, 2), {flag: 'wx'}); renameSync(temporary, options.path);}
   finally {if (existsSync(temporary)) unlinkSync(temporary);}
@@ -167,6 +169,7 @@ export async function readCachedChapterCheck(input) {
 }
 
 async function indexMaterials(options, ids) {
+  options.assertLockHeld?.();
   if (options.indexMaterials) return options.indexMaterials(options.courseId, ids);
   const child = spawnSync(options.python, [join(options.studyToolsDir, 'course_content.py'), '--state', options.statePath,
     'index', '--course', options.courseId, ...ids.flatMap(id => ['--material', id])],
@@ -186,15 +189,13 @@ export async function verifyChapter(client, input) {
   const options = setup({...input, site: client.baseUrl, userId: client.userId});
   const cached = await readCachedChapterCheck(options);
   if (cached) return cached;
-  const lockPath = options.path + '.lock';
-  let lock;
-  try {lock = openSync(lockPath, 'wx');}
-  catch (error) {
-    if (error.code !== 'EEXIST') throw error;
-    return resultFor(options, [{status: 'needs_review', reason: 'chapter_check_already_running', reused: false}]);
-  }
-  try {return await runCheck(client, options);}
-  finally {closeSync(lock); unlinkSync(lockPath);}
+  const lock = await (options.acquireLock ?? acquireChapterLock)(options.path + '.lock', options.python);
+  if (lock.status !== 'acquired') return resultFor(options, [{status: 'needs_review',
+    reason: lock.status === 'busy' ? 'chapter_check_already_running' : 'chapter_check_legacy_lock_needs_review', reused: false}]);
+  try {
+    lock.assertHeld();
+    return await runCheck(client, {...options, assertLockHeld: lock.assertHeld});
+  } finally {await lock.release();}
 }
 
 async function runCheck(client, options) {
@@ -227,6 +228,7 @@ async function runCheck(client, options) {
     if (authorizedCoursePages(latest(), options).get(pageId) !== options.courseId) {listings.set(pageId, null); continue;}
     try {
       const sections = await client.call('core_course_get_contents', {courseid: pageId});
+      options.assertLockHeld?.();
       if (!Array.isArray(sections)) throw new Error('invalid_listing');
       listings.set(pageId, sections);
     } catch {listings.set(pageId, null);}
@@ -276,8 +278,10 @@ async function runCheck(client, options) {
         const url = new URL(file.fileurl); url.pathname = url.pathname.replace('/webservice/pluginfile.php/', '/pluginfile.php/'); url.search = '';
         if (transfers.has(url.href)) continue; // Registered aliases of the exact endpoint share one transfer.
         if (!permitted()) throw new Error('authorization_changed');
+        options.assertLockHeld?.();
         const path = await stageDownload(client, file, {studyRoot: options.root, site: options.site,
           timeoutMs: options.timeoutMs ?? 30000, maxBytes: options.maxBytes ?? Infinity});
+        options.assertLockHeld?.();
         transfers.set(url.href, {path, sha256: await hashFile(path)});
       }
       const downloaded = [...transfers.values()]; staged = downloaded[0].path;
@@ -301,6 +305,7 @@ async function runCheck(client, options) {
         Object.assign(row, {status: 'unchanged', verified_at: row.binary_verified_at}); delete row.reason;
       } else {
         if (items.length > 1) {row.reason = 'known_multisource_update_requires_review'; continue;}
+        options.assertLockHeld?.();
         const installed = await install({study: options.root, statePath: options.statePath,
           script: join(options.studyToolsDir, 'material_versions.py'), python: options.python,
           source: {...item, contains_solutions: before.contains_solutions,

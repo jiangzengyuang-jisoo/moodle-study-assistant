@@ -14,7 +14,9 @@ test('MCP handshake exposes working read tools and no download or write tool', a
   try {
     await client.connect(clientTransport);
     const {tools} = await client.listTools();
-    assert.equal(tools.length, 10);
+    assert.equal(tools.length, 15);
+    for (const name of ['moodle_get_calendar_events', 'moodle_get_grades', 'moodle_get_notifications',
+      'moodle_list_resources', 'moodle_get_site_info']) assert(tools.some(tool => tool.name === name));
     assert(tools.some(tool => tool.name === 'study_discussion_posts'));
     assert(!tools.some(tool => /download|submit|save|send|mark/.test(tool.name)));
     const response = await client.callTool({name: 'moodle_list_courses', arguments: {}});

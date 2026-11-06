@@ -12,6 +12,8 @@ import math
 
 import review
 import study_time
+from question_identity import occurred_by, question_key, was_exposed
+from material_eligibility import material_issue
 
 TYPES = {"multiple_choice", "long_answer", "short_answer", "fill_blank", "true_false"}
 LABELS = {"multiple_choice": "选择题", "long_answer": "长答题", "short_answer": "简答题",
@@ -175,6 +177,8 @@ def _validate_mock(state, payload):
             if (not isinstance(ids, list) or not ids or not all(isinstance(mid, str) and mid in materials
                     and materials[mid].get("course_id") == profile["course_id"] for mid in ids)):
                 raise ValueError("全范围模拟卷的所有登记考点必须有齐备的本科课件：" + topic["id"])
+            if any(material_issue(materials[mid]) for mid in ids):
+                raise ValueError("全范围模拟卷的课件已归档或被替代，需要按当前资料重新核验：" + topic["id"])
     covered, used_materials = set(), set()
     if mode == "full_scope_mock":
         # The whole-scope claim depends on every listed source being available,
@@ -209,6 +213,9 @@ def _validate_mock(state, payload):
             material = materials.get(src.get("material_id"))
             if material is None or material.get("course_id") != profile["course_id"]:
                 raise ValueError("题目资料必须是已索引的本科资料")
+            reason = material_issue(material)
+            if reason:
+                raise ValueError(reason)
             pages = src.get("pages")
             if not isinstance(pages, list) or not pages or any(isinstance(p, bool) or not isinstance(p, int) or p < 1 for p in pages):
                 raise ValueError("来源 pages 必须为实际物理页码")
@@ -295,7 +302,7 @@ def register_mock(state, payload, now):
 
 
 @study_time.state_timezone
-def _stale_reason(state, mock):
+def _stale_reason(state, mock, *, attempted_at=None):
     profile = next((p for p in state.get("exam_profiles", []) if p.get("id") == mock["exam_id"]), None)
     if profile and profile.get("verification_status") == "needs_review":
         return "Moodle 考试说明已有变化，须重新核读老师说明后更新模拟卷。"
@@ -306,6 +313,9 @@ def _stale_reason(state, mock):
     materials = {v["id"]: v for v in state.get("materials", [])}
     if any(mid not in materials or materials[mid].get("sha256") != old for mid, old in mock.get("material_hashes", {}).items()):
         return "关联课件已变化或缺失，需要重新核对题目。"
+    if any(material_issue(materials.get(mid), attempted_at=attempted_at)
+           for mid in mock.get("material_hashes", {})):
+        return "关联课件已归档或被新版替代，需要按当前资料重新核对题目。"
     actual = {k: mock.get(k) for k in mock["_request"]}
     if _digest(actual) != mock["content_signature"]:
         return "模拟卷内容校验失败，需要恢复原卷或另出新卷。"
@@ -341,7 +351,8 @@ def mark_mock_answers_shown(state, payload, now):
     at = at.isoformat()
     draft = deepcopy(state)
     target = _find(draft, "mock_exams", mock["id"])
-    existing = {qid for e in target["answer_exposures"] for qid in e["question_ids"]}
+    existing = {qid for e in target["answer_exposures"] if occurred_by(e.get("shown_at"), _at(at))
+                for qid in e["question_ids"]}
     new = [qid for qid in question_ids if qid not in existing]
     if new:
         target["answer_exposures"].append({"shown_at": at, "question_ids": new, "evidence": evidence})
@@ -459,13 +470,13 @@ def record_mock_attempt(state, payload, now):
                 raise ValueError("同一 attempt_id 的真实记录冲突，未覆盖原作答")
             return {"status": "duplicate", "attempt_id": attempt_id, "total_marks": old["total_marks"], "mastery_updated": False}
     mock = _find(state, "mock_exams", payload.get("mock_id"))
-    reason = _stale_reason(state, mock)
-    if reason:
-        raise ValueError(reason)
     now = _at(now)
     submitted = _at(payload.get("submitted_at") or now)
     if submitted > now + timedelta(minutes=5) or submitted < _at(mock["created_at"]):
         raise ValueError("作答时间不能早于出卷或晚于当前时间")
+    reason = _stale_reason(state, mock, attempted_at=submitted)
+    if reason:
+        raise ValueError(reason)
     actual = payload.get("actual_minutes")
     if actual is not None:
         _number(actual, "actual_minutes")
@@ -487,6 +498,7 @@ def record_mock_attempt(state, payload, now):
         if type(answer.get("independent")) is not bool or type(answer.get("answer_seen_before_attempt")) is not bool:
             raise ValueError("每题必须明确 independent 和 answer_seen_before_attempt")
         exposed = any(question["id"] in e["question_ids"] and _at(e["shown_at"]) <= submitted for e in mock["answer_exposures"])
+        exposed = exposed or was_exposed(state, question_key(mock["profile_snapshot"]["course_id"], question), submitted)
         if exposed and not answer["answer_seen_before_attempt"]:
             raise ValueError("题目答案已展示，不能记成未见答案的独立作答")
         if question["question_type"] == "multiple_choice":

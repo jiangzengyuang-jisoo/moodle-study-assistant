@@ -6,6 +6,7 @@ The assistant reviews candidates and registers structured profiles with locators
 from copy import deepcopy
 import hashlib
 import html
+from html.parser import HTMLParser
 import json
 import re
 from urllib.parse import urlsplit, urlunsplit
@@ -20,6 +21,35 @@ def clean(value):
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+class _LinkedContent(HTMLParser):
+    """Retain non-text evidence without making harmless HTML formatting significant."""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.references = []
+
+    def handle_starttag(self, tag, attrs):
+        relevant = {key: value for key, value in attrs
+                    if key in {"src", "href", "srcset", "data", "poster", "alt", "title"}}
+        if relevant:
+            self.references.append({"tag": tag, "attributes": relevant})
+
+
+def _content_details(markup, source):
+    parser = _LinkedContent()
+    parser.feed(str(markup or ""))
+    parser.close()
+    details = {}
+    if parser.references:
+        details["linked_content"] = parser.references
+    for key in ("attachments", "messageinlinefiles", "inlinefiles", "modified", "timemodified"):
+        value = source.get(key)
+        if value is not None and value != [] and value != "":
+            details[key] = deepcopy(value)
+    # Text-only legacy records retain their original hash. Previously untracked
+    # media needs one real review; never rewrite the saved source to bless it.
+    return {"content_details": details} if details else {}
 
 
 def _site_url(snapshot):
@@ -59,14 +89,16 @@ def evidence_index(snapshot, state=None):
             records[locator] = {"course_id": course, "location": locator,
                 "url": link(f"/course/section.php?id={section['id']}"),
                 "text": clean(section.get("name", "") + " " + section.get("summary", "")),
-                "authority": "official_course"}
+                "authority": "official_course",
+                **_content_details(section.get("summary", ""), section)}
             for module in section.get("modules") or []:
                 locator = f"module:{module['id']}"
                 records[locator] = {"course_id": course, "location": locator,
                     "url": module.get("url") or link(f"/course/section.php?id={section['id']}"),
                     "text": clean(module.get("name", "") + " " + module.get("description", "")),
                     "content_metadata": module.get("contentsinfo"),
-                    "authority": "official_course"}
+                    "authority": "official_course",
+                    **_content_details(module.get("description", ""), module)}
     for thread in snapshot.get("threads") or []:
         discussion = (thread.get("discussion") or {}).get("discussion")
         for post in thread.get("posts") or []:
@@ -76,7 +108,8 @@ def evidence_index(snapshot, state=None):
                 "author": post.get("author", {}).get("fullname"),
                 "author_id": post.get("author", {}).get("id"),
                 "text": clean(post.get("subject", "") + " " + post.get("message", "")),
-                "authority": "unreviewed_forum_author"}
+                "authority": "unreviewed_forum_author",
+                **_content_details(post.get("message", ""), post)}
     for record in records.values():
         record["content_hash"] = digest({k: v for k, v in record.items() if k != "url"})
     return records

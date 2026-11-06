@@ -18,7 +18,7 @@ AT = datetime(2026, 1, 10, 12, 0, tzinfo=review.HK)
 def fixture(count=3, variants=3):
     state = {"settings": {}, "courses": [{"id": "MATH-DEMO"}, {"id": "ECON-DEMO"}],
              "tasks": [{"id": "TASK1", "course_id": "MATH-DEMO", "status": "pending"}],
-             "mistakes": [], "review_queue": []}
+             "mistakes": [], "review_queue": [], "materials": [{"id": "MATERIAL", "version_status": "current"}]}
     review.initialize(state)
     for index in range(count):
         course = "MATH-DEMO" if index % 2 == 0 else "ECON-DEMO"
