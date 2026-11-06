@@ -173,8 +173,8 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 | Date | Change |
 | --- | --- |
 | [2026-11-07](CHANGELOG.en.md#2026-11-07) | Same-question exposure, planning and exam-source checks; re-verify old papers/questions after courseware archiving; five on-demand read queries; original-answer bindings across archiving and cross-school ID isolation |
+| [2026-11-06](CHANGELOG.en.md#2026-11-06) | Complete English changelog for Harness, bilingual navigation and English homepage links |
 | [2026-11-05](CHANGELOG.en.md#2026-11-05) | Chapter-scoped material check: teaching one chapter verifies only that chapter's files instead of collecting the whole school |
-| [2026-11-02](CHANGELOG.en.md#2026-11-02) | Chat-based setup, course selection and proactive usage teaching; existing material library retained |
 
 Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.en.md) for validation details and known limitations.
 

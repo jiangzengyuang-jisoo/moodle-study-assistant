@@ -30,6 +30,8 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ### Ported learning improvements, on-demand queries, and Harness-edition fixes
 
+- Before publication, restored the missing November 6 entry on both homepages so their three most recent updates match the full changelog.
+
 This update only changes the `deepseek` branch. The personal local HKU deployment, real learning records and the `codex` edition are untouched. Learning improvements were ported feature by feature from the personal edition (not as a bulk merge), and no Codex file replaced a DeepSeek-specific implementation. Full scope and limitations: [update report](docs/UPDATE_REPORT_2026-11-07-deepseek.md).
 
 - Added same-question answer-exposure checks across review packages and mock papers. Questions are matched by course + prompt + option text + source pages (question numbers and annotations ignored; no semantic guessing). Earlier exposure can be backfilled, a later exposure never invalidates an earlier real independent answer, and existing records are not rewritten.
