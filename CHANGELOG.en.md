@@ -8,7 +8,7 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 | Date | Main changes |
 | --- | --- |
-| [2026-11-07](#2026-11-07) | Port question-exposure, planning and source-change checks; add scoped queries; fix archived-material eligibility and interrupted chapter checks |
+| [2026-11-07](#2026-11-07) | Preserve historical evidence during archiving and display review options; port study improvements, scoped queries and chapter recovery |
 | [2026-11-06](#2026-11-06) | Complete English changelog, language links, and English README navigation |
 | [2026-11-05](#2026-11-05) | Strict checks of current chapter files before teaching, same-chat reuse, local continuation, and task-scoped planning and notice queries |
 | [2026-11-02](#2026-11-02) | Chat-based setup and course selection, proactive usage guidance, authorized material sync, memory recall and corrections, and client integrations |
@@ -21,6 +21,13 @@ Existing users should first read the [upgrade steps that preserve learning recor
 | [2026-09-22](#2026-09-22) | Initial release: Windows installation, school account connection, course information, and learning records |
 
 ## 2026-11-07
+
+### Preserve historical evidence and display complete review options
+
+- Archiving and initial material installation update physical locations in the material catalog without recursively rewriting original answers, sources, evidence bindings or correction snapshots. This prevents invalid checksums and blocked subsequent full-state saves. Markdown relocation changes link destinations only; literal historical paths remain unchanged.
+- Separately stored review options now accompany questions in daily packages, answer-free previews and Today Review. Answers, grading notes and feedback remain hidden. Older packages without verifiable options require review; later edited options are not silently attached to an old question.
+- Keep profiles and old materials when upgrading and update the code. Use the original material ID to retrieve historical files; old paths are not current file locations. Previously damaged records require individual comparison with backups; this fix does not re-sign, regrade or automatically rewrite history. The personal installation receives the same fixes; the DeepSeek branch is unchanged.
+- Validation: synthetic regressions cover two consecutive updates, initial installation, answer and parent-question bindings, correction snapshots, subsequent full-state saves, option display and hidden answers. Related material sync, planning and mock-exam integration checks passed. Tests use isolated local data and do not establish real school login or the integrity of other students' historical profiles.
 
 ### Learning improvements and shared reliability fixes
 

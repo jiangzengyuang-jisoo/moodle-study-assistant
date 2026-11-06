@@ -48,6 +48,172 @@ def attempt(package, at=AT, **updates):
 
 
 class LearningLoopTests(unittest.TestCase):
+    def test_multiple_choice_options_survive_package_preview_and_page(self):
+        state = fixture(1, 1)
+        options = {"B": "SECOND_CHOICE", "A": "FIRST_CHOICE"}
+        state["review_queue"][0]["practice_variants"][0]["options"] = deepcopy(options)
+        package = loop.prepare(state, AT)
+        self.assertEqual(state["review_sessions"][0]["items"][0].get("options"), options)
+        self.assertEqual(package["items"][0].get("options"), options)
+        page = loop.render_today_review(state, AT)
+        self.assertIn("B. SECOND_CHOICE", page)
+        self.assertIn("A. FIRST_CHOICE", page)
+        self.assertLess(page.index("B. SECOND_CHOICE"), page.index("A. FIRST_CHOICE"))
+        for hidden in ("PRIVATE_ANSWER", "answer_check", "LEGACY ANSWER"):
+            self.assertNotIn(hidden, json.dumps(package) + page)
+        package["items"][0]["options"]["A"] = "external mutation"
+        self.assertEqual(state["review_sessions"][0]["items"][0]["options"], options)
+
+    def test_options_render_from_assigned_snapshot_without_mutating_history(self):
+        state = fixture(1, 1)
+        variant = state["review_queue"][0]["practice_variants"][0]
+        variant["options"] = {"A": "ASSIGNED_A", "B": "ASSIGNED_B"}
+        loop.prepare(state, AT)
+        variant["options"] = {"A": "CHANGED_A", "B": "CHANGED_B"}
+        before = deepcopy(state)
+        page = loop.render_today_review(state, AT)
+        self.assertIn("ASSIGNED_A", page)
+        self.assertNotIn("CHANGED_A", page)
+        self.assertEqual(state, before)
+
+    def test_legacy_missing_options_is_retired_without_guessing_or_rating(self):
+        state = fixture(1, 2)
+        variant = state["review_queue"][0]["practice_variants"][0]
+        variant["options"] = {"A": "ORIGINAL_A", "B": "ORIGINAL_B"}
+        package = loop.prepare(state, AT)
+        assigned = state["review_sessions"][0]["items"][0]
+        assigned.pop("options", None)  # The older local release omitted this snapshot.
+        variant["options"] = {"A": "REPLACEMENT_A", "B": "REPLACEMENT_B"}
+        before = deepcopy(state)
+        page = loop.render_today_review(state, AT)
+        self.assertIn("选项待核对", page)
+        self.assertNotIn(assigned["prompt"], page)
+        self.assertNotIn("REPLACEMENT_A", page)
+        self.assertEqual(state, before)
+        with self.assertRaisesRegex(ValueError, "选项"):
+            loop.record_attempt(state, attempt(package))
+        self.assertEqual(state, before)
+        prepared = loop.prepare(state, AT)
+        self.assertEqual(prepared["items"][0]["status"], "needs_review")
+        self.assertEqual(prepared["status"], "ready")
+        self.assertNotIn("prompt", prepared["items"][0])
+        retired = state["review_sessions"][0]["items"][0]
+        for key, value in before["review_sessions"][0]["items"][0].items():
+            if key != "status":
+                self.assertEqual(retired[key], value)
+        self.assertNotIn("options", retired)
+        self.assertTrue(retired["budget_exempt"])
+        self.assertEqual(prepared["items"][1]["variant_id"], "V1")
+        self.assertNotIn("review_attempts", state)
+        self.assertNotIn("fsrs", state["review_queue"][0])
+        after = deepcopy(state)
+        loop.prepare(state, AT)
+        self.assertEqual(state, after)
+        with self.assertRaisesRegex(ValueError, "选项"):
+            loop.record_attempt(state, attempt(package))
+        self.assertEqual(state, after)
+        tomorrow = loop.prepare(state, AT + timedelta(days=1))
+        self.assertEqual(len(tomorrow["items"]), 1)
+        self.assertEqual(tomorrow["items"][0]["variant_id"], "V1")
+        self.assertEqual(tomorrow["items"][0]["status"], "pending")
+        self.assertEqual(state["review_sessions"][0]["items"][0], retired)
+        state["review_queue"][0]["practice_variants"] = []
+        before_deleted_bank_attempt = deepcopy(state)
+        with self.assertRaisesRegex(ValueError, "选项"):
+            loop.record_attempt(state, attempt(package))
+        self.assertEqual(state, before_deleted_bank_attempt)
+
+    def test_legacy_options_transition_is_saved_by_normal_prepare_entrypoint(self):
+        with tempfile.TemporaryDirectory(prefix="legacy-options-", dir=Path(__file__).resolve().parent) as directory:
+            state = fixture(1, 2)
+            state["review_queue"][0]["practice_variants"][0]["options"] = {"A": "FIRST", "B": "SECOND"}
+            loop.prepare(state, AT)
+            original_item = state["review_sessions"][0]["items"][0]
+            original_item.pop("options", None)
+            path = Path(directory) / "state.json"
+            original = json.dumps(state, ensure_ascii=False)
+            path.write_text(original, encoding="utf-8")
+            result = subprocess.run([sys.executable, "-B", str(Path(loop.__file__)), "--state", str(path),
+                "prepare", "--at", AT.isoformat()], capture_output=True, text=True, encoding="utf-8")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            retired = saved["review_sessions"][0]["items"][0]
+            self.assertEqual(retired["status"], "needs_review")
+            self.assertTrue(retired["budget_exempt"])
+            self.assertNotIn("options", retired)
+            for key, value in original_item.items():
+                if key != "status":
+                    self.assertEqual(retired[key], value)
+            self.assertEqual(saved["review_sessions"][0]["items"][1]["variant_id"], "V1")
+            self.assertFalse(saved.get("review_attempts"))
+            self.assertEqual(path.with_name("state.previous.json").read_text(encoding="utf-8"), original)
+            page = path.with_name("Today Review.md").read_text(encoding="utf-8")
+            self.assertIn("选项待核对", page)
+            self.assertNotIn("PRIVATE_ANSWER", page)
+
+    def test_legacy_options_are_not_inferred_from_a_different_question(self):
+        for change in ("source", "prompt", "removed"):
+            with self.subTest(change=change):
+                state = fixture(1, 1)
+                loop.prepare(state, AT)
+                assigned = state["review_sessions"][0]["items"][0]
+                assigned.pop("options", None)
+                variant = state["review_queue"][0]["practice_variants"][0]
+                variant["options"] = {"A": "WRONG_OPTIONS_A", "B": "WRONG_OPTIONS_B"}
+                if change == "source":
+                    variant["source"]["pages"] = [99]
+                elif change == "prompt":
+                    variant["prompt"] = "A different question"
+                else:
+                    state["review_queue"][0]["practice_variants"] = []
+                before = deepcopy(state)
+                page = loop.render_today_review(state, AT)
+                self.assertNotIn("WRONG_OPTIONS", page)
+                self.assertEqual(state, before)
+
+    def test_new_short_answer_snapshot_does_not_acquire_future_options(self):
+        state = fixture(1, 1)
+        loop.prepare(state, AT)
+        self.assertEqual(state["review_sessions"][0]["items"][0].get("options"), {})
+        state["review_queue"][0]["practice_variants"][0]["options"] = {"A": "LATER_A", "B": "LATER_B"}
+        page = loop.render_today_review(state, AT)
+        self.assertIn(state["review_sessions"][0]["items"][0]["prompt"], page)
+        self.assertNotIn("LATER_A", page)
+        self.assertNotIn("选项待核对", page)
+
+    def test_invalid_options_cannot_leak_answer_metadata(self):
+        cases = ({"A": {"text": "choice", "correct": True}, "B": "OTHER"},
+                 {"A": "ONE", "B": "TWO", "answer_check": "PRIVATE_MARKING"},
+                 ["ONE", "TWO"])
+        for options in cases:
+            with self.subTest(options=options):
+                state = fixture(1, 1)
+                state["review_queue"][0]["practice_variants"][0]["options"] = options
+                package = loop.prepare(state, AT)
+                self.assertEqual(package["status"], "needs_preparation")
+                self.assertEqual(package["items"], [])
+                state = fixture(1, 1)
+                loop.prepare(state, AT)
+                state["review_sessions"][0]["items"][0]["options"] = options
+                page = loop.render_today_review(state, AT)
+                self.assertIn("选项待核对", page)
+                self.assertNotIn("PRIVATE_MARKING", page)
+                self.assertNotIn("correct", page)
+
+    def test_answered_and_explained_options_remain_hidden(self):
+        state = fixture(1, 1)
+        state["review_queue"][0]["practice_variants"][0]["options"] = {"A": "CHOICE_A", "B": "CHOICE_B"}
+        package = loop.prepare(state, AT)
+        explained = deepcopy(state)
+        loop.mark_answer_shown(explained, {"session_id": package["session_id"], "review_id": "R0",
+            "variant_id": "V0", "shown_at": AT.isoformat(), "evidence": "solution shown"})
+        self.assertNotIn("CHOICE_A", loop.render_today_review(explained, AT))
+        self.assertNotIn("options", loop.prepare(explained, AT)["items"][0])
+        loop.record_attempt(state, attempt(package))
+        self.assertNotIn("CHOICE_A", loop.render_today_review(state, AT))
+        self.assertNotIn("options", loop.prepare(state, AT)["items"][0])
+        self.assertIn("CHOICE_A", json.dumps(state))
+
     def test_repeated_prepare_reuses_one_global_budget(self):
         state = fixture(6)
         first = loop.prepare(state, AT, 15, "MATH-DEMO")

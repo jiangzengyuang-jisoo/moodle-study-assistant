@@ -56,6 +56,7 @@ node tools/moodle/run.mjs download 123 --authorized
 - `render` 只重建当前状态视图，不创建题包或作答。
 - `check` 检查学习时区的日期、状态版本、9份当前系统页面、已登记试卷与模拟题错题区；失败后重读状态并重新运行。不启动后台刷新。
 - 队列 `review_queue` 项通过 `mistake_id` 关联真实问题，具体题在 `practice_variants`。每题需有 id、完整 prompt、非空字符串列表 `answer_check`、`estimated_minutes`、材料依据 `source` 和 `verified: true`。`source` 包含 `material_id`、`pages` 与 `detail`。AI 必须实际核验答案；不能只把标志改成 true。答案只供批改，不提前出现在今日待答题单。
+- 选择题的 `options` 使用标签到选项文字的字典（例如 `{"A": "选项一", "B": "选项二"}`），不混入答案或批改元数据。选项与题干一同快照保存，并展示在无答案预览和复习页面。旧日包缺选项时保留原记录、标待核对并释放未用预算，再另选已经核验的未用新变式；不从可能已修改的题库猜补，也不据此评为独立作答。
 
 ### 保存作答
 

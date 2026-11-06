@@ -73,7 +73,8 @@ class MaterialVersionsTests(unittest.TestCase):
         self.assertIn('OLD_SENTINEL', history['pages'][0]['text'])
         mistake = self.read()['mistakes'][0]
         self.assertEqual((mistake['material_id'], mistake['page'], mistake['answer']), ('old', 1, 'original answer'))
-        self.assertEqual(mistake['source'], self.archived()['relative_path'])
+        self.assertEqual(mistake['source'], self.old['relative_path'])
+        self.assertEqual(self.archived()['original_relative_path'], mistake['source'])
         self.assertEqual(self.read()['courses'], self.state['courses'])
 
     def test_both_old_and_new_note_links_move_to_correct_original(self):

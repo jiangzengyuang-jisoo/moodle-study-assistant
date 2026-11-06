@@ -74,10 +74,45 @@ def _due_items(state, now, course=None):
         item.get("due_date") or "9999-12-31", item.get("review_order", 999), item["id"]))
 
 
+def _question_options(question):
+    """Only the existing label-to-text option format is public question content."""
+    options = question.get("options")
+    if options is None:
+        return {}
+    private_fields = {"answer", "answer_check", "correct", "correct_answer", "is_correct",
+                      "feedback", "explanation", "solution", "rubric"}
+    if (not isinstance(options, dict) or (options and len(options) < 2)
+            or any(not isinstance(label, str) or not label.strip()
+                   or label.strip().casefold() in private_fields
+                   or not isinstance(text, str) or not text.strip()
+                   for label, text in options.items())):
+        return None
+    return deepcopy(options)
+
+
+def _options_issue(state, item):
+    if item.get("question_review_reason"):
+        return item["question_review_reason"]
+    if "options" in item:
+        return "选项待核对：选项格式不完整，保留原题记录。" if _question_options(item) is None else None
+    # Legacy local packages omitted options. Matching IDs/prompt/source can flag
+    # that gap, but cannot prove today's option text was the originally assigned
+    # text. Never backfill an old question from a mutable question bank.
+    for queued in state.get("review_queue", []):
+        if queued.get("id") != item.get("review_id") or queued.get("course_id") != item.get("course_id"):
+            continue
+        for variant in queued.get("practice_variants", []):
+            if (variant.get("id") == item.get("variant_id")
+                    and variant.get("prompt") == item.get("prompt")
+                    and variant.get("source") == item.get("source") and variant.get("options")):
+                return "选项待核对：旧日包未保存选项，请核对原题后另行准备；不推测补填。"
+    return None
+
+
 def _valid_variant(variant):
     source = variant.get("source")
     cost = variant.get("estimated_minutes")
-    return (variant.get("verified") is True and isinstance(variant.get("id"), str)
+    return (_question_options(variant) is not None and variant.get("verified") is True and isinstance(variant.get("id"), str)
             and bool(variant["id"].strip()) and isinstance(variant.get("prompt"), str)
             and bool(variant["prompt"].strip()) and isinstance(variant.get("answer_check"), list)
             and bool(variant["answer_check"])
@@ -151,12 +186,23 @@ def _public_session(state, session):
         visible = {key: item[key] for key in (
             "review_id", "variant_id", "course_id", "title", "status", "reserved_minutes")}
         visible["estimated_minutes"] = item["reserved_minutes"]
-        if item["status"] == "pending":
+        issue = _options_issue(state, item) if item["status"] in {"pending", "deferred", "needs_review"} else None
+        if issue:
+            visible.update(status="needs_review", question_review_reason=issue)
+        elif item["status"] == "pending":
             visible["prompt"] = item["prompt"]
+            if options := _question_options(item):
+                visible["options"] = options
         visible["next_review_at"] = _next_review(state, item["review_id"])
         items.append(visible)
     pending = any(item["status"] == "pending" for item in items)
-    needs = session.get("needs_preparation", [])
+    needs = deepcopy(session.get("needs_preparation", []))
+    for item in items:
+        if item.get("question_review_reason"):
+            gap = {"review_id": item["review_id"], "course_id": item["course_id"],
+                   "reason": item["question_review_reason"]}
+            if gap not in needs:
+                needs.append(gap)
     status = "ready" if pending else "paused_for_budget" if any(i["status"] == "deferred" for i in items) else "needs_preparation" if needs else "waiting_for_retest"
     return {"status": status,
             "session_id": session["id"], "date": session["date"], **_budget(session),
@@ -179,6 +225,13 @@ def prepare(state, now, minutes=15, course=None):
     if minutes > 30:
         raise ValueError("每日总复习预算不得超过 30 分钟")
     session = _session_for(state, now, minutes)
+    # Preserve incomplete historical questions, release their unused budget,
+    # and let the usual selector prepare a distinct verified variant.
+    for old_session in state["review_sessions"]:
+        for old_item in old_session["items"]:
+            if old_item["status"] in {"pending", "deferred"} and (issue := _options_issue(state, old_item)):
+                old_item.update(status="needs_review", budget_exempt=True,
+                                question_review_reason=issue, options_review_required_at=now.isoformat())
     # Previously assigned, unanswered work is historical evidence too. Keep its
     # original question/source, but do not carry it as currently verified work.
     for old_session in state["review_sessions"]:
@@ -253,10 +306,9 @@ def prepare(state, now, minutes=15, course=None):
                   "course_id": item.get("course_id"),
                   "title": mistakes.get(item.get("mistake_id"), {}).get("display_title", item["id"]),
                   "prompt": variant["prompt"], "source": deepcopy(variant["source"]),
+                  "options": _question_options(variant),
                   "reserved_minutes": variant["estimated_minutes"], "status": "pending",
                   "assigned_at": now.astimezone(study_time.local_zone()).isoformat(), "actual_minutes": None}
-        if variant.get("options"):
-            chosen["options"] = deepcopy(variant["options"])
         session["items"].append(chosen)
         if (key := review_key(state, chosen)) is not None:
             used_keys.add(key)
@@ -329,6 +381,8 @@ def record_attempt(state, payload):
             return {"status": "duplicate", "review_id": old["review_id"],
                     "next_review_at": old.get("next_review_at"), "mastery_updated": False}
     session, item = _find_session_item(state, request)
+    if request["independent"] and (issue := _options_issue(state, item)):
+        raise ValueError(issue + " 不能据此记录独立复测评分。")
     if item["status"] not in {"pending", "explained", "carried_forward", "deferred", "needs_review"}:
         raise ValueError("该日包题目已作答；后续复测请准备到期的新变式")
     now = _now(payload.get("reviewed_at"))
@@ -465,7 +519,14 @@ def render_today_review(state, now):
         if item["status"] == "pending":
             number += 1
             lines += [f"## {number}. {item['course_id']} · {item['title']}", "",
-                      item["prompt"], "", f"预计 {item['estimated_minutes']:g} 分钟。", ""]
+                      item["prompt"], ""]
+            for label, text in item.get("options", {}).items():
+                lines += [f"- {label}. " + text.replace("\n", "\n  ")]
+            if item.get("options"):
+                lines += [""]
+            lines += [f"预计 {item['estimated_minutes']:g} 分钟。", ""]
+        elif item.get("question_review_reason"):
+            lines += [f"{item['course_id']} · {item['title']}：{item['question_review_reason']}", ""]
         elif item["status"] == "explained":
             lines += [f"已讲解：{item['course_id']} · {item['title']}。待新变式独立验证。", ""]
         elif item["status"] == "carried_forward":

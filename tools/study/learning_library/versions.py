@@ -70,17 +70,6 @@ def verify(study, row):
     return path
 
 
-def _replace(value, replacements):
-    if isinstance(value, dict):
-        return {k: _replace(v, replacements) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_replace(v, replacements) for v in value]
-    if isinstance(value, str):
-        for old, new in sorted(replacements, key=lambda pair: -len(pair[0])):
-            value = value.replace(old, new)
-    return value
-
-
 def _notes(study):
     for path in study.rglob("*.md"):
         parts = path.relative_to(study).parts
@@ -91,10 +80,8 @@ def _notes(study):
 
 
 def _note_edits(study, old, archived, previous=()):
-    """Preserve literal paths and actual Markdown link targets, including relative links."""
+    """Relocate Markdown destinations only; plain-text historical paths stay original."""
     import os
-    replacements = [(old.as_posix(), archived.as_posix()), (str(old), str(archived)),
-                    (old.relative_to(study).as_posix(), archived.relative_to(study).as_posix())]
     edits = dict(previous)
     for path in _notes(study):
         original = edits.get(path, path.read_text(encoding="utf-8-sig"))
@@ -113,7 +100,6 @@ def _note_edits(study, old, archived, previous=()):
             destination = Path(os.path.relpath(archived, path.parent)).as_posix()
             return "](<" + destination + ("#" + anchor if anchor else "") + ">)"
         updated = re.sub(r"\]\((<[^>]+>|[^)]+)\)", target, original)
-        updated = _replace(updated, replacements)
         if updated != original:
             edits[path] = updated
     return list(edits.items())
@@ -274,11 +260,9 @@ def promote(state_path, incoming, old_id=None, at=None):
             if original != archived:
                 moves.append((original, archived))
                 edits = _note_edits(study, original, archived)
-                replacements = [(old["relative_path"], archived.relative_to(study).as_posix()),
-                                (str(original), str(archived)), (original.as_posix(), archived.as_posix())]
-                for key in list(state):
-                    if key not in {"materials", "settings", "verification", "activity_log"}:
-                        state[key] = _replace(state[key], replacements)
+                # Historical records (including answer bindings and correction
+                # snapshots) keep their original content. Resolve the material
+                # ID through its catalog entry for the current physical path.
             old.update(relative_path=archived.relative_to(study).as_posix(),
                        version_status="archived", superseded_by=incoming["id"],
                        archived_at=instant(at).isoformat(), archive_sha256=old["sha256"],
@@ -289,11 +273,6 @@ def promote(state_path, incoming, old_id=None, at=None):
                 raise ValueError("Same filename is not proof of supersession; specify the verified old material")
             moves.append((source, target))
             edits = _note_edits(study, source, target, edits)
-            replacements = [(incoming["relative_path"], target.relative_to(study).as_posix()),
-                            (str(source), str(target)), (source.as_posix(), target.as_posix())]
-            for key in list(state):
-                if key not in {"materials", "settings", "verification", "activity_log"}:
-                    state[key] = _replace(state[key], replacements)
         incoming.update(relative_path=target.relative_to(study).as_posix(), version_status="current")
         incoming.pop("superseded_by", None)
         if old:

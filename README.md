@@ -168,7 +168,7 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
-| [2026-11-07](CHANGELOG.en.md#2026-11-07) | Same-question exposure, planning and source checks; five scoped read tools; archived-material eligibility and chapter crash recovery |
+| [2026-11-07](CHANGELOG.en.md#2026-11-07) | Preserve historical evidence during archiving and display review options; study improvements, scoped queries and chapter recovery |
 | [2026-11-06](CHANGELOG.en.md#2026-11-06) | Complete English changelog and bilingual navigation |
 | [2026-11-05](CHANGELOG.en.md#2026-11-05) | Strict checks of selected chapter files before teaching; local continuation and same-chat reuse; task-scoped planning and notice queries. [Codex / DeepSeek update report](docs/UPDATE_REPORT_2026-11-05.md) |
 
