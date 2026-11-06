@@ -37,6 +37,91 @@ def registered():
 
 
 class ExamSourcesTests(unittest.TestCase):
+    def test_section_media_change_preserves_public_site_and_course_mapping(self):
+        result, snap, p = state(), snapshot(), profile()
+        result["courses"][0]["moodle_course_ids"] = [1]
+        snap["moodle_url"] = "https://school.example.test/campus"
+        snap["pages"][0].pop("course_id")
+        section = snap["pages"][0]["sections"][0]
+        section["summary"] += ' <img src="https://example.test/old.png">'
+        p["sources"] = [{"authority": "official_course", "location": "section:1:10", "excerpt": "Chapters 1–4"}]
+        exam_sources.register_profile(result, p, snap, NOW)
+        original = deepcopy(result["exam_profiles"][0]["sources"])
+        self.assertEqual("https://school.example.test/campus/course/section.php?id=10", original[0]["url"])
+        section["summary"] = section["summary"].replace("old.png", "new.png")
+        self.assertEqual(["E"], exam_sources.sync_profiles(result, snap, NOW)["profiles_needing_review"])
+        self.assertEqual(original, result["exam_profiles"][0]["sources"])
+
+    def test_forum_image_and_link_changes_require_review_without_changing_text(self):
+        for tag, attribute in (("img", "src"), ("a", "href"), ("source", "srcset")):
+            with self.subTest(tag=tag):
+                result, snap = state(), snapshot()
+                post = snap["threads"][0]["posts"][0]
+                post["message"] += f' <{tag} {attribute}="https://example.test/old.png">'
+                exam_sources.register_profile(result, profile(), snap, NOW)
+                sources = deepcopy(result["exam_profiles"][0]["sources"])
+                post["message"] = post["message"].replace("old.png", "new.png")
+                answer = exam_sources.sync_profiles(result, snap, NOW)
+                self.assertEqual(["E"], answer["profiles_needing_review"])
+                self.assertEqual(sources, result["exam_profiles"][0]["sources"])
+
+    def test_forum_attachment_add_remove_and_same_url_metadata_changes_require_review(self):
+        attachment = {"filename": "rules.pdf", "fileurl": "https://example.test/rules.pdf",
+                      "filesize": 100, "timemodified": 1}
+        for before, after in (([], [attachment]), ([attachment], []),
+                              ([attachment], [{**attachment, "timemodified": 2}])):
+            with self.subTest(before=before, after=after):
+                result, snap = state(), snapshot()
+                post = snap["threads"][0]["posts"][0]
+                post["attachments"] = deepcopy(before)
+                exam_sources.register_profile(result, profile(), snap, NOW)
+                post["attachments"] = deepcopy(after)
+                self.assertEqual(["E"], exam_sources.sync_profiles(result, snap, NOW)["profiles_needing_review"])
+
+    def test_inline_file_metadata_and_post_edit_require_review(self):
+        for field, before, after in (("messageinlinefiles", [{"timemodified": 1}], [{"timemodified": 2}]),
+                                     ("modified", 100, 200)):
+            with self.subTest(field=field):
+                result, snap = state(), snapshot()
+                post = snap["threads"][0]["posts"][0]
+                post[field] = before
+                exam_sources.register_profile(result, profile(), snap, NOW)
+                post[field] = after
+                self.assertEqual(["E"], exam_sources.sync_profiles(result, snap, NOW)["profiles_needing_review"])
+
+    def test_unchanged_media_remains_verified_and_does_not_mutate_snapshot(self):
+        result, snap = state(), snapshot()
+        post = snap["threads"][0]["posts"][0]
+        post["message"] += ' <img alt="Exam format" src="https://example.test/rules.png">'
+        post["attachments"] = [{"filename": "rules.pdf", "timemodified": 1}]
+        original = deepcopy(snap)
+        exam_sources.register_profile(result, profile(), snap, NOW)
+        self.assertEqual([], exam_sources.sync_profiles(result, snap, NOW)["profiles_needing_review"])
+        self.assertEqual("verified", result["exam_profiles"][0]["verification_status"])
+        self.assertEqual(original, snap)
+
+    def test_plain_text_legacy_hash_is_unchanged(self):
+        record = {"course_id": "C", "location": "post:20", "author": "Teacher", "author_id": 7,
+                  "text": "Midterm 10 multiple choice questions", "authority": "unreviewed_forum_author"}
+        self.assertEqual(exam_sources.digest(record), exam_sources.evidence_index(snapshot())["post:20"]["content_hash"])
+
+    def test_html_attribute_order_and_wrapping_do_not_invalidate_unchanged_image(self):
+        result, snap = state(), snapshot()
+        post = snap["threads"][0]["posts"][0]
+        post["message"] += ' <img alt="Exam format" src="https://example.test/rules.png">'
+        exam_sources.register_profile(result, profile(), snap, NOW)
+        post["message"] = '<p>10 multiple choice questions</p><img src="https://example.test/rules.png" alt="Exam format" />'
+        self.assertEqual([], exam_sources.sync_profiles(result, snap, NOW)["profiles_needing_review"])
+
+    def test_module_embedded_image_change_requires_source_review(self):
+        result, snap, p = state(), snapshot(), profile()
+        module = snap["pages"][0]["sections"][0]["modules"][0]
+        module["description"] += ' <img src="https://example.test/old.png">'
+        p["sources"] = [{"authority": "official_course", "location": "module:11", "excerpt": "10 multiple choice questions"}]
+        exam_sources.register_profile(result, p, snap, NOW)
+        module["description"] = module["description"].replace("old.png", "new.png")
+        self.assertEqual(["E"], exam_sources.sync_profiles(result, snap, NOW)["profiles_needing_review"])
+
     def test_assessment_attachment_preview_needs_real_trace_and_tracks_entry_changes(self):
         result, p, snap = state(), profile(), snapshot()
         source = {"authority":"official_course", "location":"attachment:11", "module_id":11,

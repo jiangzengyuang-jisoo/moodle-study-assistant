@@ -37,7 +37,7 @@
 - `--module 501,502`：直接按模块编号核对指定文件，不依赖章节名。
 - `--mode strict`（建议默认）：只重新获取本章文件并比较内容哈希；老师沿用原文件名改内容也能发现。需要该课程级 `full` 授权。
 - `--mode quick`：只看服务器记录的文件大小和修改时间，通常几秒完成；依赖服务器记录准确，同大小改写可能漏检，界面报 `changed` 时也可能是记录变化而内容相同。
-- 工具只读：不写学习状态、不下载到资料库、不建索引、不写核读回执。结果写入 `Study/_System/ChapterChecks/<课程>/<章节>.json`，含逐文件 `status`、`evidence`（`metadata`/`size`/`content`）、`differences`、`local` 和 `scope_note`。
+- 工具只读：不写学习状态、不下载到资料库、不建索引、不写核读回执。结果写入 `Study/_System/ChapterChecks/<课程>/<章节>.json`，含逐文件 `status`、`evidence`（`metadata`/`size`/`content`）、`differences`、`local`、本次学校/账号归属和 `scope_note`；同一档案换学校会在核验前被拒绝（见[一档一校一账号](COURSE_LIBRARY.md#一档一校一账号)）。
 - 同一聊天同一章复用最近一次回执；用户要求再看、资料已更新或换新章时才重跑。
 
 结果怎么用：

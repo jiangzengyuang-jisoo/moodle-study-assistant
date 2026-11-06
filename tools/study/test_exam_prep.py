@@ -165,6 +165,27 @@ class ExamPrepTests(unittest.TestCase):
         state["materials"][1]["sha256"] = "changed"
         self.assertFalse(exam.mock_is_current(state, state["mock_exams"][0]))
 
+    def test_full_scope_checks_supersession_of_required_but_uncited_material(self):
+        state, payload = self.full_scope_fixture()
+        state["materials"].append({"id": "SECOND_PART", "course_id": "COURSE", "sha256": "unchanged"})
+        state["exam_profiles"][0]["topics"][0]["material_ids"].append("SECOND_PART")
+        exam.register_mock(state, payload, AT)
+        state["materials"][1]["superseded_by"] = "SECOND_PART_NEW"
+        self.assertFalse(exam.mock_is_current(state, state["mock_exams"][0]))
+        payload["id"] = "P2"
+        with self.assertRaisesRegex(ValueError, "归档|替代"):
+            exam.register_mock(state, payload, AT)
+
+    def test_deleted_or_superseded_source_never_registers_as_current(self):
+        for lifecycle in ({"version_status": "deleted"}, {"superseded_by": "NEW"}):
+            with self.subTest(lifecycle=lifecycle):
+                state = fixture()
+                state["materials"][0].update(lifecycle)
+                before = deepcopy(state)
+                with self.assertRaisesRegex(ValueError, "归档|替代"):
+                    exam.register_mock(state, paper(), AT)
+                self.assertEqual(state, before)
+
     def test_teacher_section_scope_cannot_be_filled_with_other_chapters(self):
         state = fixture()
         state["exam_profiles"][0]["sections"][1]["allowed_topic_ids"] = ["T2"]

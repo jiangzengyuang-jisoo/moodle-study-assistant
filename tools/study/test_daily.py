@@ -25,6 +25,7 @@ class DailyIntegrationTests(unittest.TestCase):
             "deadlines": [{"id": "DL", "task_id": "TASK", "course_id": "MATH-DEMO", "title": "Practice",
                            "date": "2026-10-09", "time": None}],
             "schedules": [], "daily_plans": [], "weekly_plan": {}, "upcoming": [],
+            "materials": [{"id": "TEST-MATERIAL", "course_id": "MATH-DEMO", "version_status": "current"}],
             "mistakes": [{"id": "M", "course_id": "MATH-DEMO", "entry_type": "question", "display_title": "Limits"}],
             "review_queue": [{"id": "R", "course_id": "MATH-DEMO", "mistake_id": "M", "priority": "High",
                               "status": "independent_review_pending", "due_date": None,

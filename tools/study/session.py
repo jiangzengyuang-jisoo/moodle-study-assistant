@@ -16,6 +16,30 @@ from snapshot_guard import file_sha, scope_details, validate_binding, validate_c
 
 ROOT = Path(__file__).resolve().parents[2]
 
+# Stable marker printed by the Node collector when the one-profile-one-school-
+# account guard stops a collection on purpose. This is not a network failure:
+# surface the real explanation and keep learning state byte-identical.
+PROFILE_ACCOUNT_GUARD = 'PROFILE_ACCOUNT_GUARD:'
+
+
+class ProfileAccountGuard(ValueError):
+    """The learning profile is deliberately bound to another school/account."""
+
+
+def profile_account_guard(stderr):
+    """Extract the deliberate guard message from a failed collector's stderr."""
+    if isinstance(stderr, bytes):
+        text = stderr.decode('utf-8', 'replace')
+    elif isinstance(stderr, str):
+        text = stderr
+    else:
+        return None
+    for line in text.splitlines():
+        if line.startswith(PROFILE_ACCOUNT_GUARD):
+            detail = ' '.join(line[len(PROFILE_ACCOUNT_GUARD):].split())[:800]
+            return detail or '学习档案与当前学校/账号不一致，已停止采集；未写入任何记录。'
+    return None
+
 
 def stamp():
     return datetime.now(timezone.utc).isoformat()
@@ -61,6 +85,10 @@ class Session:
     def _record_failure(self, manifest):
         # This is a learning-state write: call only from the main continuation,
         # never the read-only status/subtask path. Older runs cannot stale newer evidence.
+        # A deliberate identity guard stop is not a collection failure; it must not
+        # write a failed receipt or mark exam sources as needing review.
+        if manifest.get('identity_guard'):
+            return
         with workspace_lock(self.state):
             prepare_state(self.state)
             pointer = self.runtime / 'latest-request.json'
@@ -146,6 +174,9 @@ class Session:
                                  '--output', str(snapshot_path), '--request', str(snapshot_path.with_name('request.json'))], cwd=self.root,
                                 capture_output=True, timeout=300)
         if result.returncode not in (0, 2) or not snapshot_path.exists():
+            guard = profile_account_guard(result.stderr)
+            if guard:
+                raise ProfileAccountGuard(guard)
             detail = safe_connection_error(result.stderr)
             if detail:
                 raise ValueError(f'{detail[0]}: {detail[1]} {detail[2]} 旧学习记录保留；需明确重试。')
@@ -244,6 +275,14 @@ class Session:
                 with self.timing('moodle_collection'):
                     (collector or self.collect)(snapshot)
                 value = self._finish_snapshot(manifest)
+            except ProfileAccountGuard:
+                # Not a network/collection failure: keep the runtime manifest in a
+                # failed state but never write a failed planning receipt or mark
+                # exam sources stale. The caller surfaces the guard explanation.
+                manifest['phase'] = 'failed'
+                manifest['identity_guard'] = True
+                self._save(manifest)
+                raise
             except Exception:
                 # A child may atomically finish writing after the parent exits. A later
                 # continuation checks failed/interrupted runs again without fetching.

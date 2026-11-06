@@ -1,6 +1,6 @@
 """Regression checks use small fixtures or temporary files; no real learning writes."""
 from copy import deepcopy
-from datetime import datetime
+from datetime import date, datetime
 import json
 from pathlib import Path
 import subprocess
@@ -29,6 +29,85 @@ def fixture():
 
 
 class PlanningTests(unittest.TestCase):
+    def test_carryover_keeps_dictionary_plan_and_profile_timezone(self):
+        state = fixture()
+        state["timezone"] = "UTC"
+        state["deadlines"][1]["date"] = "2026-10-09"
+        state["tasks"][1]["status"] = "In progress"
+        state["daily_plans"] = {"2026-10-10": {"candidate_task_ids": ["work"]}}
+        before = deepcopy(state)
+        views = planning.render_views(state, "2026-10-11T02:00:00+08:00")
+        self.assertIn("# 2026-10-10", views["Today Plan.md"])
+        self.assertIn("New work", views["Today Plan.md"].split("## 今日复习")[0])
+        tomorrow = planning.render_views(state, "2026-10-11T00:00:00+00:00")
+        self.assertNotIn("New work", tomorrow["Today Plan.md"].split("## 今日复习")[0])
+        self.assertEqual(before, state)
+
+    def test_recurring_timetable_respects_inclusive_validity_dates(self):
+        state = fixture()
+        state["schedules"] = [{"type": "recurring_course_timetable", "applicable_from": "2026-11-09",
+            "term_end": "2026-11-16", "events": [{"id": "tutorial", "title": "Term tutorial",
+            "weekday": "Monday", "start": "12:00", "end": "13:00", "default_block_for_attendance": True}]}]
+        original = deepcopy(state)
+        for day, expected in (("2026-11-02", False), ("2026-11-09", True),
+                              ("2026-11-16", True), ("2026-11-23", False)):
+            with self.subTest(day=day):
+                views = planning.render_views(state, day + "T08:00:00+08:00")
+                self.assertEqual(expected, "Term tutorial" in views["Today Plan.md"])
+                self.assertEqual(expected, "Term tutorial" in views["Weekly View.md"])
+        self.assertEqual(original, state)
+
+    def test_unknown_term_dates_do_not_remove_recurring_attendance(self):
+        state = fixture()
+        state["schedules"] = [{"type": "recurring_course_timetable", "applicable_from": None,
+            "term_end": None, "events": [{"id": "tutorial", "title": "Term tutorial",
+            "weekday": "Monday", "default_block_for_attendance": True}]}]
+        self.assertTrue(planning._events(state, date(2026, 11, 2)))
+        state["schedules"][0]["applicable_from"] = "2026-11-09"
+        self.assertEqual([], planning._events(state, date(2026, 11, 2)))
+        self.assertTrue(planning._events(state, date(2027, 1, 4)))
+
+    def test_explicit_dated_makeup_outside_regular_term_is_preserved(self):
+        state = fixture()
+        state["schedules"] = [{"type": "recurring_course_timetable", "applicable_from": "2026-11-09",
+            "term_end": "2026-11-16", "events": [{"id": "makeup", "title": "Confirmed makeup",
+            "date": "2026-11-23", "default_block_for_attendance": True}]}]
+        self.assertIn("Confirmed makeup", " ".join(planning._events(state, date(2026, 11, 23))))
+
+    def test_explicit_today_carryover_keeps_confirmed_unfinished_work(self):
+        for evidence in ({"status": "In progress"}, {"status": "Not started"},
+                         {"remaining_workload_minutes": 30},
+                         {"remaining_workload_minutes": {"min": 10, "max": 30}}):
+            with self.subTest(evidence=evidence):
+                state = fixture()
+                state["deadlines"][1]["date"] = "2026-10-10"
+                state["tasks"][1].update(evidence)
+                state["daily_plans"].append({"date": "2026-10-11", "candidate_task_ids": ["work"]})
+                before = deepcopy(state)
+                views = planning.render_views(state, "2026-10-11T12:00:00+08:00")
+                self.assertIn("New work", views["Today Plan.md"].split("## 今日复习")[0])
+                self.assertIn("New work", views["Weekly View.md"].split("## 本周推进顺序")[1])
+                self.assertEqual(state, before)
+
+    def test_carryover_does_not_reopen_unknown_completed_or_historical_exam(self):
+        for evidence in ({"status": None}, {"status": "Completed", "remaining_workload_minutes": 30},
+                         {"status": "In progress", "group_submitted": True},
+                         {"status": "In progress", "type": "Exam"}):
+            with self.subTest(evidence=evidence):
+                state = fixture()
+                state["deadlines"][1]["date"] = "2026-10-10"
+                state["tasks"][1].update(evidence)
+                state["daily_plans"].append({"date": "2026-10-11", "candidate_task_ids": ["work"]})
+                priorities = planning.refresh_plan_state(state, "2026-10-11T12:00:00+08:00")["candidate_task_ids"]
+                self.assertNotIn("work", priorities)
+
+    def test_stale_explicit_plan_does_not_auto_carry_overdue_work(self):
+        state = fixture()
+        state["deadlines"][1]["date"] = "2026-10-10"
+        state["tasks"][1]["status"] = "In progress"
+        state["daily_plans"].append({"date": "2026-10-10", "candidate_task_ids": ["work"]})
+        self.assertNotIn("work", planning.refresh_plan_state(state, "2026-10-11T12:00:00+08:00")["candidate_task_ids"])
+
     def test_new_course_null_focus_daily_run_and_check_preserve_unknown_progress(self):
         state = {"revision": 1, "settings": {}, "courses": [{"id": "NEW", "moodle_course_ids": [100],
                  "current_topic": None, "assignment_focus": None, "teaching_cursor": None}],

@@ -64,12 +64,23 @@ node tools/moodle/run.mjs courses --select 146265,142648 --mode info_only --yes
 | `new_course_requires_authorization` | 固定 `true`：新增课程页面需重新授权 |
 | `per_file_approval_required` | 固定 `false`：已授权范围内不再逐份询问 |
 | `background_refresh` | 固定 `false`：没有后台刷新或定时任务 |
-| `courses.<state课程ID>` | 每门课/页面：`moodle_courseid`、`mode`（`full`/`info_only`）、`authorized_at`、`scope_version` |
+| `courses.<state课程ID>` | 每门课/页面：`moodle_courseid`、`mode`（`full`/`info_only`）、`authorized_at`、`scope_version`、`account_scope`（学校地址与账号） |
 
 - 授权按已选课程页面逐一记录；同一科的主页面和副页面各自有 state 课程 ID 条目，资料归档时副页面归入主学科（见“学科合并”）。
 - 重复保存相同授权不会重复写状态；删除选课不删除已有授权记录，但未选页面不会同步。
 - 授权写入不修改任何学习记录、资料行或快照回执。
 - 只读查看授权、材料数量和状态版本：`& '.venv/Scripts/python.exe' 'tools/study/course_library.py' status`。
+
+## 一档一校一账号
+
+同一 `Study/` 档案只对应一所学校的同一个账号：Moodle 的数字课程 ID 和模块 ID 只在该账号内有意义，换学校或换账号时相同数字可能指向完全不同的课程和文件。
+
+- 选课或授权成功时，学校与账号记录在 `state.settings.profile_account_scope`；章节核对回执记录本次 `account_scope`。
+- 聊天选课、旧 CLI 选课/授权、资料同步、采集、指定资料下载、刷新预检、章节核对和登录取 Token 前，都会先核对档案已记录的学校/账号。不一致、证据互相矛盾或无法验证时立即停止，不写状态、不下载、不写回执、不替换凭据，也不重绑旧授权、资料库账本或章节核验基线。
+- 旧授权缺少账号信息时，不猜测、不补签；同一课程已有账号信息时不会丢失或放宽。
+- 复用暂存快照或指定 `--snapshot` 时，先核对快照记录的学校/账号：跨校/跨账号快照直接停止；没有可核对账号信息的旧快照只作为“不可验证”的自动缓存跳过（改用只读 API 现场读取），不作本轮文字来源。
+- 换学校或换账号：复制或新建独立项目目录，使用独立 `Study/` 档案重新 `setup` 并登录，不要在同一档案来回切换。已有课程/资料/授权但完全缺少学校或账号证据的旧档案会 fail-closed，需恢复能证明账号的备份，或在独立目录使用独立档案。
+- 同校继续使用、重新选课、改同步方式、增量同步和章节核对照常可用。
 
 ## 日常增量同步
 
@@ -91,7 +102,7 @@ node tools/moodle/run.mjs library-sync [--course 课程ID ...] [--snapshot 路�
 node tools/moodle/run.mjs chapter-check --course 课程ID --section "第8章" [--mode quick|strict] [--module 501,502] [--no-persist]
 ```
 
-- 只枚举这一门课的目录，比对本章已有文件：`quick` 比较服务器记录的大小与修改时间，`strict` 重新获取本章文件并比较内容哈希。工具只读，不写 `state.json` 或 ledger，不下载到 `_Inbox`，不重建 catalog；回执写在 `Study/_System/ChapterChecks/<课程>/<章节>.json`。
+- 只枚举这一门课的目录，比对本章已有文件：`quick` 比较服务器记录的大小与修改时间，`strict` 重新获取本章文件并比较内容哈希。工具只读，不写 `state.json` 或 ledger，不下载到 `_Inbox`，不重建 catalog；回执写在 `Study/_System/ChapterChecks/<课程>/<章节>.json`，并记录本次学校/账号归属（跨校时会被“一档一校一账号”检查拦下）。
 - 不需要新的课程级授权：`quick` 只读课程元数据；`strict` 只允许已保存 `full` 授权的页面，`info_only` 或未授权页面会被明确拒绝，而不是静默下载。
 - 适合“开始教第8章前确认课件没变”；它不安装新文件、不补新增章节，也不读公告、作业、讨论或日历。发现变化后仍要按上面的增量同步或完整刷新处理，判定见 [WORKFLOW.md](WORKFLOW.md#单章资料核对不触发完整采集)。
 

@@ -19,9 +19,11 @@ function stateFixture(overrides = {}) {
   return {
     revision: 1,
     lessons: [],
-    settings: {course_library_authorization: {schema: 1, scope_version: 1, scope: 'test', courses: {
-      'moodle-1': {moodle_courseid: 101, mode: 'full', scope_version: 1},
-    }}},
+    settings: {profile_account_scope: {schema: 1, site: BASE, user_id: 7, bound_at: '2026-11-01T00:00:00Z'},
+      course_library_authorization: {schema: 1, scope_version: 1, scope: 'test', courses: {
+        'moodle-1': {moodle_courseid: 101, mode: 'full', scope_version: 1,
+          account_scope: {site: BASE, user_id: 7}},
+      }}},
     courses: [{id: 'moodle-1', name: 'ACCT1101 Accounting', shortname: 'ACCT1101', moodle_course_ids: [101]}],
     materials: [],
     ...overrides,
@@ -198,11 +200,62 @@ test('quick check reports changed chapter files and writes a receipt', async () 
     const written = JSON.parse(readFileSync(receipt.receipt_path, 'utf8'));
     assert.equal(written.schema, 1);
     assert.equal(written.mode, 'quick');
+    assert.deepEqual(written.account_scope, {site: BASE, user_id: 7});
     assert(!/secret-token/.test(readFileSync(receipt.receipt_path, 'utf8')));
   } finally {
     cleanup();
   }
 });
+
+test('repeated same-school chapter checks rewrite the account-bound receipt', async () => {
+  const {root, cleanup} = tempRoot();
+  try {
+    const state = stateFixture();
+    const ledgerPath = join(root, 'ledger.json');
+    writeFileSync(ledgerPath, JSON.stringify(ledgerFixture()), 'utf8');
+    const first = await checkChapter({client: fakeClient(), root, state, course: 'moodle-1',
+      section: '8', mode: 'quick', ledgerPath});
+    const second = await checkChapter({client: fakeClient(), root, state, course: 'moodle-1',
+      section: '8', mode: 'quick', ledgerPath});
+    assert.equal(first.receipt_path, second.receipt_path);
+    assert.notEqual(first.run_id, second.run_id);
+    const written = JSON.parse(readFileSync(second.receipt_path, 'utf8'));
+    assert.deepEqual(written.account_scope, {site: BASE, user_id: 7});
+    assert.equal(written.run_id, second.run_id);
+    assert.equal(written.summary.unchanged, 1);
+  } finally {
+    cleanup();
+  }
+});
+
+test('another school with the same numeric course/module IDs never reuses old baselines', async () => {
+  const {root, cleanup} = tempRoot();
+  try {
+    const state = stateFixture();
+    const ledgerPath = join(root, 'ledger.json');
+    writeFileSync(ledgerPath, JSON.stringify(ledgerFixture()), 'utf8');
+    const ledgerBefore = readFileSync(ledgerPath);
+    const other = fakeClient();
+    other.baseUrl = 'https://other.example/moodle';
+    other.userId = 18;
+    await assert.rejects(() => checkChapter({
+      client: other, root, state, course: 'moodle-1', section: '8', mode: 'quick', ledgerPath,
+    }), /另一所学校/);
+    // Fail before any catalog read, hash, or receipt write.
+    assert.deepEqual(other.calls, []);
+    assert.deepEqual(readFileSync(ledgerPath), ledgerBefore);
+    assert.equal(existsSync(join(root, 'Study', '_System', 'ChapterChecks')), false);
+    // The same school and account still checks normally.
+    const allowed = await checkChapter({
+      client: fakeClient(), root, state, course: 'moodle-1', section: '8', mode: 'quick',
+      ledgerPath, persist: false,
+    });
+    assert.equal(allowed.summary.files, 2);
+  } finally {
+    cleanup();
+  }
+});
+
 
 test('strict check hashes chapter bytes and rejects unlicensed downloads', async () => {
   const {root, cleanup} = tempRoot();
@@ -234,9 +287,11 @@ test('strict check hashes chapter bytes and rejects unlicensed downloads', async
     assert.equal(failing.summary.error, 2);
     assert.equal(failing.verdict, 'incomplete');
 
-    const infoOnly = stateFixture({settings: {course_library_authorization: {schema: 1, courses: {
-      'moodle-1': {moodle_courseid: 101, mode: 'info_only'},
-    }}}});
+    const infoOnly = stateFixture({settings: {
+      profile_account_scope: {schema: 1, site: BASE, user_id: 7},
+      course_library_authorization: {schema: 1, courses: {
+        'moodle-1': {moodle_courseid: 101, mode: 'info_only'},
+      }}}});
     await assert.rejects(() => checkChapter({
       client: fakeClient(), root, state: infoOnly, course: 'moodle-1', section: '8', mode: 'strict',
       ledgerPath, fetchFile: (client, file) => ({bytes: PDF}), persist: false,

@@ -11,7 +11,8 @@ import { createInterface } from 'node:readline/promises';
 import { initialize, atomicJSON, ReadOnlyClient } from './core.mjs';
 import { collectRefresh } from './refresh.mjs';
 import {chatCourseOptions, courseCatalog, selectCoursesInChat} from './chat-course-selection.mjs';
-import {normalizeSite} from './content-policy.mjs';
+import {assertProfileAccount, normalizeSite, withProfileAccount} from './content-policy.mjs';
+import {requireSnapshotAccount, validatedSnapshotPath} from './snapshot-account.mjs';
 import {
   SCOPE_TEXT, SCOPE_VERSION, authorizeCourses, authorizationReport, newestSnapshotPath,
   readJSON, selectedPages, syncCourseLibrary,
@@ -21,6 +22,20 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const statePath = join(root, 'Study/_System/state.json');
 const json = path => JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
 const loadState = () => json(statePath);
+
+// One Study profile keeps one school account: numeric course/module IDs are only
+// meaningful for the account that created them.
+const accountOf = client => ({site: normalizeSite(client.baseUrl), user_id: client.userId});
+
+function ensureProfileAccount(client, action) {
+  return assertProfileAccount({state: loadState(), root, site: client.baseUrl,
+    userId: client.userId, action});
+}
+
+// A stable machine marker for the one-profile-one-school-account guard. The
+// Python session entry surfaces the explanation instead of a generic connection
+// error and keeps the learning state byte-identical for this deliberate stop.
+export const PROFILE_ACCOUNT_GUARD = 'PROFILE_ACCOUNT_GUARD:';
 
 function tokenFromWindows(ciphertext = null) {
   return decryptWindowsToken(ciphertext ?? readFileSync(join(root, '.private/moodle-token.dpapi')));
@@ -54,18 +69,21 @@ function applyCourseSelection(state, available, ids) {
   return added;
 }
 
-function saveSelection(ids, available) {
+function saveSelection(ids, available, account) {
   const original = readFileSync(statePath, 'utf8');
   const state = JSON.parse(original);
+  assertProfileAccount({state, root, site: account.site, userId: account.user_id, action: '保存选课'});
   const added = applyCourseSelection(state, available, ids);
-  saveState(root, 'replace', {expected: JSON.parse(original), state});
+  const next = withProfileAccount(state, {site: account.site, userId: account.user_id});
+  saveState(root, 'replace', {expected: JSON.parse(original), state: next});
   return {state: loadState(), added};
 }
 
-function authorizeSelected(state, mode) {
+function authorizeSelected(state, mode, account) {
   const pages = selectedPages(state);
   const courses = pages.map(page => ({
     course_id: page.courseId, moodle_courseid: page.moodleCourseid,
+    account_scope: {site: account.site, user_id: account.user_id},
   }));
   return authorizeCourses({root, statePath, mode, scope: SCOPE_TEXT, scopeVersion: SCOPE_VERSION, courses});
 }
@@ -101,6 +119,9 @@ function courseSyncReuse(rootPath) {
 }
 
 async function runCourses(client, options) {
+  const account = accountOf(client);
+  assertProfileAccount({state: loadState(), root, site: account.site,
+    userId: account.user_id, action: '保存选课和课程级授权'});
   const available = await client.call('core_enrol_get_users_courses', {userid: client.userId});
   for (const course of available) console.log(`${course.id}  ${course.fullname} (${course.shortname})`);
   const prompt = createInterface({input: process.stdin, output: process.stdout});
@@ -136,20 +157,24 @@ async function runCourses(client, options) {
       if (confirm !== 'y') { console.log('未确认，未保存授权。'); return; }
     }
     const selectedIds = ids;
-    saveSelection(selectedIds, available);
-    const authorization = authorizeSelected(loadState(), mode);
+    saveSelection(selectedIds, available, account);
+    const authorization = authorizeSelected(loadState(), mode, account);
     console.log(`课程级授权已保存：${authorization.authorized_courses.length} 个课程页面，模式 ${authorization.mode}。`);
     if (options.noSync) { console.log('已按 --no-sync 停止；未运行课程同步。'); return; }
     let snapshotPath = null;
     let refreshStatus = null;
     if (mode === 'info_only') {
-      if (options.refresh || !courseSyncReuse(root)) {
+      // A cached snapshot supplies text, so it is reused only when it belongs to
+      // this profile's school account; old/unverifiable caches fall back to a live
+      // read and a mismatched cache fails closed.
+      const cached = options.refresh ? null : courseSyncReuse(root);
+      const reuse = cached ? validatedSnapshotPath(cached.path, account, '课程信息同步') : null;
+      if (!reuse) {
         console.log('正在同步课程信息（只读采集，不下载资料）…');
         refreshStatus = refreshForCourseSync(options.chat, true);
       } else {
-        const reuse = courseSyncReuse(root);
-        snapshotPath = reuse.path;
-        console.log(`课程信息同步复用本机最近一次完整快照：${reuse.run_id ?? 'unknown'}，采集于 ${reuse.collected_at ?? 'unknown'}。`);
+        snapshotPath = reuse;
+        console.log(`课程信息同步复用本机最近一次完整快照：${cached.run_id ?? 'unknown'}，采集于 ${cached.collected_at ?? 'unknown'}。`);
       }
       if (snapshotPath) {
         console.log('已保存“只同步信息”授权；没有下载任何资料。');
@@ -163,14 +188,17 @@ async function runCourses(client, options) {
       return;
     }
     let reuse = options.refresh ? null : courseSyncReuse(root);
-    if (reuse) {
+    // A cached snapshot is only a text source when it belongs to this profile's
+    // school account; otherwise fall back to a live read (mismatch fails closed).
+    if (reuse) reuse = {...reuse, path: validatedSnapshotPath(reuse.path, account, '完整初始化')};
+    if (reuse?.path) {
       snapshotPath = reuse.path;
       console.log(`课程信息同步复用本机最近一次完整快照：${reuse.run_id ?? 'unknown'}，采集于 ${reuse.collected_at ?? 'unknown'}。`);
     } else {
       console.log('正在同步课程信息（只读采集）…');
       refreshStatus = refreshForCourseSync(options.chat, true);
       const latest = snapshotSummary(join(root, 'Study/_System/refresh-latest.json'));
-      if (latest?.collection_complete) snapshotPath = latest.path;
+      if (latest?.collection_complete) snapshotPath = validatedSnapshotPath(latest.path, account, '完整初始化');
       else if (refreshStatus !== 0) console.log('课程信息采集未完整成功；继续尝试资料枚举与下载，缺口会逐项记录。');
     }
     console.log('正在枚举、下载、归档并建立资料索引（可中断，再次同步会续跑）…');
@@ -197,6 +225,9 @@ function printLibrarySummary(report) {
 }
 
 async function runLibrarySync(client, options) {
+  // Ledger entries and material source keys are keyed by numeric course/module
+  // IDs; another school or account reusing the same numbers must not inherit them.
+  const {account} = ensureProfileAccount(client, '同步课程资料');
   const state = loadState();
   const args = process.argv.slice(3);
   const courseIds = [];
@@ -205,21 +236,27 @@ async function runLibrarySync(client, options) {
   }
   const snapshotIndex = args.indexOf('--snapshot');
   let snapshotPath = snapshotIndex >= 0 ? args[snapshotIndex + 1] : null;
-  if (snapshotPath && !existsSync(snapshotPath)) throw new Error('快照文件不存在');
+  if (snapshotPath) {
+    if (!existsSync(snapshotPath)) throw new Error('快照文件不存在');
+    // An explicitly supplied snapshot is only reused for the same school account.
+    snapshotPath = requireSnapshotAccount(snapshotPath, account, '课程资料同步');
+  }
   if (!snapshotPath && !args.includes('--no-snapshot')) {
     const recent = newestSnapshotPath(root, 30);
     if (recent) {
-      try {
-        const snapshot = json(recent);
-        // Only a complete collection may replace a live read for announcements,
-        // assignment requirements and discussions; partial snapshots fall back.
-        if (snapshot.collection_complete === true) {
-          snapshotPath = recent;
+      let snapshot = null;
+      try { snapshot = json(recent); } catch { snapshot = null; }
+      // Only a complete collection may replace a live read for announcements,
+      // assignment requirements and discussions; partial snapshots fall back.
+      if (snapshot?.collection_complete === true) {
+        const validated = validatedSnapshotPath(recent, account, '课程资料同步');
+        if (validated) {
+          snapshotPath = validated;
           console.log('使用最近 30 分钟内的完整快照作为公告/作业/讨论文字来源。');
-        } else {
-          console.log('最近快照采集不完整，本次改用只读 API 现场读取公告/作业/讨论。');
         }
-      } catch {
+      } else if (snapshot) {
+        console.log('最近快照采集不完整，本次改用只读 API 现场读取公告/作业/讨论。');
+      } else {
         console.log('最近快照无法解析，本次改用只读 API 现场读取公告/作业/讨论。');
       }
     }
@@ -258,6 +295,23 @@ async function main() {
       return;
     }
     const chat = resolved ? resolved.chat : 'manual-refresh-entry';
+    // Fail fast only on a *detected* identity mismatch, before collecting
+    // anything. Config problems stay the session entry's job so a missing or
+    // damaged config.local.json still gets its existing readable diagnosis.
+    let configSite = null;
+    try {
+      configSite = json(join(root, 'config.local.json'))?.moodle_url ?? null;
+    } catch { /* the session entry reports the configuration problem */ }
+    if (configSite) {
+      try {
+        assertProfileAccount({state: loadState(), root, site: configSite, userId: null,
+          action: '刷新学校信息'});
+      } catch (error) {
+        console.error(error.message);
+        process.exitCode = 1;
+        return;
+      }
+    }
     const result = spawnSync(python(root), [join(root, 'tools/study/session.py'), '--chat', chat, 'refresh'],
       {stdio: 'inherit', windowsHide: true, env: {...process.env, STUDY_NODE: process.execPath}});
     process.exitCode = result.status ?? 1;
@@ -277,7 +331,7 @@ async function main() {
   if (mode === 'check') { console.log('Moodle API 已连接。'); return; }
   if (mode === 'courses') {
     if (chatOptions) {
-      const context = {client, readState: loadState,
+      const context = {client, root, readState: loadState,
         writeState: (expected, state) => saveState(root, 'replace', {expected, state})};
       const result = chatOptions.action === 'list' ? await courseCatalog(context)
         : await selectCoursesInChat({...context, selection: json(chatOptions.file)});
@@ -323,6 +377,18 @@ async function main() {
     return;
   }
   if (mode === 'collect') {
+    // A different school/account may reuse the selected numeric course IDs for
+    // unrelated courses; finding old IDs there would pollute the snapshot and
+    // later review. Refuse before any collection output is written.
+    try {
+      ensureProfileAccount(client, '采集学校信息');
+    } catch (error) {
+      // Deliberate identity stop: emit a stable marker so the Python session
+      // entry can surface the real reason instead of a generic connection error.
+      console.error(PROFILE_ACCOUNT_GUARD + (error instanceof Error ? error.message : String(error)));
+      process.exitCode = 1;
+      return;
+    }
     const result = bindCollection(bundle, await collectRefresh(client, bundle.state), client.userId);
     atomicJSON(output, result);
     console.log(JSON.stringify({collection_complete: result.collection_complete, reviewed: false,
@@ -346,7 +412,11 @@ async function main() {
         || normalizeSite(snapshot.account_scope?.site) !== normalizeSite(client.baseUrl)) {
       throw new Error('本轮快照与当前学校账户不一致，未启动资料下载');
     }
-    const state = json(statePath);
+    const state = loadState();
+    // Serialized sources and material versions are keyed by school numeric IDs;
+    // never download into a profile bound to another school/account.
+    assertProfileAccount({state, root, site: client.baseUrl, userId: client.userId,
+      action: '下载课程资料'});
     const captured = new Set(snapshot.pages.map(page => page.courseid));
     state.courses = state.courses.map(course => ({...course,
       moodle_course_ids: (course.moodle_course_ids ?? []).filter(id => captured.has(id))}));
@@ -360,8 +430,12 @@ async function main() {
     const args = process.argv.slice(3);
     const authorized = args.includes('--authorized');
     const ids = args.filter(arg => arg !== '--authorized').map(Number);
+    // Explicit module IDs are numeric too: they may belong to another account.
+    const state = loadState();
+    assertProfileAccount({state, root, site: client.baseUrl, userId: client.userId,
+      action: '下载指定课程资料'});
     const { downloadModules } = await import('./download.mjs');
-    const result = await downloadModules(client, json(statePath), root, {moduleIds: ids, authorized});
+    const result = await downloadModules(client, state, root, {moduleIds: ids, authorized});
     atomicJSON(join(root, 'Study/_System/authorized-download-latest.json'), result);
     console.log(JSON.stringify(result));
     if (result.errors.length) process.exitCode = 2;

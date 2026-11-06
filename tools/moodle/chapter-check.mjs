@@ -11,6 +11,7 @@ import {createHash, randomUUID} from 'node:crypto';
 import {existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync} from 'node:fs';
 import {join, resolve, sep} from 'node:path';
 import {MAX_BYTES, fetchCourseFile} from './course-files.mjs';
+import {accountScope, assertProfileAccount} from './content-policy.mjs';
 import {
   authorizationReport, emptyTextSources, enumerateCourse, nowISO, planPage, readJSON,
   selectedPages,
@@ -297,9 +298,15 @@ export async function checkChapter({
   if (!client || typeof client.call !== 'function') throw new Error('需要已连接的 Moodle 只读客户端');
   if (!MODES[mode]) throw new Error('核对强度只能是 quick 或 strict');
   if (!section && !modules) throw new Error('请提供章节名称/编号，或用 --module 指定模块');
+  // The baseline comes from this profile's library ledger/materials, which are
+  // keyed by numeric course/module IDs. Another school or account may reuse the
+  // same numbers for different files, so refuse before enumerating or hashing.
+  const checked = accountScope(client.baseUrl, client.userId ?? null);
+  if (!checked) throw new Error('章节核对需要已连接的学校账号');
+  assertProfileAccount({state, root, site: checked.site, userId: checked.user_id, action: '章节核对'});
   const resolved = resolveCoursePages(state, course);
   const pages = resolved.pages.map(page => ({...page, baseUrl: client.baseUrl}));
-  const account = {site: String(client.baseUrl ?? '').replace(/\/+$/, ''), user_id: client.userId ?? null};
+  const account = checked;
   const {blocked} = authorizationReport(state, pages, account);
   const blockedByPage = new Map(blocked.map(entry => [entry.page.moodleCourseid, entry.reason]));
   // Strict verification downloads chapter files, so it keeps the course-level
@@ -377,6 +384,8 @@ export async function checkChapter({
     run_id: randomUUID().replaceAll('-', ''),
     checked_at: now(),
     mode,
+    // The baseline is only meaningful for the account that recorded it.
+    account_scope: {site: account.site, user_id: account.user_id},
     course: {
       course_id: resolved.subject,
       name: resolved.course?.name ?? null,

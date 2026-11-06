@@ -256,6 +256,9 @@ def _events(state, day):
             if event.get("date"):
                 matches = event["date"] == day.isoformat()
             else:
+                start, end = _day(schedule.get("applicable_from")), _day(schedule.get("term_end"))
+                if (start is not None and day < start) or (end is not None and day > end):
+                    continue
                 matches = event.get("weekday") == day.strftime("%A") and schedule.get("type") != "dated_activity_course"
             if not matches or (event.get("default_block_for_attendance") is not True and event.get("id") not in explicit_ids):
                 continue
@@ -286,6 +289,16 @@ def _events(state, day):
     return result
 
 
+def _has_unfinished_work(task):
+    """Require positive work evidence before carrying a past deadline forward."""
+    if str(task.get("status") or "").strip().lower() in {
+            "in progress", "not started", "pending", "incomplete", "未开始", "进行中", "未完成", "待做", "待完成"}:
+        return True
+    remaining = task.get("remaining_workload_minutes")
+    estimates = [remaining.get("min"), remaining.get("max")] if isinstance(remaining, dict) else [remaining]
+    return any(_number(value) and value > 0 for value in estimates)
+
+
 @study_time.state_timezone
 def _priorities(state, now, rows):
     tasks = {t["id"]: t for t in state.get("tasks", [])}
@@ -294,6 +307,7 @@ def _priorities(state, now, rows):
     ordered = []
     for p in _plans_for(state, now.date()):
         ordered.extend(_list(p.get("candidate_task_ids")))
+    explicit_ids = list(ordered)
     horizon = now.date() + timedelta(days=6)
     ordered.extend(r["task"]["id"] for r in rows if r["task"].get("id") and not r["past"] and
                    r["date"] and r["date"] <= horizon)
@@ -305,11 +319,15 @@ def _priorities(state, now, rows):
         if not task or task_id in seen or is_complete(task) or is_complete(all_deadlines.get(task.get("deadline_id"))):
             continue
         row = deadline_by_task.get(task_id)
-        if row and (row["past"] or is_complete(row["deadline"])):
-            continue
+        if row:
+            if is_complete(row["deadline"]):
+                continue
+            # Only today's explicit plan can revive confirmed unfinished work;
+            # stale course focus, unknown completion and past exams stay out.
+            if row["past"] and (row["exam"] or task_id not in explicit_ids or not _has_unfinished_work(task)):
+                continue
         seen.add(task_id)
         result.append((task, row))
-    explicit_ids = [task_id for plan in _plans_for(state, now.date()) for task_id in _list(plan.get("candidate_task_ids"))]
     return sorted(result, key=lambda entry: (0, explicit_ids.index(entry[0]["id"]))
                   if entry[0]["id"] in explicit_ids else
                   (1, entry[1]["date"] if entry[1] and entry[1]["date"] else date.max))

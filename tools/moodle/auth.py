@@ -58,6 +58,99 @@ def verify_token(site, token):
             raise ValueError()
     except Exception:
         raise ValueError('Token 验证失败：检查学校地址、Token 有效期和移动服务/API 权限。原有凭据未改动。') from None
+    return data
+
+
+def site_key(value):
+    """Normalize a school HTTPS URL the same way the Node tools do."""
+    parts = urlsplit(str(value or ''))
+    if (parts.scheme != 'https' or not parts.hostname or parts.username or parts.password
+            or parts.query or parts.fragment):
+        raise ValueError('无效的学校地址')
+    try:
+        port = parts.port
+    except ValueError:
+        raise ValueError('无效的学校地址') from None
+    host = parts.hostname.encode('idna').decode().lower()
+    if ':' in host:
+        host = '[' + host + ']'
+    authority = host + (':' + str(port) if port and port != 443 else '')
+    return ('https://' + authority + parts.path).rstrip('/')
+
+
+def profile_accounts(root=None):
+    """Read-only record of which school/account this Study profile has used.
+
+    The same profile folder must not silently switch school or student account:
+    numeric course/module IDs are only meaningful inside the account that created
+    them. Missing legacy account information is never guessed or back-filled.
+    """
+    root = Path(root) if root is not None else ROOT
+    accounts = []
+    state_path = root / 'Study/_System/state.json'
+    try:
+        state = json.loads(state_path.read_text(encoding='utf-8-sig'))
+    except (OSError, ValueError):
+        state = {}
+    settings = state.get('settings') if isinstance(state.get('settings'), dict) else {}
+
+    def add(value, source):
+        if not isinstance(value, dict):
+            return
+        try:
+            site = site_key(value.get('site'))
+        except (ValueError, TypeError):
+            return
+        user = value.get('user_id')
+        accounts.append({'site': site, 'user_id': user if type(user) is int and user > 0 else None,
+                         'source': source})
+
+    add(settings.get('profile_account_scope'), 'profile_account_scope')
+    authorization = settings.get('course_library_authorization')
+    if isinstance(authorization, dict) and isinstance(authorization.get('courses'), dict):
+        for grant in authorization['courses'].values():
+            if isinstance(grant, dict) and 'account_scope' in grant:
+                add(grant.get('account_scope'), 'course_library_authorization')
+    policy = settings.get('course_content_sync')
+    if isinstance(policy, dict) and policy.get('version') == 1 and isinstance(policy.get('grants'), list):
+        for grant in policy['grants']:
+            if isinstance(grant, dict):
+                add({'site': grant.get('site'), 'user_id': grant.get('user_id')}, 'course_content_sync')
+    for name in ('refresh-latest.json', 'refresh-last-complete.json'):
+        try:
+            snapshot = json.loads((root / 'Study/_System' / name).read_text(encoding='utf-8-sig'))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(snapshot, dict):
+            continue
+        add(snapshot.get('account_scope'), name)
+        add({'site': snapshot.get('moodle_url'), 'user_id': None}, name)
+    unique = []
+    for account in accounts:
+        key = (account['site'], account['user_id'])
+        if all((row['site'], row['user_id']) != key for row in unique):
+            unique.append(account)
+    return unique
+
+
+def assert_connect_identity(site, user_id=None, root=None):
+    """Refuse to attach a different school/account to this existing profile."""
+    normalized = site_key(site)
+    accounts = profile_accounts(root)
+    sites = sorted({account['site'] for account in accounts})
+    if not sites:
+        return
+    if len(sites) > 1:
+        raise ValueError('学习档案中已存在来自不同学校的记录（' + '、'.join(sites)
+                         + '），无法安全确定数字课程/模块 ID 属于哪所学校；请恢复备份，或在独立目录使用独立档案。原有凭据未改动。')
+    if sites[0] != normalized:
+        raise ValueError('同一学习档案此前用于另一所学校（' + sites[0] + '），当前学校是 ' + normalized
+                         + '。数字课程/模块 ID 在不同学校可能指向不同课程；换学校请复制/新建独立项目目录并使用独立学习档案，'
+                           '重新 setup 和登录，不要在同一 Study 档案来回切换。原有凭据未改动。')
+    known_users = {account['user_id'] for account in accounts if account['user_id'] is not None}
+    if type(user_id) is int and user_id > 0 and known_users and user_id not in known_users:
+        raise ValueError('同一学习档案此前使用的是同一学校的另一个账号，当前登录账号不同；'
+                         '请恢复原账号，或为当前账号使用独立目录和独立档案。原有凭据未改动。')
 
 
 def store_token(token):
@@ -154,10 +247,13 @@ def main():
     if url.scheme != 'https' or not url.netloc or url.username or url.password or url.query or url.fragment:
         raise ValueError('config.local.json 需要干净的学校 HTTPS 地址')
     print('学校地址：' + site, flush=True)
+    # Reject a detected school switch before touching the stored credential.
+    assert_connect_identity(site)
     token = getpass.getpass('粘贴官方 API Token（输入隐藏；不要粘贴密码）：').strip() if args.manual else browser_token(site, args.browser)
     if not re.fullmatch(r'[A-Za-z0-9]+', token):
         raise ValueError('Token 格式无效')
-    verify_token(site, token)
+    info = verify_token(site, token)
+    assert_connect_identity(site, info.get('userid'))
     store_token(token)
     print('Moodle API 已验证并加密保存。请回到当前 Harness 聊天，助手会接着列出课程，让你在聊天中选择并讲解系统用法。')
 

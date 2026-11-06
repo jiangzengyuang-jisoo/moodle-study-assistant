@@ -116,6 +116,108 @@ class CourseLibraryTests(unittest.TestCase):
                 "courses": [{"course_id": course_id, "moodle_courseid": page_id, "mode": mode}
                             for course_id, page_id in pages]}
 
+    def bind(self, site="https://school.example", user_id=17):
+        """Record the profile's school/account like an explicit selection would."""
+        state = self.read()
+        state["settings"]["profile_account_scope"] = {
+            "schema": 1, "site": site, "user_id": user_id, "bound_at": "2026-11-01T00:00:00+00:00"}
+        self.save_state(state)
+        return self.read()
+
+    def save_state(self, state):
+        self.state = state
+        self.save()
+
+    def scoped_authorization(self, *pages, mode="full", site="https://school.example", user_id=17):
+        payload = self.authorization(*pages, mode=mode)
+        for entry in payload["courses"]:
+            entry["account_scope"] = {"site": site, "user_id": user_id}
+        return payload
+
+    def test_authorize_records_explicit_account_and_never_invents_one(self):
+        # A legacy request without account information is not back-filled or bound.
+        authorize(self.state_path, self.authorization(("moodle-146265", 146265)))
+        state = self.read()
+        grant = state["settings"]["course_library_authorization"]["courses"]["moodle-146265"]
+        self.assertNotIn("account_scope", grant)
+        self.assertNotIn("profile_account_scope", state["settings"])
+        # An explicit account is recorded together with the profile binding.
+        result = authorize(self.state_path, self.scoped_authorization(("moodle-146265", 146265)))
+        self.assertTrue(result["state_written"])
+        state = self.read()
+        self.assertEqual(state["settings"]["profile_account_scope"]["site"], "https://school.example")
+        self.assertEqual(state["settings"]["profile_account_scope"]["user_id"], 17)
+        self.assertEqual(state["settings"]["profile_account_scope"]["schema"], 1)
+        self.assertEqual(state["settings"]["course_library_authorization"]["courses"]["moodle-146265"]
+                         ["account_scope"], {"site": "https://school.example", "user_id": 17})
+
+    def test_authorize_refuses_cross_school_rebinding_without_writing(self):
+        authorize(self.state_path, self.scoped_authorization(("moodle-146265", 146265)))
+        before = self.state_path.read_bytes()
+        for site, user in (("https://other.example", 18), ("https://school.example", 18)):
+            foreign = self.scoped_authorization(("moodle-146265", 146265), site=site, user_id=user)
+            with self.subTest(site=site, user=user):
+                with self.assertRaises(ValueError):
+                    authorize(self.state_path, foreign)
+                self.assertEqual(self.state_path.read_bytes(), before)
+        # Mixing two accounts across different courses is refused as well.
+        mixed = self.read()
+        mixed["settings"]["course_library_authorization"]["courses"]["moodle-146580"] = {
+            "moodle_courseid": 146580, "mode": "full",
+            "account_scope": {"site": "https://other.example", "user_id": 18}}
+        self.save_state(mixed)
+        before = self.state_path.read_bytes()
+        with self.assertRaises(ValueError):
+            authorize(self.state_path, self.scoped_authorization(("moodle-146265", 146265)))
+        self.assertEqual(self.state_path.read_bytes(), before)
+
+    def test_blocked_rebind_does_not_backfill_legacy_grant(self):
+        # Old grant has no account info; after binding is restored, a foreign
+        # attempt fails and the legacy grant keeps no invented account scope.
+        authorize(self.state_path, self.authorization(("moodle-146265", 146265)))
+        self.bind()
+        before = self.state_path.read_bytes()
+        with self.assertRaises(ValueError):
+            authorize(self.state_path, self.scoped_authorization(("moodle-146265", 146265),
+                                                                 site="https://other.example", user_id=18))
+        self.assertEqual(self.state_path.read_bytes(), before)
+        grant = self.read()["settings"]["course_library_authorization"]["courses"]["moodle-146265"]
+        self.assertNotIn("account_scope", grant)
+
+    def test_install_batch_refuses_foreign_snapshot_account_without_writing(self):
+        self.bind()
+        lecture = self.stage("Lecture 09.pdf", ["foreign snapshot file"])
+        before = self.state_path.read_bytes()
+        foreign = self.batch(self.item(lecture, "Lecture 09.pdf", module=700001, category="Lectures"),
+                             snapshot={"account_scope": {"site": "https://other.example", "user_id": 18}})
+        with self.assertRaises(ValueError) as error:
+            install_batch(self.state_path, foreign)
+        self.assertIn("另一学校/账号", str(error.exception))
+        self.assertEqual(self.state_path.read_bytes(), before)
+        self.assertFalse((self.study / "moodle-146265/Lectures/Lecture 09.pdf").exists())
+        # The matching account is still allowed to install.
+        legitimate = self.batch(self.item(lecture, "Lecture 09.pdf", module=700001, category="Lectures"),
+                                snapshot={"account_scope": {"site": "https://school.example", "user_id": 17}})
+        result = install_batch(self.state_path, legitimate)
+        self.assertEqual([item["status"] for item in result["items"]], ["promoted"])
+
+    def test_install_batch_checks_snapshot_provenance_account(self):
+        self.bind()
+        lecture = self.stage("Lecture 10.pdf", ["provenance snapshot file"])
+        run = "c" * 32
+        folder = self.study / "_System" / "Runtime" / "runs" / run
+        folder.mkdir(parents=True)
+        (folder / "snapshot.json").write_text(json.dumps(
+            {"account_scope": {"site": "https://other.example", "user_id": 18}}), encoding="utf-8")
+        before = self.state_path.read_bytes()
+        payload = self.batch(self.item(lecture, "Lecture 10.pdf", module=700002, category="Lectures"),
+                             snapshot={"path": f"Study/_System/Runtime/runs/{run}/snapshot.json"})
+        with self.assertRaises(ValueError) as error:
+            install_batch(self.state_path, payload)
+        self.assertIn("另一学校/账号", str(error.exception))
+        self.assertEqual(self.state_path.read_bytes(), before)
+        self.assertFalse((self.study / "moodle-146265/Lectures/Lecture 10.pdf").exists())
+
     def material(self, filename):
         return next(material for material in self.read()["materials"]
                     if material["filename"] == filename)

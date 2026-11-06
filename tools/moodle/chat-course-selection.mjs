@@ -1,6 +1,6 @@
 // Chat choices use the deployed DeepSeek library policy, not Codex grants.
 import {createHash} from 'node:crypto';
-import {normalizeSite} from './core.mjs';
+import {assertProfileAccount, normalizeSite, withProfileAccount} from './content-policy.mjs';
 import {SCOPE_TEXT, SCOPE_VERSION} from './course-library.mjs';
 
 function canonical(value) {
@@ -27,9 +27,12 @@ export function chatCourseOptions(args, isTTY) {
   return null;
 }
 
-export async function courseCatalog({client, readState}) {
-  const courses = await client.call('core_enrol_get_users_courses', {userid: client.userId});
+// The catalog is only usable against the profile's own school account. Showing
+// another school's page numbers could silently rebind old course records.
+export async function courseCatalog({client, readState, root = null}) {
   const state = readState();
+  assertProfileAccount({state, root, site: client.baseUrl, userId: client.userId, action: '列出课程'});
+  const courses = await client.call('core_enrol_get_users_courses', {userid: client.userId});
   return {version: 1, account_scope: {site: normalizeSite(client.baseUrl), user_id: client.userId},
     state_fingerprint: fingerprint(state), scope: SCOPE_TEXT, modes: ['full', 'info_only'],
     courses: courses.map(c => ({id: c.id, name: c.fullname, shortname: c.shortname,
@@ -37,24 +40,27 @@ export async function courseCatalog({client, readState}) {
     instruction: '在当前聊天让本人确认课程及同步方式；列表是完整选择，不是仅追加。取消则不保存。'};
 }
 
-export async function selectCoursesInChat({client, readState, writeState, selection}) {
+export async function selectCoursesInChat({client, readState, writeState, root = null, selection}) {
   if (selection?.version !== 1 || !Array.isArray(selection.course_ids) || !selection.course_ids.length
       || selection.course_ids.some(id => !Number.isSafeInteger(id) || id <= 0)
       || !['full', 'info_only'].includes(selection.mode)) {
     throw new Error('请在聊天中明确选择课程和 full / info_only；缺失参数不会进入终端菜单');
   }
-  if (selection.account_scope?.site !== normalizeSite(client.baseUrl)
-      || selection.account_scope?.user_id !== client.userId) {
+  // Fail before listing, saving or downloading: one profile keeps one account.
+  const original = readState();
+  const {account} = assertProfileAccount({state: original, root,
+    site: client.baseUrl, userId: client.userId, action: '保存选课和资料授权'});
+  if (selection.account_scope?.site !== account.site
+      || selection.account_scope?.user_id !== account.user_id) {
     throw new Error('学校或账号已变化，请重新列出课程并由本人确认');
   }
   const available = await client.call('core_enrol_get_users_courses', {userid: client.userId});
   const ids = [...new Set(selection.course_ids)];
   if (ids.some(id => !available.some(c => c.id === id))) throw new Error('课程 ID 不在当前账户列表中');
-  const original = readState();
   if (selection.state_fingerprint !== fingerprint(original)) {
     throw new Error('学习状态已变化，请重新列出课程并核对选择；未覆盖记录');
   }
-  const state = structuredClone(original);
+  const state = withProfileAccount(original, {site: account.site, userId: account.user_id});
   state.settings ??= {};
   const previous = state.settings.course_library_authorization;
   if (previous && (previous.schema !== 1 || !previous.courses || typeof previous.courses !== 'object'
@@ -74,7 +80,7 @@ export async function selectCoursesInChat({client, readState, writeState, select
     if (!course.moodle_course_ids.length) continue;
     grants[course.id] = {moodle_courseid: course.moodle_course_ids[0],
       moodle_courseids: [...course.moodle_course_ids], mode: selection.mode, authorized_at: now,
-      scope_version: SCOPE_VERSION, account_scope: structuredClone(selection.account_scope)};
+      scope_version: SCOPE_VERSION, account_scope: {site: account.site, user_id: account.user_id}};
   }
   state.settings.course_library_authorization = {...previous, schema: 1, scope_version: SCOPE_VERSION,
     scope: SCOPE_TEXT, updated_at: now, new_course_requires_authorization: true,

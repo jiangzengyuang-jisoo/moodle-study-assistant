@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import daily
 import review
-from session import Session
+from session import ProfileAccountGuard, Session
 from session_test_fixtures import write_snapshot
 from state_io import atomic, digest, read, workspace_lock
 
@@ -258,6 +258,52 @@ class ChapterCheckTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '没有匹配到章节'):
                 self.session.chapter_check('moodle-1', '99')
         self.assertEqual(before, self.session.state.read_bytes())
+
+
+class ProfileAccountGuardTests(unittest.TestCase):
+    """A deliberate one-profile-one-school-account stop is not a collection failure."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='身份 test ', dir=HERE)
+        self.addCleanup(self.tmp.cleanup)
+        self.session = Session(Path(self.tmp.name), 'user-chat')
+
+    def bind_other_school(self):
+        atomic(self.session.state, {
+            'revision': 3, 'courses': [{'id': 'moodle-8', 'moodle_course_ids': [8]}],
+            'settings': {'profile_account_scope': {'site': 'https://school.example', 'user_id': 17}},
+            'exam_profiles': [{'id': 'E'}], 'refresh_receipts': {}})
+        return self.session.state.read_bytes()
+
+    def test_guard_reason_is_surfaced_and_state_stays_byte_identical(self):
+        before = self.bind_other_school()
+        message = ('同一学习档案此前用于另一所学校（https://old.example），当前学校是 '
+                   'https://school.example；已停止采集，未写入任何记录。')
+        completed = subprocess.CompletedProcess(args=[], returncode=1, stdout=b'',
+            stderr=('PROFILE_ACCOUNT_GUARD:' + message).encode('utf-8'))
+        with patch('session.subprocess.run', return_value=completed), \
+                patch.dict(os.environ, {'STUDY_NODE': 'node'}):
+            with self.assertRaises(ProfileAccountGuard) as caught:
+                self.session.start()
+        # The user sees the real explanation, not a generic connection error.
+        self.assertIn('另一所学校', str(caught.exception))
+        self.assertEqual(before, self.session.state.read_bytes())
+        self.assertFalse(read(self.session.state).get('refresh_receipts'))
+        # A later continuation must not turn the deliberate stop into a failure
+        # receipt or exam-source staleness; it reports the stopped run, not a fetch.
+        resumed = self.session.start()
+        self.assertFalse(resumed['network_started'])
+        self.assertEqual(before, self.session.state.read_bytes())
+        self.assertFalse(read(self.session.state).get('refresh_receipts'))
+
+    def test_guard_message_is_bounded_and_optional(self):
+        from session import profile_account_guard
+        self.assertIsNone(profile_account_guard(b''))
+        self.assertIsNone(profile_account_guard('学校检查失败'))
+        self.assertEqual(profile_account_guard(b'PROFILE_ACCOUNT_GUARD:\xe5\x81\x9c\xe6\xad\xa2'),
+                         '停止')
+        long = 'X' * 2000
+        self.assertEqual(len(profile_account_guard(f'PROFILE_ACCOUNT_GUARD:{long}')), 800)
 
 
 if __name__ == '__main__': unittest.main()

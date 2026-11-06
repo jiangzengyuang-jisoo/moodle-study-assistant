@@ -94,6 +94,31 @@ def _replace(value, replacements):
     return value
 
 
+# These keys are material/system bookkeeping, not answer records: they keep the
+# old path literals on purpose and tool-owned evidence bindings live in `courses`.
+_BINDING_EXEMPT_KEYS = {"materials", "settings", "verification", "activity_log"}
+
+
+def _replace_state_paths(state, replacements):
+    """Rewrite documented paths in records, keeping tool-owned bindings exact.
+
+    An evidence binding fingerprints an original-answer record. A real material
+    move rewrites path strings inside those records, so stale fingerprints would
+    reject every later save. The pre-move snapshot lets the binding module move
+    only fingerprints whose old target is unique and whose new record is exactly
+    the old record with the same documented replacements applied; stale, legacy
+    or ambiguous bindings stay untouched for review instead of being guessed.
+    """
+    before = copy.deepcopy({key: value for key, value in state.items()
+                            if key not in _BINDING_EXEMPT_KEYS})
+    for key in list(state):
+        if key not in _BINDING_EXEMPT_KEYS:
+            state[key] = _replace(state[key], replacements)
+    from evidence_bindings import migrate_archive_bindings
+    migrate_archive_bindings(before, state,
+                             lambda value: _replace(value, replacements))
+
+
 def _notes(study):
     for path in study.rglob("*.md"):
         parts = path.relative_to(study).parts
@@ -293,9 +318,7 @@ def promote(state_path, incoming, old_id=None, at=None):
                 edits = _note_edits(study, original, archived)
                 replacements = [(old["relative_path"], archived.relative_to(study).as_posix()),
                                 (str(original), str(archived)), (original.as_posix(), archived.as_posix())]
-                for key in list(state):
-                    if key not in {"materials", "settings", "verification", "activity_log"}:
-                        state[key] = _replace(state[key], replacements)
+                _replace_state_paths(state, replacements)
             old.update(relative_path=archived.relative_to(study).as_posix(),
                        version_status="archived", superseded_by=incoming["id"],
                        archived_at=instant(at).isoformat(), archive_sha256=old["sha256"],
@@ -308,9 +331,7 @@ def promote(state_path, incoming, old_id=None, at=None):
             edits = _note_edits(study, source, target, edits)
             replacements = [(incoming["relative_path"], target.relative_to(study).as_posix()),
                             (str(source), str(target)), (source.as_posix(), target.as_posix())]
-            for key in list(state):
-                if key not in {"materials", "settings", "verification", "activity_log"}:
-                    state[key] = _replace(state[key], replacements)
+            _replace_state_paths(state, replacements)
         incoming.update(relative_path=target.relative_to(study).as_posix(), version_status="current")
         incoming.pop("superseded_by", None)
         if old:

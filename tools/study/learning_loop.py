@@ -14,6 +14,8 @@ from pathlib import Path
 import sys
 
 import review
+from question_identity import occurred_by, question_key, review_key, was_exposed
+from material_eligibility import source_issue
 
 HK = review.HK
 DEFAULT_STATE = review.DEFAULT_STATE
@@ -177,12 +179,28 @@ def prepare(state, now, minutes=15, course=None):
     if minutes > 30:
         raise ValueError("每日总复习预算不得超过 30 分钟")
     session = _session_for(state, now, minutes)
+    # Previously assigned, unanswered work is historical evidence too. Keep its
+    # original question/source, but do not carry it as currently verified work.
+    for old_session in state["review_sessions"]:
+        for old_item in old_session["items"]:
+            if old_item["status"] in {"pending", "deferred"}:
+                reason = source_issue(state, old_item.get("source"))
+                if reason:
+                    old_item.update(status="needs_review", budget_exempt=True,
+                                    source_review_reason=reason,
+                                    source_review_required_at=now.astimezone(study_time.local_zone()).isoformat())
+                elif was_exposed(state, review_key(state, old_item), now):
+                    old_item["status"] = "explained"
     _reduce_budget(session, minutes, now)
     sessions = state["review_sessions"]
     used_ids = {(item["review_id"], item["variant_id"])
                 for old in sessions for item in old["items"]}
     used_prompts = {(item["review_id"], item["prompt"].strip())
                     for old in sessions for item in old["items"]}
+    used_keys = {key for old in sessions for item in old["items"]
+                 if (key := review_key(state, item)) is not None}
+    current_keys = {key for item in session["items"]
+                    if (key := review_key(state, item)) is not None}
     pending_ids = {item["review_id"] for item in session["items"] if item["status"] in {"pending", "deferred"}}
     remaining = _budget(session)["remaining_minutes"]
     missing = []
@@ -195,6 +213,10 @@ def prepare(state, now, minutes=15, course=None):
                       for old_item in old_session["items"]
                       if old_item["review_id"] == item["id"]
                       and old_item["status"] in {"pending", "deferred"} and not old_item.get("answer_shown_at")), None)
+        if carry and was_exposed(state, review_key(state, carry[1]), now):
+            carry = None
+        if carry and review_key(state, carry[1]) in current_keys:
+            continue
         if carry and carry[1]["reserved_minutes"] <= remaining:
             old_session, old_item = carry
             chosen = deepcopy(old_item)
@@ -202,18 +224,27 @@ def prepare(state, now, minutes=15, course=None):
                           prepared_at=now.astimezone(study_time.local_zone()).isoformat(), budget_exempt=False, status="pending")
             old_item.update(status="carried_forward", carried_to_session_id=session["id"], budget_exempt=True)
             session["items"].append(chosen)
+            if (key := review_key(state, chosen)) is not None:
+                used_keys.add(key)
+                current_keys.add(key)
             remaining -= chosen["reserved_minutes"]
             continue
         if carry:
             continue
         variants = [variant for variant in item.get("practice_variants", [])
                     if _valid_variant(variant)
+                    and source_issue(state, variant.get("source")) is None
                     and (item["id"], variant["id"]) not in used_ids
                     and (item["id"], variant["prompt"].strip()) not in used_prompts
-                    and not variant.get("answer_shown_at")]
+                    and not occurred_by(variant.get("answer_shown_at"), now)
+                    and question_key(item.get("course_id"), variant) not in used_keys
+                    and not was_exposed(state, question_key(item.get("course_id"), variant), now)]
         if not variants:
+            source_problems = [source_issue(state, v.get("source"))
+                               for v in item.get("practice_variants", []) if _valid_variant(v)]
             missing.append({"review_id": item["id"], "course_id": item.get("course_id"),
-                            "reason": "需要核验过且未展示答案的新变式"})
+                            "reason": next((reason for reason in source_problems if reason),
+                                           "需要核验过且未展示答案的新变式")})
             continue
         variant = next((v for v in variants if v["estimated_minutes"] <= remaining), None)
         if variant is None:
@@ -224,7 +255,12 @@ def prepare(state, now, minutes=15, course=None):
                   "prompt": variant["prompt"], "source": deepcopy(variant["source"]),
                   "reserved_minutes": variant["estimated_minutes"], "status": "pending",
                   "assigned_at": now.astimezone(study_time.local_zone()).isoformat(), "actual_minutes": None}
+        if variant.get("options"):
+            chosen["options"] = deepcopy(variant["options"])
         session["items"].append(chosen)
+        if (key := review_key(state, chosen)) is not None:
+            used_keys.add(key)
+            current_keys.add(key)
         remaining -= chosen["reserved_minutes"]
     session["needs_preparation"] = missing
     return _public_session(state, session)
@@ -253,17 +289,20 @@ def mark_answer_shown(state, payload):
         _text(payload, key)
     evidence = _evidence(payload)
     _, item = _find_session_item(state, payload)
-    if item.get("answer_shown_at"):
-        return {"status": "duplicate", "mastery_updated": False}
     shown = _now(payload.get("shown_at"))
     if shown < _now(item["assigned_at"]) or shown > datetime.now(timezone.utc) + timedelta(minutes=5):
         raise ValueError("展示时间不能早于出题或晚于当前时间")
+    if item.get("answer_shown_at") and _now(item["answer_shown_at"]) <= shown:
+        return {"status": "duplicate", "mastery_updated": False}
     for session in state["review_sessions"]:
         for linked in session["items"]:
-            if linked["review_id"] == item["review_id"] and (linked["variant_id"] == item["variant_id"]
-                    or linked["prompt"].strip() == item["prompt"].strip()):
-                linked["answer_shown_at"] = shown.astimezone(study_time.local_zone()).isoformat()
-                linked["answer_shown_evidence"] = deepcopy(evidence)
+            same_reference = linked["review_id"] == item["review_id"] and (linked["variant_id"] == item["variant_id"]
+                    or linked["prompt"].strip() == item["prompt"].strip())
+            same_content = review_key(state, item) is not None and review_key(state, linked) == review_key(state, item)
+            if same_reference or same_content:
+                if not occurred_by(linked.get("answer_shown_at"), shown):
+                    linked["answer_shown_at"] = shown.astimezone(study_time.local_zone()).isoformat()
+                    linked["answer_shown_evidence"] = deepcopy(evidence)
                 if linked["status"] != "answered":
                     linked["status"] = "explained"
     return {"status": "recorded", "mastery_updated": False}
@@ -290,7 +329,7 @@ def record_attempt(state, payload):
             return {"status": "duplicate", "review_id": old["review_id"],
                     "next_review_at": old.get("next_review_at"), "mastery_updated": False}
     session, item = _find_session_item(state, request)
-    if item["status"] not in {"pending", "explained", "carried_forward", "deferred"}:
+    if item["status"] not in {"pending", "explained", "carried_forward", "deferred", "needs_review"}:
         raise ValueError("该日包题目已作答；后续复测请准备到期的新变式")
     now = _now(payload.get("reviewed_at"))
     if now < _now(item["assigned_at"]):
@@ -300,14 +339,18 @@ def record_attempt(state, payload):
     queue_item = next((q for q in state.get("review_queue", []) if q["id"] == item["review_id"]), None)
     if queue_item is None:
         raise ValueError("关联复习项目已不存在")
-    exposed = any(i.get("answer_shown_at")
+    exposed = any(occurred_by(i.get("answer_shown_at"), now)
                   and i["review_id"] == item["review_id"]
                   and (i["variant_id"] == item["variant_id"] or i["prompt"].strip() == item["prompt"].strip())
                   for s in state.get("review_sessions", []) for i in s["items"])
-    exposed = exposed or any(v.get("answer_shown_at") and
+    exposed = exposed or any(occurred_by(v.get("answer_shown_at"), now) and
                              (v["id"] == item["variant_id"] or v["prompt"].strip() == item["prompt"].strip())
                              for v in queue_item.get("practice_variants", []))
+    exposed = exposed or was_exposed(state, review_key(state, item), now)
     if request["independent"]:
+        reason = source_issue(state, item.get("source"), attempted_at=now)
+        if reason:
+            raise ValueError(reason + "；更新前的真实作答可按原时间补录，后续练习先保留为辅助记录")
         if request["answer_seen_before_attempt"] or exposed:
             raise ValueError("这道题的答案已经展示，不能记为独立复测；请记录辅助练习并另选新变式")
         if request["rating"] not in review.RATINGS:
@@ -346,8 +389,10 @@ def record_attempt(state, payload):
                 linked.update(status="answered", attempt_id=request["attempt_id"],
                     actual_minutes=request["actual_minutes"] if charged else None,
                     budget_exempt=not charged, budget_session_id=budget_session["id"],
-                    answered_at=attempt["reviewed_at"], answer_shown_at=attempt["reviewed_at"],
-                    answer_shown_evidence="已记录作答后的核对反馈")
+                    answered_at=attempt["reviewed_at"])
+                if not occurred_by(linked.get("answer_shown_at"), now):
+                    linked.update(answer_shown_at=attempt["reviewed_at"],
+                                  answer_shown_evidence="已记录作答后的核对反馈")
     _reduce_budget(budget_session, budget_session["budget_minutes"], now)
     return {"status": "recorded", "review_id": item["review_id"],
             "fsrs_rated": request["independent"], "next_review_at": result.get("next_review_at"),
@@ -427,6 +472,8 @@ def render_today_review(state, now):
             lines += [f"已承接到后续日包：{item['course_id']} · {item['title']}。", ""]
         elif item["status"] == "deferred":
             lines += [f"今日预算不足暂缓：{item['course_id']} · {item['title']}。未作答，不记失败。", ""]
+        elif item["status"] == "needs_review":
+            lines += [f"题源待核验：{item['course_id']} · {item['title']}。课件已变化或缺失，保留原题记录。", ""]
         else:
             lines += [f"已记录：{item['course_id']} · {item['title']}。"]
             if item["next_review_at"]:

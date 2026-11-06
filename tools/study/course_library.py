@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 import re
 import sys
+from urllib.parse import urlsplit
 
 from library import DEFAULT_STATE, Library, digest, resolve_course
 from learning_library import versions
@@ -25,6 +26,7 @@ MODES = ("full", "info_only")
 MAX_SCOPE = 2000
 RUN_ID = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 ARCHIVE_SUBDIR = re.compile(r"[A-Za-z0-9._-]{1,80}")
+ACCOUNT_SCHEMA = 1
 FIXED_AUTHORIZATION = {"new_course_requires_authorization": True,
                        "per_file_approval_required": False,
                        "background_refresh": False}
@@ -32,6 +34,61 @@ FIXED_AUTHORIZATION = {"new_course_requires_authorization": True,
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def site_key(value):
+    """Normalize a school HTTPS URL the same way the Node tools do."""
+    parts = urlsplit(str(value or ""))
+    if (parts.scheme != "https" or not parts.hostname or parts.username or parts.password
+            or parts.query or parts.fragment):
+        raise ValueError("Invalid school site")
+    try:
+        port = parts.port
+    except ValueError:
+        raise ValueError("Invalid school site") from None
+    host = parts.hostname.encode("idna").decode().lower()
+    if ":" in host:
+        host = "[" + host + "]"
+    authority = host + (":" + str(port) if port and port != 443 else "")
+    return ("https://" + authority + parts.path).rstrip("/")
+
+
+def account_scope(value):
+    """Validate one explicit school/account record; never invent missing fields."""
+    if not isinstance(value, dict):
+        raise ValueError("学校/账号记录格式无法识别，未自动补签；请恢复备份或使用独立档案")
+    try:
+        site = site_key(value.get("site"))
+    except (ValueError, TypeError):
+        raise ValueError("学校/账号记录缺少有效学校地址，未自动补签；请恢复备份或使用独立档案") from None
+    user = value.get("user_id")
+    if type(user) is not int or user <= 0:
+        raise ValueError("学校/账号记录缺少有效账号，未自动补签；请恢复备份或使用独立档案")
+    return {"site": site, "user_id": user}
+
+
+def optional_account_scope(value):
+    return None if value is None else account_scope(value)
+
+
+def profile_binding(settings):
+    if not isinstance(settings, dict) or "profile_account_scope" not in settings:
+        return None
+    return account_scope(settings["profile_account_scope"])
+
+
+def _grant_account_scope(grant):
+    if not isinstance(grant, dict) or "account_scope" not in grant:
+        return None
+    try:
+        return account_scope(grant["account_scope"])
+    except ValueError:
+        return None
+
+
+def _same_account(first, second):
+    return (first is not None and second is not None
+            and first["site"] == second["site"] and first["user_id"] == second["user_id"])
 
 
 def load(path):
@@ -67,6 +124,7 @@ def authorization_signature(auth):
             continue
         normalized[course_id] = {key: entry.get(key)
                                  for key in ("moodle_courseid", "mode", "scope_version")}
+        normalized[course_id]["account_scope"] = _grant_account_scope(entry)
     return {"schema": auth.get("schema"), "scope_version": auth.get("scope_version"),
             "scope": auth.get("scope"),
             "new_course_requires_authorization": auth.get("new_course_requires_authorization"),
@@ -97,6 +155,7 @@ def _authorization_draft(state, payload):
     previous = settings.get("course_library_authorization") if isinstance(settings, dict) else None
     existing = previous.get("courses") if isinstance(previous, dict) else None
     merged = dict(existing) if isinstance(existing, dict) else {}
+    binding = profile_binding(settings)
     now = utc_now()
     for entry in requested:
         if not isinstance(entry, dict):
@@ -114,8 +173,22 @@ def _authorization_draft(state, payload):
         entry_mode = entry.get("mode", mode)
         if entry_mode not in MODES:
             raise ValueError("Course authorization mode must be full or info_only")
-        merged[course_id] = {"moodle_courseid": moodle_courseid, "mode": entry_mode,
-                             "authorized_at": now, "scope_version": scope_version}
+        # Explicit account scope is validated and recorded; a legacy request that
+        # omits it never invents or back-fills account information.
+        entry_scope = optional_account_scope(entry.get("account_scope"))
+        if entry_scope is not None and binding is not None and not _same_account(entry_scope, binding):
+            raise ValueError("课程授权与学习档案已记录的学校/账号不一致；换学校或账号请使用独立目录和独立档案，不会自动重绑旧授权")
+        previous_scope = _grant_account_scope(merged.get(course_id))
+        if entry_scope is not None and previous_scope is not None and not _same_account(entry_scope, previous_scope):
+            raise ValueError("该课程的资料授权已属于另一学校/账号，不能自动重绑；换学校或账号请使用独立目录和独立档案")
+        new_entry = {"moodle_courseid": moodle_courseid, "mode": entry_mode,
+                     "authorized_at": now, "scope_version": scope_version}
+        if entry_scope is not None:
+            new_entry["account_scope"] = entry_scope
+        elif previous_scope is not None:
+            # Keep the recorded account instead of silently widening the grant.
+            new_entry["account_scope"] = previous_scope
+        merged[course_id] = new_entry
     return {"schema": SCHEMA, "scope_version": scope_version, "scope": scope,
             "updated_at": now, **FIXED_AUTHORIZATION, "courses": merged}
 
@@ -144,6 +217,30 @@ def _requested_course_ids(payload):
     return requested
 
 
+def _draft_account_scope(auth, requested):
+    """One shared explicit account across the requested courses, or None."""
+    courses = auth.get("courses") if isinstance(auth, dict) else {}
+    courses = courses if isinstance(courses, dict) else {}
+    scopes = []
+    for course_id in requested:
+        scope = _grant_account_scope(courses.get(course_id))
+        if scope is None:
+            return None
+        scopes.append(scope)
+    if not scopes:
+        return None
+    return scopes[0] if all(_same_account(scope, scopes[0]) for scope in scopes) else None
+
+
+def _mixed_grant_scopes(auth):
+    """True when the merged grants already mix different schools/accounts."""
+    courses = auth.get("courses") if isinstance(auth, dict) else {}
+    courses = courses if isinstance(courses, dict) else {}
+    scopes = [scope for scope in (_grant_account_scope(entry) for entry in courses.values())
+              if scope is not None]
+    return len(scopes) > 1 and any(not _same_account(scope, scopes[0]) for scope in scopes)
+
+
 def authorize(state_path, payload):
     """Persist (or merge) the user's course-level download authorization."""
     path = Path(state_path).resolve()
@@ -157,8 +254,19 @@ def authorize(state_path, payload):
         settings = state.get("settings")
         if not isinstance(settings, dict):
             settings = state["settings"] = {}
+        if _mixed_grant_scopes(auth):
+            raise ValueError("学习档案已有属于另一学校/账号的课程授权，不能混合保存；换学校或账号请使用独立目录和独立档案")
+        bound = False
+        if "profile_account_scope" not in settings:
+            scope = _draft_account_scope(auth, requested)
+            if scope is not None:
+                # An explicit authorization now carries its own account; record
+                # it so later school/account switches can be detected.
+                settings["profile_account_scope"] = {**scope, "schema": ACCOUNT_SCHEMA,
+                                                     "bound_at": auth["updated_at"]}
+                bound = True
         previous = settings.get("course_library_authorization")
-        if previous is not None and authorization_signature(previous) == authorization_signature(auth):
+        if not bound and previous is not None and authorization_signature(previous) == authorization_signature(auth):
             return _authorization_response(previous, before_state.get("revision", 0), False,
                                            payload.get("mode"), requested)
         settings["course_library_authorization"] = auth
@@ -290,6 +398,48 @@ def _install_item(state_path, state, item, index):
                         archived_id=installed.get("archived_id"))
 
 
+def _snapshot_account_scope(state_path, snapshot):
+    """Account recorded by the collection round that staged these downloads."""
+    if not isinstance(snapshot, dict):
+        return None
+    scope = snapshot.get("account_scope")
+    if isinstance(scope, dict):
+        try:
+            return account_scope(scope)
+        except ValueError:
+            return None
+    relative = snapshot.get("path")
+    if not isinstance(relative, str) or not relative:
+        return None
+    project = state_path.parent.parent.parent.resolve()
+    study = project / "Study"
+    target = (project / relative).resolve()
+    if target != study and study not in target.parents:
+        raise ValueError("快照路径必须在 Study 目录内")
+    try:
+        value = json.loads(target.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None
+    scope = value.get("account_scope") if isinstance(value, dict) else None
+    if not isinstance(scope, dict):
+        return None
+    try:
+        return account_scope(scope)
+    except ValueError:
+        return None
+
+
+def _assert_snapshot_account(state, state_path, snapshot):
+    """Never install a foreign school/account snapshot into this profile."""
+    account = _snapshot_account_scope(state_path, snapshot)
+    if account is None:
+        return
+    settings = state.get("settings") if isinstance(state.get("settings"), dict) else {}
+    binding = profile_binding(settings)
+    if binding is not None and not _same_account(account, binding):
+        raise ValueError("本轮快照属于另一学校/账号，已停止安装；请使用独立目录和独立档案，不会把数字课程/模块 ID 重绑到旧资料账本")
+
+
 def install_batch(state_path, payload):
     """Install every verified staged download; per-item failures never abort the batch."""
     path = Path(state_path).resolve()
@@ -308,6 +458,8 @@ def install_batch(state_path, payload):
     with workspace_lock(path):
         prepare_state(path)
         state = load(path)
+        # Check before the first item, so a foreign snapshot leaves state intact.
+        _assert_snapshot_account(state, path, snapshot)
         for index, item in enumerate(items):
             try:
                 results.append(_install_item(path, state, item, index))

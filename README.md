@@ -158,7 +158,7 @@ The tools use read-only Moodle APIs. With a course-level full authorization save
 
 Missing permissions, incomplete materials, scanned pages, and complex formulas require attention. Collection is separate from review; software validation cannot prove that an explanation is correct or that you have mastered a topic.
 
-A known issue remains: backdating an answer-exposure event for a mock exam can be ignored as a duplicate. Check historical exposure times before treating such an attempt as independent.
+Known limitations remain: one Study profile is deliberately bound to one school account, so changing school requires a separate folder and profile; original-answer bindings are re-anchored only for archive/move operations recorded by the version tool, while previously mismatched records still need manual review; same-question detection matches course, prompt text, options and source pages rather than semantic similarity. Real school SSO/MFA, fresh-machine installation and school API permissions remain unverified offline. See the [update report](docs/UPDATE_REPORT_2026-11-07-deepseek.md) for scope and limits.
 
 **How do I upgrade without losing my work?**
 
@@ -172,10 +172,9 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
+| [2026-11-07](CHANGELOG.en.md#2026-11-07) | Same-question exposure, planning and exam-source checks; re-verify old papers/questions after courseware archiving; five on-demand read queries; original-answer bindings across archiving and cross-school ID isolation |
 | [2026-11-05](CHANGELOG.en.md#2026-11-05) | Chapter-scoped material check: teaching one chapter verifies only that chapter's files instead of collecting the whole school |
 | [2026-11-02](CHANGELOG.en.md#2026-11-02) | Chat-based setup, course selection and proactive usage teaching; existing material library retained |
-| [2026-11-01](CHANGELOG.en.md#2026-11-01) | English and Chinese READMEs explain the course library and study continuity; narrower startup scope and clearer Moodle diagnostics |
-| [2026-10-31](CHANGELOG.en.md#2026-10-31) | Stronger learning-record protection, cross-chapter continuity, and Chinese setup diagnostics |
 
 Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.en.md) for validation details and known limitations.
 

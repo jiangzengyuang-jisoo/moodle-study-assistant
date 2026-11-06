@@ -68,19 +68,30 @@ def _parent_records(parents):
             if set(parent) - {branch} - _ROUTING]
 
 
-def _anchors(parents):
+def _anchor_records(parent_records):
     return [{'fields': sorted(parent), 'sha256': _digest(parent)}
-            for parent in _parent_records(parents)]
+            for parent in parent_records]
+
+
+def _anchors(parents):
+    return _anchor_records(_parent_records(parents))
+
+
+def _anchor_matches(state, course_id, anchors):
+    """Yield candidates whose non-routing parent records match stored anchors."""
+    for path, record, parents in _candidates(state, course_id):
+        parent_records = _parent_records(parents)
+        if len(parent_records) != len(anchors):
+            continue
+        if any(_digest(parent, anchor['fields']) != anchor['sha256']
+               for parent, anchor in zip(parent_records, anchors)):
+            continue
+        yield path, record, parent_records
 
 
 def _index(state, course_id, fields=None, anchors=()):
     result = {}
-    for path, record, parents in _candidates(state, course_id):
-        parent_records = _parent_records(parents)
-        if len(parent_records) != len(anchors) or any(
-                _digest(parent, anchor['fields']) != anchor['sha256']
-                for parent, anchor in zip(parent_records, anchors)):
-            continue
+    for path, record, _ in _anchor_matches(state, course_id, anchors):
         digest = _digest(record, fields)
         if digest is not None:
             result.setdefault(digest, (path, record))
@@ -138,6 +149,66 @@ def bind_source_changes(current, draft):
     # Do not partially enrich a rejected multi-course draft.
     for course, expected in pending:
         course['evidence_bindings'] = expected
+
+
+def migrate_archive_bindings(before, after, transform):
+    """Move tool-owned bindings across a documented material path relocation.
+
+    Called by the material version transaction right after state record strings
+    were rewritten. ``transform(value)`` must apply exactly those documented
+    replacements to a value. A binding moves only when the pre-move snapshot
+    contains exactly one record with the binding's old digest and ancestor
+    anchors (so the old target is unambiguous) and the moved state contains
+    exactly one record whose content is the old content with those replacements
+    applied. Missing, legacy, stale or ambiguous bindings stay byte-identical;
+    later saves keep refusing them instead of guessing. Returns the count moved.
+    """
+    old_courses = {course.get('id'): course for course in before.get('courses', [])
+                   if isinstance(course, dict)}
+    moved = 0
+    for course in after.get('courses', []):
+        if not isinstance(course, dict):
+            continue
+        old_course = old_courses.get(course.get('id'))
+        old_map = old_course.get('evidence_bindings') if isinstance(old_course, dict) else None
+        bindings = course.get('evidence_bindings')
+        if not isinstance(old_map, dict) or not isinstance(bindings, dict):
+            continue
+        for row in course.get('topic_evidence', []):
+            observation_id = row.get('id') if isinstance(row, dict) else None
+            binding = bindings.get(observation_id)
+            if observation_id not in old_map or not isinstance(binding, dict):
+                continue
+            if binding.get('status') != 'bound' or binding.get('course_id') != course.get('id'):
+                continue
+            fields = tuple(binding['fields']) if 'fields' in binding else None
+            anchors, sha = binding.get('ancestors', []), binding.get('sha256')
+            if not isinstance(anchors, list) or not isinstance(sha, str):
+                continue
+            old_targets = [(record, parents)
+                           for _, record, parents in _anchor_matches(before, course['id'], anchors)
+                           if _digest(record, fields) == sha]
+            if len(old_targets) != 1:
+                continue
+            record, parents = old_targets[0]
+            expected = transform(deepcopy(record))
+            expected_parents = [transform(deepcopy(parent)) for parent in parents]
+            expected_anchors = _anchor_records(expected_parents)
+            expected_sha = _digest(expected, fields)
+            if expected_sha is None:
+                continue
+            if expected_sha == sha and _canonical(expected_anchors) == _canonical(anchors):
+                continue  # No relocated path inside this record: fingerprint intact.
+            new_targets = [item for _, item, item_parents
+                           in _anchor_matches(after, course['id'], expected_anchors)
+                           if item_parents == expected_parents
+                           and _digest(item, fields) == expected_sha]
+            if len(new_targets) != 1:
+                continue
+            binding['sha256'] = expected_sha
+            binding['ancestors'] = expected_anchors
+            moved += 1
+    return moved
 
 
 def resolve_observation(state, course_id, observation_id, *, include_record=False):
