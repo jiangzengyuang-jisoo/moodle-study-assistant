@@ -31,6 +31,7 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ### Chinese and English PDF tutorials
 
+- Replace relative PDF links and their `?raw=1` redirects with full, branch-specific direct-download URLs; add GitHub preview links and save instructions. Validate all four public download URLs by fetching the complete PDF, checking HTTP 200, 14 pages and matching SHA-256 hashes against the committed files.
 - Publish the finalized Chinese tutorial and an English adaptation, each with 14 pages, with download links near the top of both READMEs.
 - Both cover Codex and DeepSeek Harness, the edition recommendation for Pro users, and separate topic chats within the same workspace. The English edition translates complete setup prompts and explains Chinese UI screenshot labels.
 - Validation: Checked PDF text completeness, page counts, bookmarks, links and rendered layout. This is a documentation-only addition: no runtime code changed or code test suites rerun, and no fresh-machine setup or real school sign-in was repeated.

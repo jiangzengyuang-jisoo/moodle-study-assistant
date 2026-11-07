@@ -6,7 +6,9 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-**Download the beginner tutorial (PDF): [English](docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf?raw=1) · [简体中文](docs/tutorials/Moodle学习助手教程.pdf?raw=1)**
+**Download the beginner tutorial (PDF): [English](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf) · [简体中文](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf)**
+
+Preview on GitHub: [English](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/blob/deepseek/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf) · [简体中文](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/blob/deepseek/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf). If a PDF opens in your browser, use its download button or Ctrl+S to save it.
 
 The 14-page tutorial covers both Codex and DeepSeek Harness: choosing an edition, installing the app and dependencies, creating a workspace, school sign-in, daily study, separate chats for different topics, and GitHub feedback. The English edition includes translated setup prompts and explanations of the Chinese screenshot labels.
 
