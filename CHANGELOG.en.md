@@ -22,6 +22,12 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-07
 
+### Git branch release
+
+- This release is based on committed fix `818304d` and targets `codex`, including the historical-evidence and review-option fixes below. It publishes repository code and documentation only, excluding personal study profiles, configuration and credentials.
+- Pre-release recheck: 20 material-version/evidence tests and 32 review-flow tests passed (52 total). This run was a targeted regression check, not a rerun of the full suite; real school login was not tested.
+- Existing users should follow the upgrade guide above and preserve their study profiles. This release does not migrate or repair existing historical records.
+
 ### Preserve historical evidence and display complete review options
 
 - Archiving and initial material installation update physical locations in the material catalog without recursively rewriting original answers, sources, evidence bindings or correction snapshots. This prevents invalid checksums and blocked subsequent full-state saves. Markdown relocation changes link destinations only; literal historical paths remain unchanged.
