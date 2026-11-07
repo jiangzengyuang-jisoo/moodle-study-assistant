@@ -216,7 +216,8 @@ def main():
                 import planning
                 now = timestamp(args.at)
                 output = learning_loop.prepare(copy.deepcopy(state), now,
-                                               planning.review_budget_limit(state, now, args.minutes), args.course)
+                                               planning.review_budget_limit(state, now, args.minutes), args.course,
+                                               remaining_minutes=planning.remaining_study_minutes(state, now))
                 output["read_only_preview"] = True
                 output["next_step"] = "正式题包请运行 daily.py run；此预览未保存新题或修改学习状态"
             else:

@@ -446,6 +446,19 @@ class LearningLoopTests(unittest.TestCase):
         self.assertFalse(any(i["status"] == "pending" for i in reduced["items"]))
         self.assertEqual(len(state["review_queue"][0]["fsrs"]["history"]), 1)
 
+    def test_remaining_minutes_restricts_unstarted_work_without_touching_history(self):
+        state = fixture(3)
+        loop.prepare(state, AT, 15)
+        limited = loop.prepare(state, AT, 15, remaining_minutes=8)
+        self.assertEqual(limited["budget_minutes"], 8)
+        self.assertEqual([i["status"] for i in limited["items"]], ["pending", "deferred", "deferred"])
+        self.assertEqual(limited["remaining_minutes"], 3)
+        with self.assertRaises(ValueError):
+            loop.prepare(state, AT, 15, remaining_minutes=-1)
+        repeated = loop.prepare(state, AT)
+        self.assertEqual(repeated["budget_minutes"], 8)
+        self.assertEqual([i["status"] for i in repeated["items"]], ["pending", "deferred", "deferred"])
+
     def test_feedback_idempotent_preserves_submission_and_unknown_time(self):
         state = fixture(1)
         original_tasks = deepcopy(state["tasks"])

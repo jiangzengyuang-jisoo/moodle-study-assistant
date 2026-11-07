@@ -15,6 +15,7 @@ _ASSESSMENT_KEYS = {'assessment', 'feedback', 'fsrs_rating'}
 _ATTEMPT_STATUSES = {'answered', 'submitted', 'graded', 'correct', 'incorrect',
                      'partially_answered', 'partially_answered_correct', 'completed'}
 _EVALUATION_STATUSES = {'correct', 'incorrect', 'partially_answered_correct'}
+_WORKFLOW_STATUSES = (_ATTEMPT_STATUSES - _EVALUATION_STATUSES) | {'pending'}
 _LIVE_ROUTING = {'status', 'stage', 'next_step', 'updated_at'}
 _SOLUTION_KEYS = {'answer_key', 'answer_keys', 'correct_answer', 'correct_answers',
                   'expected_answer', 'expected_answers', 'solution', 'solutions',
@@ -52,6 +53,18 @@ def _pending(cursor):
             yield from _pending(item)
 
 
+def workflow_status_is_routing(record):
+    """Only known workflow states on real attempts can be changed in place."""
+    return (isinstance(record, dict) and isinstance(record.get('status'), str)
+            and record['status'] in _WORKFLOW_STATUSES
+            and _has_attempt(record, include_status=False))
+
+
+def status_is_protected(record):
+    # Unknown legacy labels might be judgments (e.g. passed/failed), not routing.
+    return 'status' in record and not workflow_status_is_routing(record)
+
+
 def _preserves(previous, following, *, live=False, top=True):
     """Preserve known values and collection contents; allow additive annotation."""
     if previous is None:
@@ -60,7 +73,7 @@ def _preserves(previous, following, *, live=False, top=True):
         if not isinstance(following, dict):
             return False
         routing = _LIVE_ROUTING if live and top and _has_attempt(previous, include_status=False) else set()
-        if isinstance(previous.get('status'), str) and previous['status'] in _EVALUATION_STATUSES:
+        if not workflow_status_is_routing(previous):
             routing = routing - {'status'}  # A recorded verdict is evidence, not a next-action flag.
         return all(key in following and (
                        _same(value, following[key]) if key in _ANSWER_KEYS and value is not None

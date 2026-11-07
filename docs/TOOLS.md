@@ -89,13 +89,15 @@ node tools/moodle/run.mjs download 123 --authorized
 
 展示提示或解答时，以 `daily.py answer-shown` 记录 `session_id`、`review_id`、`variant_id` 和实际 `evidence`，可选 `shown_at`。这是曝光记录，不是虚构一次作答；下一次独立检查换新变式。
 
-统一学习流程启用后，旧 `review.py record` 拒绝绕过题包和曝光校验的直接写入。`review.py due --minutes 15` 可作只读预览。不要绕过 `daily.py` 直接调用内部函数给真实状态评级。
+统一学习流程启用后，旧 `review.py record` 拒绝绕过题包和曝光校验的直接写入。`review.py due --minutes 15` 可作只读预览，与正式题包共用当天剩余容量规则且不写状态。不要绕过 `daily.py` 直接调用内部函数给真实状态评级。
 
 ### 保存学习反馈
 
 通过标准输入调用 `daily.py feedback`。必填 `feedback_id`、`completed`、`evidence`；可选 `date`、`recorded_at`、`course_id`、`task_ids`、`actual_minutes`、`blocker`、`next_step`。
 
 `time_scope: session` 表示明确互不重叠的一次学习段；`cumulative` 表示当天累计时间；不明确则省略或为 `unknown`。未知范围不求和，最近一次累计报告不再叠加每题复习时间。自报完成不等于学校提交或独立掌握。一次用时不会自动训练排程参数。
+
+当天有明确总预算和可靠用时反馈时，主计划、正式复习题包（`daily.py` 的 `run/attempt/feedback/answer-shown/mock-attempt` 准备）和 `review.py due` 只读预览共用剩余容量：`planning.remaining_study_minutes` 按档案学习时区，用当天已知总预算（容量折算的学习预算，以及计划中直接记录的总时长；课程范围预算不当作当天总容量）减去可靠用时反馈；反馈按最近一次 `cumulative` 或明确互不重叠且编号唯一的 `session` 合计，逐题复习用时已计入累计反馈时不再重复扣除。容量耗尽后停止新增题，未开始题标为 `deferred` 且 `budget_exempt`，保留已作答、已曝光和 FSRS 历史，不记失败；重复运行或切换课程只沿用当天额度，不增加；未知用时范围或未知总容量返回空值，不猜测。
 
 所有写入均以最新状态为基础，保留上一版本、验证临时 JSON、检查并发冲突后保存。状态写入必须顺序执行，不能并行提交多个命令。
 

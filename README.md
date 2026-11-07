@@ -158,7 +158,7 @@ The tools use read-only Moodle APIs. With a course-level full authorization save
 
 Missing permissions, incomplete materials, scanned pages, and complex formulas require attention. Collection is separate from review; software validation cannot prove that an explanation is correct or that you have mastered a topic.
 
-Known limitations remain: one Study profile is deliberately bound to one school account, so changing school requires a separate folder and profile; original-answer bindings are re-anchored only for archive/move operations recorded by the version tool, while previously mismatched records still need manual review; same-question detection matches course, prompt text, options and source pages rather than semantic similarity. Real school SSO/MFA, fresh-machine installation and school API permissions remain unverified offline. See the [update report](docs/UPDATE_REPORT_2026-11-07-deepseek.md) for scope and limits.
+Known limitations remain: one Study profile is deliberately bound to one school account, so changing school requires a separate folder and profile; normal material archiving preserves original-answer bindings (archiving no longer rewrites historical evidence and does not re-anchor by fingerprint), but records already damaged or mismatched before the upgrade are never repaired automatically and still need manual comparison against a backup; same-question detection matches course, prompt text, options and source pages rather than semantic similarity. Real school SSO/MFA, fresh-machine installation and school API permissions remain unverified offline. See the [update report](docs/UPDATE_REPORT_2026-11-07-deepseek.md) for scope and limits.
 
 **How do I upgrade without losing my work?**
 
@@ -172,7 +172,7 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
-| [2026-11-07](CHANGELOG.en.md#2026-11-07) | Same-question exposure, planning and exam-source checks; re-verify old papers/questions after courseware archiving; five on-demand read queries; archive no longer rewrites history evidence; review questions keep complete multiple-choice options; cross-school ID isolation |
+| [2026-11-07](CHANGELOG.en.md#2026-11-07) | Same-question exposure, planning and exam-source checks; re-verify old papers/questions after courseware archiving; five on-demand read queries; archive no longer rewrites history evidence; review questions keep complete multiple-choice options; cross-school ID isolation; shared review remaining capacity and bound-answer grading saves |
 | [2026-11-06](CHANGELOG.en.md#2026-11-06) | Complete English changelog for Harness, bilingual navigation and English homepage links |
 | [2026-11-05](CHANGELOG.en.md#2026-11-05) | Chapter-scoped material check: teaching one chapter verifies only that chapter's files instead of collecting the whole school |
 

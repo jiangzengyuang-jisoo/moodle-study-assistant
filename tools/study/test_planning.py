@@ -278,6 +278,41 @@ class PlanningTests(unittest.TestCase):
         self.assertIn("剩余至多 60", text)
         self.assertNotIn("剩余至多 55", text)
 
+    def test_remaining_study_minutes_shares_the_known_total_budget(self):
+        state = fixture()
+        day = date(2026, 10, 11)
+        state["daily_plans"].append({"date": "2026-10-11", "available_study_minutes": 100})
+        self.assertIsNone(planning.remaining_study_minutes(state, day))
+        state["learning_feedback"] = [{"feedback_id": "F1", "date": "2026-10-11",
+                                       "actual_minutes": 10, "time_scope": "cumulative"}]
+        self.assertEqual(70, planning.remaining_study_minutes(state, day))
+        state["learning_feedback"] = [
+            {"feedback_id": "F1", "date": "2026-10-11", "actual_minutes": 10, "time_scope": "session"},
+            {"feedback_id": "F2", "date": "2026-10-11", "actual_minutes": 20, "time_scope": "session"}]
+        self.assertEqual(50, planning.remaining_study_minutes(state, day))
+        state["learning_feedback"] = [
+            {"feedback_id": "F1", "date": "2026-10-11", "actual_minutes": 10},
+            {"feedback_id": "F2", "date": "2026-10-11", "actual_minutes": 20}]
+        self.assertIsNone(planning.remaining_study_minutes(state, day))
+        state["learning_feedback"] = [{"feedback_id": "F1", "date": "2026-10-11",
+                                       "actual_minutes": 100, "time_scope": "cumulative"}]
+        self.assertEqual(0, planning.remaining_study_minutes(state, day))
+
+    def test_remaining_study_minutes_ignores_course_only_budget_and_uses_local_date(self):
+        state = fixture()
+        day = date(2026, 10, 11)
+        state["daily_plans"] = [{"date": "2026-10-11", "course_scope": ["C"],
+                                 "course_capacity": {"course_id": "C", "available_minutes_range": [240, 300]},
+                                 "budget_minutes": 50}]
+        state["learning_feedback"] = [{"feedback_id": "F1", "date": "2026-10-11",
+                                       "actual_minutes": 10, "time_scope": "cumulative"}]
+        self.assertIsNone(planning.remaining_study_minutes(state, day))
+        state["daily_plans"].append({"date": "2026-10-11", "budget_minutes": 50})
+        # A timezone-aware instant resolves to the study profile's local day (HK 2026-10-11).
+        self.assertEqual(40, planning.remaining_study_minutes(
+            state, datetime.fromisoformat("2026-10-10T18:00:00+00:00")))
+        self.assertIsNone(planning.remaining_study_minutes(state, date(2026, 10, 12)))
+
     def test_review_budget_ceiling_uses_only_today_and_never_recharges_feedback(self):
         state = fixture()
         now = "2026-10-11T12:00:00+08:00"

@@ -2,6 +2,32 @@
 
 本次只修改公开仓库的 `deepseek`（DeepSeek Harness）版，起点为 `dfcdce4`（与 `origin/deepseek` 一致）。个人本地 HKU 学习部署、真实学习记录和 `codex` 版不随本次修改；学习处理按功能从个人本地版（由 Codex 提交 `c259be5` 记录）选择性移植，没有整包合并，也没有用 Codex 文件覆盖 DeepSeek 专用实现。
 
+当日较早迁移阶段完成后，又按审计复核修复了两项流程一致性问题，见下一节；以下迁移阶段的小节保留当时结论。
+
+## 审计复核后的流程一致性修复（本轮）
+
+本轮修复前均先用仓库真实保存入口复现缺陷，修复后用同一入口和相关回归复验。
+
+### 复习剩余容量统一
+
+问题：当天可用 10 分钟、学习预算 8 分钟时，通过正常 `daily.py feedback` 保存“当天累计 8 分钟”后，主计划已显示“剩余至多 0 分钟”，但复习流程仍会给出预计 5 分钟的待答题，可能超出本人当天明确的总时长。
+
+修复：新增 `planning.remaining_study_minutes`，按档案学习时区，用当天已知总预算（容量折算的学习预算，以及计划中直接记录的总时长；课程范围预算不当作当天总容量）减去可靠用时反馈。反馈按最近一次 `cumulative` 或明确互不重叠且编号唯一的 `session` 合计；累计反馈通常已包含逐题复习用时，所以不再把逐题用时重复扣除；用时范围不明或总容量未知时返回 `None`，不猜测。主计划、`daily.py` 的 `run/attempt/feedback/answer-shown/mock-attempt` 准备的正式题包和 `review.py due` 只读预览共用该规则。`learning_loop._reduce_budget` 只收紧尚未开始的题（标为 `deferred`、`budget_exempt`，不记失败），保留已作答、已曝光和 FSRS 历史；重复调用、切换课程只沿用当天额度，不增加；日期按档案学习时区确定。
+
+### 原答绑定后的批改状态保存
+
+问题：通过真实保存入口保存原答并把状态置为 `answered`，再登记独立作答观察生成原答绑定；之后保持题干、原答、来源和作答条件不变，仅追加批改并改为 `graded`，保存入口会以“已绑定的原答必须保留在同课程……”拒绝，状态无法落盘。
+
+修复：统一 `cursor_evidence` 与 `evidence_bindings` 对流程状态的定义。`pending`、`answered`、`submitted`、`graded`、`partially_answered`、`completed` 是流程状态，有真实作答时可在同题内推进；`correct`、`incorrect`、`partially_answered_correct` 是评分结论，其他未知字符串按结论保守保护，不能当作可改流程状态。旧绑定与旧父题绑定先按当时保存的 `fields`、`sha256`、`ancestors` 在当前已保存状态中验证通过，再做规范化：流程状态从指纹中剔除，已有评分结论反向加回保护。不会拿改后的草稿重新签名，不能删绑定绕开，损坏的旧绑定不自动修复；同一次保存可以推进旧题批改，并登记引用旧观察的延迟复测；失败不落盘、不修改调用方草稿，重复校验幂等。嵌套子题的原历史保护未放宽。
+
+### 升级方式
+
+更新代码并保留 `Study/` 学习档案即可，不需要手工修改、删除或重建原答绑定。旧格式绑定会在下次通过真实保存入口校验后规范化；修复前已经损坏或失配的记录仍不会被自动修复，需要对照备份人工核对。没有数据迁移，也没有新增依赖。
+
+### 限制
+
+本轮只验证离线流程和保存入口：未连接真实学校、未读取凭据、未修改真实学习档案；未宣称完成安全审计，未升级依赖。离线测试不能证明真实学校连接、SSO/MFA 或所有安装环境一定成功。
+
 ## 迁入的学习处理
 
 - **同题答案曝光**：按“课程 + 题干 + 选项文本 + 来源资料页码”识别同一道题，即使更换复习条目、日包、卷号或题号也能发现此前展示过答案；忽略题号、评分说明和来源标注差异，但不做语义相似度猜测，题干改写、缺少来源或页码变化会视为新题。区分作答前、作答后展示：更早的曝光可以补录并覆盖较早记录，较晚的曝光不会把更早的真实独立作答判成重复，也不改写既有记录。
@@ -77,7 +103,11 @@ Codex 的章节存在式锁与 `verify-chapter` 入口本次没有移植：本�
 
 ## 验证
 
-Windows 本地、虚构档案、临时材料与模拟学校响应；不连接真实学校、不读取个人凭据、不修改任何个人学习数据。
+Windows 本地、虚构档案、临时材料与模拟学校响应；不连接真实学校、不读取个人凭据、不修改任何个人学习数据。以下先保留当日较早迁移阶段的验证记录，再列出本轮审计复核的验证。
+
+### 当日较早迁移阶段的验证（历史记录，非本轮结果）
+
+以下数字是该阶段（归档改写历史证据、复习选择题选项、按需只读查询、换校数字 ID 隔离等）的验证记录，仅作历史对照，不代表本轮审计修复后的结果。
 
 - 三套完整回归：安装/入口 Python **100** 项、学习工具 Python **535** 项、Node **138** 项，合计 **773** 项通过，**0 失败、0 跳过**（JavaScript 断言与 Python `unittest`/Node test 结果）。学习工具套件有既有的 pypdf 读取噪声输出，不影响结果；未把噪声当通过，也没有把此前的中间失败算作通过。本机系统临时目录受限时，安装/入口 Python 与 Node 套件会出现环境性失败（子进程写系统临时目录被拒）；把临时目录重定向到工作区后全部通过，与本改动无关。
 - 聚焦回归：本轮新增/更新——归档历史保护（连续两次归档、首次安装、原答/父题绑定、纠正快照、归档后完整保存、按原 ID 读取归档版本）、复习选项（保存与顺序显示、原快照承接、旧包不补猜与备选、独立评级拒绝、重复准备去重）全部通过；此前的原答绑定归档 9 项、`evidence_bindings` 11 项、`material_versions` 14 项及学习处理/按需查询/跨校隔离/快照账号等回归保持通过。
@@ -89,6 +119,19 @@ Windows 本地、虚构档案、临时材料与模拟学校响应；不连接真
 - 真实本地 `Study/` 只读审计：状态哈希检查前后一致（revision 408），394 份资料版本备份形成连续写入历史；两处问题均未发现受影响的真实记录（归档事务只改 `materials` 行；复习队列与日包为空），因此未做任何恢复；该审计报告只保存在本地，不进入公开仓库。
 - 真实学校 SSO/MFA、新机完整安装、真实学校接口权限和交互式 CLI 真实网络链路仍未验证。
 
+### 审计复核轮次的验证
+
+- 先跑定向回归，再跑目标仓库规定的三套完整回归；命令均在仓库根目录执行，使用隔离临时目录和虚构学习档案。
+- 修复前复现：用真实保存入口记录当天累计 8 分钟（可用 10、预算 8）后，主计划显示“剩余至多 0 分钟”，但复习题包仍给出预计 5 分钟的待答题；保存原答并绑定后从 `answered` 改为 `graded` 被保存入口拒绝，状态未落盘。修复后两者均通过。
+- 定向回归（修复后）：`test_daily` 20 项、`test_planning` 25 项、`test_learning_loop` 35 项、`test_study_tools` 9 项、`test_evidence_bindings` 23 项、`test_evidence_archive_binding` 10 项、`test_teaching_evidence_guards` 28 项、`test_cursor_evidence` 16 项、`test_state_draft` 10 项、`test_teaching_preservation_fixes` 17 项，全部通过。本轮新增回归 26 项（`test_daily` +11、`test_evidence_bindings` +12、`test_planning` +2、`test_learning_loop` +1）。
+- 三套完整回归（修复后最终数字）：
+  1. 安装/入口 Python：`& .\.venv\Scripts\python.exe -B -m unittest discover -s tests -p "test_*.py"` → 100 项通过，0 失败、0 跳过。
+  2. 学习工具 Python：`& .\.venv\Scripts\python.exe -B -m unittest discover -s tools/study -p "test_*.py"` → 561 项通过，0 失败、0 跳过。
+  3. Node：`node --test tests/*.test.mjs` → 138 项通过，0 失败、0 跳过。
+  合计 799 项通过。当日较早迁移阶段记录为 100 + 535 + 138 = 773 项，仅作历史对照，不是本轮结果。
+- 归档相关核对：本仓库此前的 DeepSeek 版归档修复（提交 `2eb4515`）已使正常资料归档/首次安装不再递归改写学习状态；读取 `tools/study/test_evidence_archive_binding.py` 及其真实归档链（真实文件移动 + `promote`）确认，归档后 `evidence_bindings` 字节不变且仍可解析，历史原答和父题来源不被改写，归档后完整状态保存仍可用（该套 10 项在本轮定向回归中全部通过）。旧版本已经损坏/失配的绑定保持原样、不会自动修复，完整保存仍会被拒绝。
+- 本轮未连接真实学校，未读取凭据，未修改真实学习档案；未宣称完成安全审计，未升级依赖。
+
 ## 限制
 
 - 归档/首次安装只更新资料索引中的实际位置和 Markdown 实际链接目标，不改写历史原答、父题、证据绑定或记忆纠正快照；升级前已经失配的记录仍需人工核对，保存会继续拒绝。只有旧路径、无法唯一判断版本的引用保留待核对，不指向同名新版。
@@ -98,6 +141,7 @@ Windows 本地、虚构档案、临时材料与模拟学校响应；不连接真
 - 同题识别保守：题干改写、缺少来源或页码变化会当作新题，不会因“看起来像”而合并。
 - 按需查询的完整性只描述所选接口与时间范围，不代表所有学校事件，也不代表 AI 已核读。
 - 离线测试不能证明真实学校连接、SSO/MFA、权限范围或新机安装一定成功；`configuration_ok` 不等于 Harness 实际运行已验证。
+- 本轮审计修复同样只做离线验证：未连接真实学校、未读取凭据、未修改真实学习档案；未宣称完成安全审计，未升级依赖。修复前已经损坏/失配的原答绑定不会自动修复。
 
 ## English summary
 
@@ -111,3 +155,5 @@ This update only changes the public repository's `deepseek` (DeepSeek Harness) e
 - DeepSeek-only fixes: (1) courseware archiving/first installation updates only the actual location in the material index and real Markdown link destinations; historical original answers, parent-question sources, evidence bindings and memory-correction snapshots are never rewritten, archived versions stay readable through their original material IDs, old-path-only or ambiguous references remain flagged for review instead of being retargeted to a same-named new version, and fingerprints are never recomputed to mask a rewrite; (2) one Study profile keeps one school account: selection, legacy CLI authorization, library sync, collection, content sync, downloads, refresh precheck, chapter checks, reused/supplied snapshot checks and login verify the recorded school/account first and fail closed without writing or re-binding old grants, ledger, chapter baselines or reused snapshot text. Legacy grants without account information are never guessed or back-filled; a `continue` collection stopped by this guard reports the real reason, writes no failed receipt and keeps learning state byte-identical; changing school/account requires a separate project folder and profile; (3) review packages now snapshot valid multiple-choice `options` (label→text dict, insertion order preserved) and show them in order without leaking answer checks, answers or feedback; carried packages keep their original snapshot, old packages missing options are marked for review with budget released and a persistent reason, an unused verified variant may replace them, and incomplete old questions cannot receive an independent FSRS rating once their package has been checked or their choice identity is still verifiable; if the bank can no longer establish that identity before the first preparation, the original record is kept for manual review instead of guessed.
 - Preserved DeepSeek-specific behavior: Harness configuration, `DSH_SESSION_ID` and main-chat/subtask rules; `course_library_authorization`, `full`/`info_only`, `library-sync`, `subject`/`source_pages`, LibrarySync ledger and `archive_subdir`; strict `chapter-check --section --mode strict` verification-only semantics; state locks, snapshots, original-answer and history protection; unchanged `continue`/`refresh` collection defaults. Codex's existence-based chapter lock and `verify-chapter` entry were deliberately not ported.
 - Validation: offline Windows tests with fictional data and mock school responses: **100** setup/entry Python, **535** study Python and **138** Node tests all pass (0 failures, 0 skips; **773** total). On this machine a restricted system temporary directory caused environment-only failures in the setup/entry Python and Node suites; redirecting temporary files into the workspace passed completely and those failures are unrelated to this change. Independent checks re-ran both real operation chains (save original answer → archive courseware → resolve original answer → save again; register paper → archive courseware → old paper stale → register new paper → prepare review), and a third chain covered choice-option packages (snapshot → preview/view without leakage → old-package handling → real attempt). A read-only audit of the real local `Study/` state and its 394 material-version backups (hashes identical before and after) found no real records affected by either bug, so no recovery was performed. Real school SSO/MFA, fresh-machine installation, real school API permissions and the interactive CLI against a real network remain unverified. Known limitations: history is preserved exactly as recorded, so pre-existing mismatches are never auto-repaired; one profile deliberately maps to one school account (no automatic migration); old cached snapshots without account information need one fresh collection before being reused as a text source; an old package whose choice identity can no longer be established before the first preparation is kept for manual review instead of guessed; same-question identity is conservative (rewritten stems or missing sources are treated as new questions); read-query completeness describes the selected API and time window only.
+
+Post-audit workflow-consistency fixes (this round): review remaining capacity is now shared by the main plan, the official packages prepared by `daily.py run/attempt/feedback/answer-shown/mock-attempt`, and the read-only `review.py due` preview through `planning.remaining_study_minutes` (known total budget minus reliable time feedback by the profile's study timezone; cumulative feedback is not charged twice for per-question review time; unknown range or capacity returns no value; exhausted capacity only defers unstarted items without recording failure; repeated runs or course changes do not increase the day's allowance). Bound original answers can now advance through `pending → answered → graded`: `pending`/`answered`/`submitted`/`graded`/`partially_answered`/`completed` are workflow states, while `correct`/`incorrect`/`partially_answered_correct` and unknown strings are protected as verdicts. Legacy bindings are normalized only after their old `fields`/`sha256`/`ancestors` verify against the currently saved state; a changed draft is never used to re-sign, bindings cannot be deleted to bypass checks, and damaged records are not auto-repaired. One save can grade an older question and register a delayed retest that references the older observation; failed saves write nothing and do not mutate the caller's draft, and validation is idempotent. Upgrade by updating the code and keeping the `Study/` profile; no manual binding edits are needed. Validation ran targeted regressions first (including `test_daily` 20, `test_planning` 25, `test_learning_loop` 35, `test_evidence_bindings` 23 and `test_evidence_archive_binding` 10, plus six more focused suites, all passing; 26 new regressions this round), then all three complete suites: **100** setup/entry Python, **561** study Python and **138** Node tests (**799** passed, 0 failures, 0 skips; the earlier same-day migration stage's 773 is kept only as a historical record). Tests used fictional profiles and isolated temporary directories. No real school was contacted, no credentials were read, and no real learning profile was modified; no security audit is claimed, and no dependencies were upgraded. Normal material archiving preserves original-answer bindings and no longer rewrites historical evidence, while records already damaged or mismatched are still never auto-repaired.

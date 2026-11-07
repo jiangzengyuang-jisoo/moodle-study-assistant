@@ -219,7 +219,8 @@ def _execute_loaded(state, state_path, original, command, now, minutes, course, 
         requested = minutes if minutes is not None else (existing["budget_minutes"] if existing else
                     state.get("settings", {}).get("learning_loop", {}).get("default_review_minutes", 15))
         budget = planning.review_budget_limit(state, now, requested)
-        session = learning_loop.prepare(state, now, budget, course)
+        remaining = planning.remaining_study_minutes(state, now)
+        session = learning_loop.prepare(state, now, budget, course, remaining_minutes=remaining)
     else:
         session = None
     planning.refresh_plan_state(state, now)

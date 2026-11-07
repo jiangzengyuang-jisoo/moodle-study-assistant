@@ -75,6 +75,8 @@
 
 保存入口自动为新独立/延迟观察维护 `courses[].evidence_bindings`，调用者不要手填。换题归档和课程排序后，用 `tools/study/library.cmd evidence-source --course 课程ID --observation 观察ID` 核读当前原答；旧 `source.record_path` 只保留历史位置，不能直接按其当前内容认领证据。查询会包含答案，仅用于内部核验。绑定保留登记时的题干、原答、条件等字段内容，允许后补评分等新字段，以及更新 `next_step/stage/updated_at`；已有证据要更正时保留原记录、追加更正，不覆盖。旧观察没有可靠绑定时显示 `unresolved_legacy`，保留原档案，核实后另加观察，不能自动猜测旧指针原来是哪题。
 
+绑定的 `status` 分两类：`pending`、`answered`、`submitted`、`graded`、`partially_answered`、`completed` 是流程状态，有真实作答时可在同题内推进（例如先保存原答为 `answered`、绑定后再追加批改改为 `graded`）；`correct`、`incorrect`、`partially_answered_correct` 是评分结论，其他未知字符串也按结论保守保护，不能当作可改流程状态。升级前的旧绑定或旧父题绑定会先按当时保存的 `fields`、`sha256`、`ancestors` 在当前已保存状态中验证通过，再做规范化（流程状态从指纹剔除，已有评分结论反向加回保护）；不拿修改后的草稿重新签名，也不能通过删除绑定绕开，损坏或失配的旧绑定保持原样、不自动修复，仍需对照备份人工核对。同一次保存可以推进旧题批改，并登记引用旧观察的延迟复测；校验失败时不落盘，也不修改调用方草稿，重复校验幂等。嵌套子题的原历史保护没有放宽。
+
 旧档案的 `teaching_cursor.history` 若为字典，转章时可无损变成 `[完整旧 history 字典, 旧活动游标快照, ...]`；快照只排除 `checks/history`，实际原答仍须留在当前题或 `checks`。无关保存保持旧格式，不批量改写历史、错题或材料引用。
 
 这些是 AI 的执行约定，并非软件自动监考或学习效果保证。仓库附带的技能可直接按相对路径读取，个人机器路径和全局技能安装均不是前提。
