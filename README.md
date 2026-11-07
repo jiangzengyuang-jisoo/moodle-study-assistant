@@ -168,9 +168,9 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
+| [2026-11-08](CHANGELOG.en.md#2026-11-08) | Publish audit fixes for remaining study capacity and bound-answer grading |
 | [2026-11-07](CHANGELOG.en.md#2026-11-07) | Respect remaining study time; allow grading workflow updates to bound answers; preserve archived evidence and review options |
 | [2026-11-06](CHANGELOG.en.md#2026-11-06) | Complete English changelog and bilingual navigation |
-| [2026-11-05](CHANGELOG.en.md#2026-11-05) | Strict checks of selected chapter files before teaching; local continuation and same-chat reuse; task-scoped planning and notice queries. [Codex / DeepSeek update report](docs/UPDATE_REPORT_2026-11-05.md) |
 
 
 Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.en.md) for validation details and known limitations.
