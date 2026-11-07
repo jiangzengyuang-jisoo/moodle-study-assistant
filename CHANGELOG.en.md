@@ -8,7 +8,7 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 | Date | Main changes |
 | --- | --- |
-| [2026-11-07](#2026-11-07) | Preserve historical evidence during archiving and display review options; port study improvements, scoped queries and chapter recovery |
+| [2026-11-07](#2026-11-07) | Fix remaining-time limits and grading-state saves; preserve archived evidence and review options, with scoped queries and chapter recovery |
 | [2026-11-06](#2026-11-06) | Complete English changelog, language links, and English README navigation |
 | [2026-11-05](#2026-11-05) | Strict checks of current chapter files before teaching, same-chat reuse, local continuation, and task-scoped planning and notice queries |
 | [2026-11-02](#2026-11-02) | Chat-based setup and course selection, proactive usage guidance, authorized material sync, memory recall and corrections, and client integrations |
@@ -22,7 +22,15 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-07
 
-### Git branch release
+### Workflow consistency fixes after audit verification
+
+- Plans and review selection share the same remaining-capacity rules. Once cumulative study time or explicitly non-overlapping sessions exhaust the day's budget, no new review questions are assigned. Unstarted questions are deferred to fit remaining capacity; completed answers and exposure records remain intact. Review time already included in cumulative feedback is not deducted twice, and ambiguous feedback is not summed.
+- Bound answers can advance from `answered` to `graded` and receive additional grading notes. Before adapting existing answer or parent-question bindings, the tool verifies the current original against its old fingerprint. Original answers, sources, help conditions and existing grading verdicts remain protected; bindings are not deleted to bypass checks.
+- Both homepages and the update report now distinguish repaired normal archiving from historical records already damaged by older versions, which still require individual comparison with backups.
+- Validation: all 759 public-edition offline Windows tests passed (130 Node, 92 Python setup/entry, 537 Python study), with no failures or skips, including 21 added regression tests. All 71 related budget tests passed in the personal installation. Tests affected by system temporary-directory permissions were rerun using an isolated project directory. The full run caught a `pending → answered` compatibility omission, which was repaired and rechecked.
+- Update the code while retaining study profiles; no manual binding changes are needed. Both fixes apply to public `codex`; the personal installation receives the applicable budget fix without importing the public edition's binding mechanism. The DeepSeek branch is unchanged. No real school connection was made, and this does not establish new-user installation or end-to-end AI teaching quality.
+
+### Earlier Git branch release on this date
 
 - This release is based on committed fix `818304d` and targets `codex`, including the historical-evidence and review-option fixes below. It publishes repository code and documentation only, excluding personal study profiles, configuration and credentials.
 - Pre-release recheck: 20 material-version/evidence tests and 32 review-flow tests passed (52 total). This run was a targeted regression check, not a rerun of the full suite; real school login was not tested.

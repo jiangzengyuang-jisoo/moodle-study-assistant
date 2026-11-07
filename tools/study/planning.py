@@ -182,7 +182,8 @@ def review_budget_limit(state, now=None, requested=15):
 
     Item actual/reserved minutes are already charged by learning_loop. Brief
     feedback can overlap those minutes, so neither feedback nor completed items
-    are subtracted here. Callers must retain consumed history when a limit falls.
+    are subtracted here. New work is also bounded by remaining_study_minutes;
+    learning_loop applies that allowance without charging completed work twice.
     """
     if not _number(requested) or requested > 30:
         raise ValueError("每日复习预算应为 0–30 分钟")
@@ -220,6 +221,27 @@ def _reported_minutes(feedback):
 
 
 @study_time.state_timezone
+def remaining_study_minutes(state, day):
+    """Unstarted work allowed by today's known total budget and time reports.
+
+    Feedback may already include review time. Never add individual attempts to
+    it, or turn an unknown/overlapping report into a total.
+    """
+    if isinstance(day, datetime):
+        day = local_now(day).date()
+    capacity = _capacity(state, day)
+    budgets = [capacity["budget_minutes"]] if capacity["budget_minutes"] is not None else []
+    for plan in _plans_for(state, day):
+        if not plan.get("course_scope") and not plan.get("course_capacity"):
+            budgets.extend(plan[field] for field in ("budget_minutes", "scheduled_minutes")
+                           if _number(plan.get(field)))
+    reported = _reported_minutes(_feedback(state, day))["total"]
+    if not budgets or reported is None:
+        return None
+    return max(0, min(budgets) - reported)
+
+
+@study_time.state_timezone
 def _capacity_line(state, day):
     capacity = _capacity(state, day)
     feedback = _feedback(state, day)
@@ -230,7 +252,7 @@ def _capacity_line(state, day):
     else:
         lines.append(f"已知可用 {capacity['available_minutes']:g} 分钟；学习上限安排 {capacity['budget_minutes']:g} 分钟，保留缓冲。")
         if reported["total"] is not None:
-            left = max(0, capacity["budget_minutes"] - reported["total"])
+            left = remaining_study_minutes(state, day)
             basis = "最近累计反馈" if reported["basis"] == "cumulative" else "明确独立学习段合计"
             lines.append(f"{basis} {reported['total']:g} 分钟；按该反馈，原预算内剩余至多 {left:g} 分钟（不另加逐题复习用时）。")
         elif reported["count"]:

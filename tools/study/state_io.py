@@ -180,6 +180,10 @@ def _preserve_details(previous, following, location):
             # School selection/focus legitimately changes without erasing progress.
             if location.startswith('courses[') and location.endswith(']') and key in _COURSE_UPDATES:
                 continue
+            if location == 'courses[' + str(previous.get('id')) + ']' and key == 'evidence_bindings':
+                # Tool-owned maps are checked against old/expected values by
+                # bind_source_changes, including verified legacy normalization.
+                continue
             if key in {'source', 'sources'}:
                 if not _source_enrichment(value, following[key]):
                     raise ValueError('既有来源证据不能删除或改写：' + location + '.' + key)
@@ -238,18 +242,24 @@ def validate_draft(current, draft):
         if not isinstance(following, list):
             raise ValueError('不能替换已有学习记录集合：' + name)
         _preserve_details(previous, following, name)
-        if name == 'courses':
-            old_courses = {row.get('id'): row for row in previous if isinstance(row, dict)}
-            for course in following:
-                if isinstance(course, dict):
-                    validate_course_evidence(old_courses.get(course.get('id'), {}), course, state=draft)
         if name == 'materials':
             indexed = {_identity(row): row for row in following if isinstance(row, dict)}
             for row in previous:
                 if isinstance(row, dict) and row.get('sha256') and indexed[_identity(row)].get('sha256') != row['sha256']:
                     raise ValueError('资料版本哈希不可改写，请使用资料版本工具')
     from evidence_bindings import bind_source_changes
-    bind_source_changes(current, draft)
+    # A same-save observation may refer to an older attempt whose workflow status
+    # just advanced. Validate against the verified binding view, without mutating
+    # the caller's draft if any later course/observation check fails.
+    bound_draft = dict(draft)
+    bound_draft['courses'] = [dict(course) for course in draft.get('courses', [])]
+    bind_source_changes(current, bound_draft)
+    old_courses = {course.get('id'): course for course in current.get('courses', [])}
+    for course in bound_draft['courses']:
+        validate_course_evidence(old_courses.get(course.get('id'), {}), course, state=bound_draft)
+    for course, bound in zip(draft.get('courses', []), bound_draft['courses']):
+        if 'evidence_bindings' in bound:
+            course['evidence_bindings'] = bound['evidence_bindings']
 
 
 def atomic(path, value):

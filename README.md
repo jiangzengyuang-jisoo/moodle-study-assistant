@@ -156,7 +156,7 @@ The tools are read-only. They do not submit work, answer school quizzes, post, c
 
 Missing permissions, incomplete materials, scanned pages, and complex formulas require attention. Collection is separate from review; software validation cannot prove that an explanation is correct or that you have mastered a topic.
 
-Known limitations remain: archiving a material can invalidate an original-answer binding that includes its file path, and reusing one profile for another school can collide on numeric course IDs. Earlier mock-exam exposure backfills are now retained. See the [current scope and limitations](docs/UPDATE_REPORT_2026-11-07.md).
+Normal material archiving now preserves original-answer bindings. Records already damaged by older versions still need individual comparison with backups; upgrading does not automatically repair them. Reusing one profile for another school can still collide on numeric course IDs. See the [current scope and limitations](docs/UPDATE_REPORT_2026-11-07.md).
 
 **How do I upgrade without losing my work?**
 
@@ -168,7 +168,7 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
-| [2026-11-07](CHANGELOG.en.md#2026-11-07) | Preserve historical evidence during archiving and display review options; study improvements, scoped queries and chapter recovery |
+| [2026-11-07](CHANGELOG.en.md#2026-11-07) | Respect remaining study time; allow grading workflow updates to bound answers; preserve archived evidence and review options |
 | [2026-11-06](CHANGELOG.en.md#2026-11-06) | Complete English changelog and bilingual navigation |
 | [2026-11-05](CHANGELOG.en.md#2026-11-05) | Strict checks of selected chapter files before teaching; local continuation and same-chat reuse; task-scoped planning and notice queries. [Codex / DeepSeek update report](docs/UPDATE_REPORT_2026-11-05.md) |
 

@@ -10,6 +10,7 @@ import hashlib
 import json
 
 from course_links import record_course_ids
+from cursor_evidence import workflow_status_is_routing, status_is_protected
 from teaching_evidence import (_COURSE_RECORDS, _ATTEMPT_COLLECTIONS,
                                _NON_ATTEMPT_PATHS, _resolve_attempt)
 
@@ -22,13 +23,20 @@ def _canonical(value):
 
 
 def _digest(record, fields=None):
-    # These direct fields route the next action; answer/condition/assessment and
-    # all nested fields remain part of identity. In particular status is retained.
+    # Keep the legacy default for bindings without an explicit field list.
+    # New bindings choose fields with the same workflow/verdict rule as cursors.
     fields = fields if fields is not None else sorted(set(record) - _ROUTING)
     if any(key not in record for key in fields):
         return None
     content = {key: record[key] for key in fields}
     return hashlib.sha256(_canonical(content).encode('utf-8')).hexdigest()
+
+
+def _binding_fields(record, branch=None):
+    fields = set(record) - _ROUTING - {branch}
+    if workflow_status_is_routing(record):
+        fields.discard('status')
+    return sorted(fields)
 
 
 def _escape(key):
@@ -69,8 +77,9 @@ def _parent_records(parents):
 
 
 def _anchors(parents):
-    return [{'fields': sorted(parent), 'sha256': _digest(parent)}
-            for parent in _parent_records(parents)]
+    return [{'fields': _binding_fields(parent, branch),
+             'sha256': _digest(parent, _binding_fields(parent, branch))}
+            for parent, branch in parents if set(parent) - {branch} - _ROUTING]
 
 
 def _index(state, course_id, fields=None, anchors=()):
@@ -85,6 +94,42 @@ def _index(state, course_id, fields=None, anchors=()):
         if digest is not None:
             result.setdefault(digest, (path, record))
     return result
+
+
+def _upgrade_workflow_binding(current, course_id, binding):
+    """Normalize legacy workflow fields only after verifying their old hashes.
+
+    The trusted current state supplies the original answer and parent questions;
+    a changed draft must never be used to re-sign an unverified historical link.
+    All previously bound non-routing fields retain their original values.
+    """
+    if binding.get('course_id') != course_id:
+        return binding
+    found = _index(current, course_id, binding.get('fields'),
+                   binding.get('ancestors', [])).get(binding.get('sha256'))
+    if found is None:
+        return binding  # Existing missing evidence remains missing, not guessed.
+    path, record = found
+    parents = next(parents for candidate, _, parents in _candidates(current, course_id)
+                   if candidate == path)
+    upgraded = deepcopy(binding)
+    fields = binding.get('fields', sorted(set(record) - _ROUTING))
+    if 'status' in fields and workflow_status_is_routing(record):
+        upgraded['fields'] = [key for key in fields if key != 'status']
+        upgraded['sha256'] = _digest(record, upgraded['fields'])
+    elif 'status' not in fields and status_is_protected(record):
+        upgraded['fields'] = sorted([*fields, 'status'])
+        upgraded['sha256'] = _digest(record, upgraded['fields'])
+    parent_contexts = [(parent, branch) for parent, branch in parents
+                       if set(parent) - {branch} - _ROUTING]
+    for anchor, (parent, _) in zip(upgraded.get('ancestors', []), parent_contexts):
+        if 'status' in anchor['fields'] and workflow_status_is_routing(parent):
+            anchor['fields'] = [key for key in anchor['fields'] if key != 'status']
+            anchor['sha256'] = _digest(parent, anchor['fields'])
+        elif 'status' not in anchor['fields'] and status_is_protected(parent):
+            anchor['fields'] = sorted([*anchor['fields'], 'status'])
+            anchor['sha256'] = _digest(parent, anchor['fields'])
+    return upgraded
 
 
 def bind_source_changes(current, draft):
@@ -104,11 +149,19 @@ def bind_source_changes(current, draft):
         expected = deepcopy(old_map)
         old_ids = {row.get('id') for row in old.get('topic_evidence', [])}
         indexes = {}
-        for row in course.get('topic_evidence', []):
+        observations = course.get('topic_evidence', [])
+        if not isinstance(observations, list):
+            raise ValueError('topic_evidence 必须是追加式记录列表')
+        for row in observations:
+            if (not isinstance(row, dict) or not isinstance(row.get('id'), str)
+                    or not row['id'].strip() or not isinstance(row.get('source', {}), dict)):
+                raise ValueError('知识观察需要唯一记录 ID 和有效来源')
             source = row.get('source', {})
             if row['id'] in old_map:
                 binding = old_map[row['id']]
                 if binding.get('status') == 'bound':
+                    binding = _upgrade_workflow_binding(current, course['id'], binding)
+                    expected[row['id']] = binding
                     fields = tuple(binding['fields']) if 'fields' in binding else None
                     anchors = binding.get('ancestors', [])
                     index_key = (fields, _canonical(anchors))
@@ -127,9 +180,9 @@ def bind_source_changes(current, draft):
                                    if path == source['record_path'])
                     expected[row['id']] = {'status': 'bound', 'course_id': course['id'],
                                            'record_path_at_binding': source['record_path'],
-                                           'fields': sorted(set(record) - _ROUTING),
+                                           'fields': _binding_fields(record),
                                            'ancestors': _anchors(parents),
-                                           'sha256': _digest(record)}
+                                           'sha256': _digest(record, _binding_fields(record))}
         supplied = course.get('evidence_bindings', {})
         if _canonical(supplied) not in (_canonical(old_map), _canonical(expected)):
             raise ValueError('原答绑定由保存工具维护，不能手动修改或伪造')

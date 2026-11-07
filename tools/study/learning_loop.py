@@ -151,13 +151,17 @@ def _session_for(state, now, minutes=15):
     return session
 
 
-def _reduce_budget(session, minutes, now):
+def _reduce_budget(session, minutes, now, remaining_minutes=None):
     """Fit unstarted work around actual time without raising the daily limit."""
     minutes = min(minutes, session["budget_minutes"])
-    session["budget_minutes"] = minutes
     fixed = sum((item.get("actual_minutes") if item.get("actual_minutes") is not None
                  else item["reserved_minutes"]) for item in session["items"]
                 if item["status"] != "pending" and not item.get("budget_exempt"))
+    if remaining_minutes is not None:
+        # Reports may include these completed/exposed minutes. Restrict only
+        # unstarted work, retaining the fixed charge and all historical items.
+        minutes = min(minutes, fixed + remaining_minutes)
+    session["budget_minutes"] = minutes
     remaining = max(0, minutes - fixed)
     for item in session["items"]:
         if item["status"] != "pending":
@@ -211,7 +215,7 @@ def _public_session(state, session):
 
 
 @study_time.state_timezone
-def prepare(state, now, minutes=15, course=None):
+def prepare(state, now, minutes=15, course=None, *, remaining_minutes=None):
     """Reuse today's shared budget and select verified, unseen, due variants.
 
     An unfinished, unexposed question carries forward without using a new variant.
@@ -222,6 +226,7 @@ def prepare(state, now, minutes=15, course=None):
     """
     now = _now(now)
     _minutes(minutes)
+    _minutes(remaining_minutes, nullable=True)
     if minutes > 30:
         raise ValueError("每日总复习预算不得超过 30 分钟")
     session = _session_for(state, now, minutes)
@@ -244,7 +249,7 @@ def prepare(state, now, minutes=15, course=None):
                                     source_review_required_at=now.astimezone(study_time.local_zone()).isoformat())
                 elif was_exposed(state, review_key(state, old_item), now):
                     old_item["status"] = "explained"
-    _reduce_budget(session, minutes, now)
+    _reduce_budget(session, minutes, now, remaining_minutes)
     sessions = state["review_sessions"]
     used_ids = {(item["review_id"], item["variant_id"])
                 for old in sessions for item in old["items"]}
