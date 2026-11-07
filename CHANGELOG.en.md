@@ -14,6 +14,7 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 | Date | Main changes |
 | --- | --- |
+| [2026-11-08](#2026-11-08) | Publish audit fixes for remaining study capacity and bound-answer grading |
 | [2026-11-07](#2026-11-07) | Port same-question exposure, planning and exam-source checks; re-verify old papers/questions after courseware archiving; add five on-demand read queries; fix archive rewriting history evidence and review packages missing multiple-choice options; fix cross-school numeric ID collisions; post-audit fixes for review remaining capacity and bound-answer grading saves |
 | [2026-11-06](#2026-11-06) | Complete English changelog for the Harness edition, language links, and English README navigation |
 | [2026-11-05](#2026-11-05) | Chapter-scoped checks: starting a chapter strictly verifies its files instead of collecting information across the school |
@@ -25,6 +26,15 @@ Existing users should first read the [upgrade steps that preserve learning recor
 | [2026-10-16](#2026-10-16) | Built-in self-study tutor with graded hints, Feynman explanations, transfer practice, and independent checks |
 | [2026-10-11](#2026-10-11) | Daily review questions, learning feedback, weekly reviews, exam coverage checks, and mock exams |
 | [2026-09-22](#2026-09-22) | Initial release: Windows installation, school account connection, course information, and learning records |
+
+## 2026-11-08
+
+### Audit-fix publication
+
+- This publication uses `325f830` as its code baseline and targets `deepseek`. Plans, official review packages and read-only previews share remaining capacity, stop adding questions when time is exhausted and avoid deducting review time already included in cumulative feedback twice.
+- Bound answers can advance through grading workflow states. Verified legacy and parent-question bindings remain compatible while answers, sources, help conditions, grading verdicts and unknown states remain protected. Bilingual documentation distinguishes repaired normal archiving from old records requiring review.
+- Validation: Reran all three offline suites before publication on November 8: 138 Node, 100 Python setup/entry and 561 Python study tests; all 799 passed with no failures or skips.
+- Upgrade the matching client branch while retaining `Study/`, configuration and credentials; do not manually delete or rebuild bindings. Previously damaged records still need individual comparison with backups. Only code, tests and documentation are published, excluding personal profiles. Offline checks do not establish real school SSO/MFA, fresh-machine setup or end-to-end teaching quality.
 
 ## 2026-11-07
 
