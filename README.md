@@ -22,9 +22,9 @@ The library supports PDF, PPTX, DOCX, HTML, text, and images. Updated materials 
 
 ### Learning grounded in your own course
 
-The assistant is instructed to use your instructor's terminology and methods, check current assignment requirements, and prepare revision around the exam scope that has actually been published. Missing material or unconfirmed requirements should remain explicit gaps.
+The assistant is instructed to use your instructor's terminology and methods, check current assignment requirements, and organize chapter explanations around understanding; it prepares exam revision around published exam scope only when you ask for exam preparation. Missing material or unconfirmed requirements should remain explicit gaps.
 
-**The goal is to stay aligned with your course. This cannot guarantee that every answer is correct or within the syllabus.** An assignment does not define the entire exam scope, and the model still needs to read and verify the sources. [Exam preparation rules](docs/EXAM_PREP.md).
+**The goal is to stay aligned with your course. This cannot guarantee that every answer is correct or fully within the scope you requested.** An assignment does not define the entire exam scope, and the model still needs to read and verify the sources. [Exam preparation rules](docs/EXAM_PREP.md).
 
 ### Progress that survives a new chat
 
@@ -68,7 +68,7 @@ An example request combining materials, scope, and progress:
 
 This is a sample prompt, not a transcript or a claim that a course has already been checked.
 
-Moodle is collected when a chat first enters course learning, review, or study planning; later turns reuse the checked evidence. Ask explicitly for a refresh to get newer information. Unrelated questions skip the study startup, and connection repair runs only necessary diagnostics. There is no background monitoring or scheduled refresh.
+Moodle is collected only when the current request needs school information (assignment requirements, deadlines, announcements, discussions), study planning, exam preparation, first installation or course switching, or when local chapter material is missing. A chapter explanation with local materials uses local continuity and a chapter-scoped check instead. Later turns reuse the checked evidence. Ask explicitly for a refresh to get newer information. Unrelated questions skip the study startup, and connection repair runs only necessary diagnostics. There is no background monitoring or scheduled refresh.
 
 ## Get started
 
@@ -172,7 +172,7 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
-| [2026-11-08](CHANGELOG.en.md#2026-11-08) | Publish audit fixes for remaining study capacity and bound-answer grading; make chapter checks locate the chapter precisely, reuse same-chat strict receipts and show stage progress |
+| [2026-11-08](CHANGELOG.en.md#2026-11-08) | Publish audit fixes for remaining study capacity and bound-answer grading; make chapter checks locate the chapter precisely, reuse same-chat strict receipts and show stage progress; align request-type routing and exam-information timing |
 | [2026-11-07](CHANGELOG.en.md#2026-11-07) | Same-question exposure, planning and exam-source checks; re-verify old papers/questions after courseware archiving; five on-demand read queries; archive no longer rewrites history evidence; review questions keep complete multiple-choice options; cross-school ID isolation; shared review remaining capacity and bound-answer grading saves |
 | [2026-11-06](CHANGELOG.en.md#2026-11-06) | Complete English changelog for Harness, bilingual navigation and English homepage links |
 

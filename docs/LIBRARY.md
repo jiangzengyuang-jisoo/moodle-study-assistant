@@ -29,7 +29,7 @@
 & 'tools/study/library.cmd' render COURSE101-LECTURE1 --unit 7
 ```
 
-1. `context` 直接读最新状态，带版本、待答题、教学接续、作业重点和遗漏项路径。没有课程参数时只返回课程总览。不能把摘要当成完整个人历史；相关 `orientation`、`assistant_notes`、讨论与错题用 `detail` 补读。计划另读 schedules/settings 和相关任务。
+1. `context` 直接读最新状态，带版本、待答题、教学接续、作业重点和遗漏项路径。没有课程参数时只返回课程总览。返回的 `request_policy` 说明当前请求优先于长期课程安排与考试背景；orientation、作业、截止日期和考试信息只是背景，不替代本章教学主线。不能把摘要当成完整个人历史；相关 `orientation`、`assistant_notes`、讨论与错题用 `detail` 补读。计划另读 schedules/settings 和相关任务。
 2. `search` 用标题、页码索引、逐页文字、中英常用术语、PPTX备注和可用OCR找候选页。返回来源类型、完整路径、哈希和质量标志。关键词未命中不等于没有该知识；换原文术语、查看章节目录或扩大范围。
 3. `read` 返回完整页面，默认前后各一页，不截断正文；题设、定义、证明或图表跨页时继续扩大。`--start 6 --end 8 --around 1` 返回第5–9页。OCR与speaker notes单独标示，不能冒充正文。
 4. `render` 返回缓存的原PDF页图；助手用图像工具实际查看公式、表格、图示、手写和局部“不考”注记。图片文件直接返回原件。PPTX/DOCX返回原文件入口与slide/section编号；本工具没有把它们伪装成已经视觉验证的PDF。在 DeepSeek Harness 中，把返回的 `path` 交给 `read_image` 查看；渲染结果 `verified:false`，看到原页不等于核读通过或掌握。
@@ -46,7 +46,7 @@
 & 'tools/study/library.cmd' outline --course COURSE101
 ```
 
-以最新作业/考试范围、全部相关资料、章节和教学接续建立覆盖清单，再逐节读取。目录包含无文字、未索引和失效项目，不把top-k搜索结果、抽取成功或现有page_map当作全覆盖。DOCX/HTML的编号是结构段，PDF是物理页，PPTX是演示顺序slide。
+以当前请求范围（本章/作业/考试范围）与全部相关资料、章节和教学接续建立覆盖清单，再逐节读取。目录包含无文字、未索引和失效项目，不把top-k搜索结果、抽取成功或现有page_map当作全覆盖。DOCX/HTML的编号是结构段，PDF是物理页，PPTX是演示顺序slide。
 
 讲义与slides可能互补；原页中被文字抽取遗漏的图形依然存在。抽取/OCR结果始终 `verified:false`。历史原页审阅仅在来源哈希一致时可沿用其明确范围，不等于本次全文检查，更不表示学生掌握。
 

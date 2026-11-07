@@ -62,6 +62,31 @@ class LibraryContextTests(unittest.TestCase):
         self.assertEqual(result["sections"]["tasks"][0]["status"], "completed")
         self.assertIsNone(result["sections"]["deadlines"][0]["time"])
 
+    def test_request_policy_leads_course_context(self):
+        result = build_context(fixture(), "A")
+        sections = result["sections"]
+        self.assertEqual(next(iter(sections)), "request_policy")
+        policy = sections["request_policy"]
+        self.assertEqual(policy["decides"], "当前用户请求决定本轮任务类型；以下课程接续、作业、截止日期和考试信息只是背景。")
+        rules = "\n".join(policy["do_not"])
+        for phrase in ("备考", "考试范围", "考试日期", "题型", "占比", "Not required for the exam", "本章接续", "精准章节核对"):
+            self.assertIn(phrase, rules)
+        self.assertIn("本章问题", policy["chapter_explanation"])
+        self.assertIn("学习证据", policy["chapter_explanation"])
+        self.assertIn("备考", policy["exam_info_usage"])
+        self.assertIn("原始考试信息", policy["exam_info_usage"])
+        self.assertEqual(policy["background_fields"], ["course.current_topic", "course.orientation", "tasks", "deadlines", "exam_profiles"])
+
+    def test_request_policy_scope_and_course_focus(self):
+        overview = build_context(fixture())
+        self.assertNotIn("request_policy", overview["sections"])
+        detail = build_context(fixture(), "A", True)
+        self.assertNotIn("request_policy", detail["sections"])
+        policy = build_context(fixture(), "A")["sections"]["course"]["continuity_policy"]
+        self.assertIn("course_focus", policy)
+        self.assertIn("不是本轮任务", policy["course_focus"])
+        self.assertIn("本章教学主线", policy["course_focus"])
+
     def test_no_mutation_and_alias(self):
         state = fixture()
         original = copy.deepcopy(state)
