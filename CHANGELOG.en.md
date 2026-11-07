@@ -28,6 +28,12 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-07
 
+### Git branch release
+
+- This release is based on committed fix `2eb4515` and targets `deepseek`, including the historical-evidence and review-option fixes below while retaining Harness-specific implementations. It publishes repository code and documentation only, excluding personal study profiles, configuration and credentials.
+- Pre-release recheck: 17 material-version, 10 archive-evidence binding, 34 review-flow and 9 daily-plan tests passed (70 total). This run was a targeted regression check, not a rerun of the full suite; real school login was not tested.
+- Existing users should follow the upgrade guide above and preserve their study profiles. This release does not migrate or repair existing historical records.
+
 ### Ported learning improvements, on-demand queries, and Harness-edition fixes
 
 - Before publication, restored the missing November 6 entry on both homepages so their three most recent updates match the full changelog.
