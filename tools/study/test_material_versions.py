@@ -73,7 +73,10 @@ class MaterialVersionsTests(unittest.TestCase):
         self.assertIn('OLD_SENTINEL', history['pages'][0]['text'])
         mistake = self.read()['mistakes'][0]
         self.assertEqual((mistake['material_id'], mistake['page'], mistake['answer']), ('old', 1, 'original answer'))
-        self.assertEqual(mistake['source'], self.archived()['relative_path'])
+        # A courseware archive never rewrites the historical record: it keeps the
+        # original path string and hash even though the current file now sits there.
+        self.assertEqual(mistake['source'], self.old['relative_path'])
+        self.assertEqual(self.archived()['original_relative_path'], self.old['relative_path'])
         self.assertEqual(self.read()['courses'], self.state['courses'])
 
     def test_both_old_and_new_note_links_move_to_correct_original(self):
@@ -84,6 +87,93 @@ class MaterialVersionsTests(unittest.TestCase):
         self.assertIn('_Archive/', text)
         self.assertIn('[new](<Lectures/lesson.pdf>)', text)
         self.assertNotIn('_Inbox', text)
+
+    def test_note_link_targets_move_but_plain_text_history_is_not_rewritten(self):
+        note = self.study / 'A/history.md'
+        prose = '第 3 页引用 A/Lectures/lesson.pdf，旧版公式保留在这里。\n'
+        note.write_text(prose + '[旧版](Lectures/lesson.pdf#page=3)\n', encoding='utf-8')
+        self.promote()
+        text = note.read_text(encoding='utf-8')
+        # Plain historical prose keeps the old path literal; only the link target moves.
+        self.assertIn(prose, text)
+        self.assertIn('](<_Archive/', text)
+        self.assertIn('#page=3>)', text)
+
+    def test_archive_keeps_memory_correction_snapshot_and_accepts_full_save(self):
+        from learning_library.evidence import record_hash
+        from memory_store import save_correction
+        from state_io import bridge
+        self.state['courses'][0]['teaching_cursor'] = {
+            'stage': 'practice', 'topic': 'limits',
+            'source': {'material_id': 'old', 'relative_path': self.old['relative_path'], 'pages': [1, 2]}}
+        self.state['mistakes'][0].update(
+            material_id='old', user_answer='original answer',
+            source={'material_id': 'old', 'relative_path': self.old['relative_path'], 'pages': [2]})
+        self.save()
+        target = self.read()['mistakes'][0]
+        request = {'id': 'CORRECTION-1', 'expected_revision': self.read()['revision'],
+                   'target_path': '/mistakes/0', 'target_sha256': record_hash(target),
+                   'statement': 'The recorded method is outdated; keep both versions.'}
+        self.assertTrue(save_correction(self.path, 'A', request)['saved'])
+        saved_before = self.read()
+        correction_before = copy.deepcopy(saved_before['courses'][0]['memory_corrections'][0])
+        history_before = copy.deepcopy(saved_before['mistakes'][0])
+        self.assertEqual(record_hash(correction_before['target_snapshot']), correction_before['target_sha256'])
+        self.promote()
+        saved = self.read()
+        correction = saved['courses'][0]['memory_corrections'][0]
+        self.assertEqual(correction, correction_before)
+        self.assertEqual(record_hash(correction['target_snapshot']), correction['target_sha256'])
+        self.assertEqual(saved['courses'][0]['teaching_cursor'], saved_before['courses'][0]['teaching_cursor'])
+        self.assertEqual(saved['mistakes'][0], history_before)
+        self.assertEqual(saved['materials'][0]['relative_path'], self.archived()['relative_path'])
+        # A normal complete save after the archive is accepted, not blocked by
+        # stale fingerprints or a snapshot that no longer matches its hash.
+        bridge(self.path, 'replace', {'expected': copy.deepcopy(saved), 'state': copy.deepcopy(saved)})
+        after = self.read()
+        self.assertEqual(after['revision'], saved['revision'] + 1)
+        self.assertEqual(after['courses'][0]['memory_corrections'], saved['courses'][0]['memory_corrections'])
+        self.assertEqual(after['mistakes'], saved['mistakes'])
+
+    def test_two_consecutive_archives_keep_history_and_readable_original_ids(self):
+        self.state['courses'][0]['teaching_cursor'] = {
+            'stage': 'practice', 'topic': 'limits',
+            'pending_check': {'id': 'q1', 'prompt': 'Q1', 'user_answer': 'A',
+                              'source': {'material_id': 'old', 'relative_path': self.old['relative_path'], 'pages': [1]},
+                              'parts': [{'id': 'p1', 'prompt': 'part', 'user_answer': 'B'}]}}
+        self.state['mistakes'][0].update(
+            material_id='old', user_answer='original answer',
+            source={'material_id': 'old', 'relative_path': self.old['relative_path'], 'pages': [2]})
+        self.state['review_attempts'] = [
+            {'id': 'r1', 'course_id': 'A', 'material_id': 'old', 'user_answer': 'C',
+             'source': {'material_id': 'old', 'relative_path': self.old['relative_path'], 'pages': [3]}}]
+        self.save()
+        history_before = copy.deepcopy({key: self.read()[key] for key in ('courses', 'mistakes', 'review_attempts')})
+        self.promote()
+        self.state = self.read()
+        newer = self.material('new2', '_Inbox/new2/lesson.pdf', 'NEW2_SENTINEL')
+        self.assertEqual(v.promote(self.path, newer, 'new', at=T0)['status'], 'promoted')
+        saved = self.read()
+        for key, value in history_before.items():
+            self.assertEqual(saved[key], value, key)
+        rows = {row['id']: row for row in saved['materials']}
+        self.assertEqual(rows['old']['superseded_by'], 'new')
+        self.assertEqual(rows['new']['superseded_by'], 'new2')
+        self.assertEqual(rows['new2']['version_status'], 'current')
+        self.assertEqual(rows['new2']['relative_path'], self.old['relative_path'])
+        self.assertIn('_Archive', rows['old']['relative_path'])
+        self.assertIn('_Archive', rows['new']['relative_path'])
+        self.assertNotEqual(rows['old']['relative_path'], rows['new']['relative_path'])
+        for row in rows.values():
+            self.assertEqual(v.sha(self.study / row['relative_path']), row['sha256'])
+        # Historical materials stay readable through their original material IDs.
+        self.lib.sync()
+        self.assertIn('OLD_SENTINEL', self.lib.read('old', include_archived=True)['pages'][0]['text'])
+        self.assertIn('NEW_SENTINEL', self.lib.read('new', include_archived=True)['pages'][0]['text'])
+        self.assertIn('NEW2_SENTINEL', self.lib.read('new2')['pages'][0]['text'])
+        from state_io import bridge
+        bridge(self.path, 'replace', {'expected': copy.deepcopy(saved), 'state': copy.deepcopy(saved)})
+        self.assertEqual(self.read()['revision'], saved['revision'] + 1)
 
     def test_same_filename_is_not_a_version_relationship(self):
         self.new['moodle_file_sources'][0]['module_id'] = 999

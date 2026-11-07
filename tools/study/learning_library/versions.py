@@ -1,4 +1,10 @@
-"""Transactional material versions; state IDs always keep their original evidence."""
+"""Transactional material versions; history keeps its original evidence and paths.
+
+A version move changes two things only: the physical files and the material index
+rows plus actual Markdown link destinations. Historical answers, sources, parent
+questions, evidence bindings and memory-correction snapshots are never rewritten,
+so their fingerprints stay valid without being recomputed.
+"""
 from state_io import locked
 import copy
 from datetime import datetime, timedelta, timezone
@@ -83,42 +89,6 @@ def verify(study, row):
     return path
 
 
-def _replace(value, replacements):
-    if isinstance(value, dict):
-        return {k: _replace(v, replacements) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_replace(v, replacements) for v in value]
-    if isinstance(value, str):
-        for old, new in sorted(replacements, key=lambda pair: -len(pair[0])):
-            value = value.replace(old, new)
-    return value
-
-
-# These keys are material/system bookkeeping, not answer records: they keep the
-# old path literals on purpose and tool-owned evidence bindings live in `courses`.
-_BINDING_EXEMPT_KEYS = {"materials", "settings", "verification", "activity_log"}
-
-
-def _replace_state_paths(state, replacements):
-    """Rewrite documented paths in records, keeping tool-owned bindings exact.
-
-    An evidence binding fingerprints an original-answer record. A real material
-    move rewrites path strings inside those records, so stale fingerprints would
-    reject every later save. The pre-move snapshot lets the binding module move
-    only fingerprints whose old target is unique and whose new record is exactly
-    the old record with the same documented replacements applied; stale, legacy
-    or ambiguous bindings stay untouched for review instead of being guessed.
-    """
-    before = copy.deepcopy({key: value for key, value in state.items()
-                            if key not in _BINDING_EXEMPT_KEYS})
-    for key in list(state):
-        if key not in _BINDING_EXEMPT_KEYS:
-            state[key] = _replace(state[key], replacements)
-    from evidence_bindings import migrate_archive_bindings
-    migrate_archive_bindings(before, state,
-                             lambda value: _replace(value, replacements))
-
-
 def _notes(study):
     for path in study.rglob("*.md"):
         parts = path.relative_to(study).parts
@@ -129,10 +99,7 @@ def _notes(study):
 
 
 def _note_edits(study, old, archived, previous=()):
-    """Preserve literal paths and actual Markdown link targets, including relative links."""
-    import os
-    replacements = [(old.as_posix(), archived.as_posix()), (str(old), str(archived)),
-                    (old.relative_to(study).as_posix(), archived.relative_to(study).as_posix())]
+    """Migrate actual Markdown link targets only; historical prose stays literal."""
     edits = dict(previous)
     for path in _notes(study):
         original = edits.get(path, path.read_text(encoding="utf-8-sig"))
@@ -151,7 +118,6 @@ def _note_edits(study, old, archived, previous=()):
             destination = Path(os.path.relpath(archived, path.parent)).as_posix()
             return "](<" + destination + ("#" + anchor if anchor else "") + ">)"
         updated = re.sub(r"\]\((<[^>]+>|[^)]+)\)", target, original)
-        updated = _replace(updated, replacements)
         if updated != original:
             edits[path] = updated
     return list(edits.items())
@@ -316,9 +282,6 @@ def promote(state_path, incoming, old_id=None, at=None):
             if original != archived:
                 moves.append((original, archived))
                 edits = _note_edits(study, original, archived)
-                replacements = [(old["relative_path"], archived.relative_to(study).as_posix()),
-                                (str(original), str(archived)), (original.as_posix(), archived.as_posix())]
-                _replace_state_paths(state, replacements)
             old.update(relative_path=archived.relative_to(study).as_posix(),
                        version_status="archived", superseded_by=incoming["id"],
                        archived_at=instant(at).isoformat(), archive_sha256=old["sha256"],
@@ -329,9 +292,6 @@ def promote(state_path, incoming, old_id=None, at=None):
                 raise ValueError("Same filename is not proof of supersession; specify the verified old material")
             moves.append((source, target))
             edits = _note_edits(study, source, target, edits)
-            replacements = [(incoming["relative_path"], target.relative_to(study).as_posix()),
-                            (str(source), str(target)), (source.as_posix(), target.as_posix())]
-            _replace_state_paths(state, replacements)
         incoming.update(relative_path=target.relative_to(study).as_posix(), version_status="current")
         incoming.pop("superseded_by", None)
         if old:

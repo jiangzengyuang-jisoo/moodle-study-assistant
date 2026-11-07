@@ -60,6 +60,188 @@ class LearningLoopTests(unittest.TestCase):
         self.assertEqual(second["committed_minutes"], 15)
         self.assertEqual(snapshot["review_sessions"][0]["items"], state["review_sessions"][0]["items"])
 
+    def test_choice_options_are_snapshotted_and_rendered_in_bank_order(self):
+        state = fixture(1)
+        variant = state["review_queue"][0]["practice_variants"][0]
+        variant["options"] = {"C": "四", "A": "二", "B": "三"}
+        package = loop.prepare(state, AT)
+        pending = package["items"][0]
+        self.assertEqual(pending["status"], "pending")
+        self.assertEqual(list(pending["options"]), ["C", "A", "B"])
+        self.assertEqual(pending["options"], {"C": "四", "A": "二", "B": "三"})
+        pending["options"]["C"] = "被预览篡改"
+        self.assertEqual(state["review_sessions"][0]["items"][0]["options"]["C"], "四")
+        rendered = loop.render_today_review(state, AT)
+        self.assertIn(variant["prompt"], rendered)
+        positions = [rendered.index(text) for text in ("C. 四", "A. 二", "B. 三")]
+        self.assertEqual(positions, sorted(positions))
+        self.assertGreater(positions[0], rendered.index(variant["prompt"]))
+        for secret in ("PRIVATE_ANSWER", "answer_check", "我的原始作答", "PRIVATE_FEEDBACK"):
+            self.assertNotIn(secret, rendered)
+            self.assertNotIn(secret, json.dumps(package))
+        self.assertNotIn("answer_check", state["review_sessions"][0]["items"][0])
+        loop.record_attempt(state, attempt(package))
+        answered = loop.prepare(state, AT)["items"][0]
+        self.assertEqual(answered["status"], "answered")
+        self.assertNotIn("options", answered)
+
+    def test_malformed_choice_options_are_never_selected_as_new_work(self):
+        broken = ({"A": "唯一选项"}, {"A": "二", "B": ""}, {"A": "二", "B": None}, ["A", "B"])
+        for options in broken:
+            with self.subTest(options=options):
+                state = fixture(1, 2)
+                variants = state["review_queue"][0]["practice_variants"]
+                variants[0]["options"] = options
+                variants[1]["options"] = {"A": "五", "B": "六"}
+                package = loop.prepare(state, AT)
+                self.assertEqual([item["variant_id"] for item in package["items"]], ["V1"])
+                self.assertEqual(package["items"][0]["options"], {"A": "五", "B": "六"})
+        state = fixture(1, 2)
+        for variant in state["review_queue"][0]["practice_variants"]:
+            variant["options"] = {"A": "唯一选项"}
+        package = loop.prepare(state, AT)
+        self.assertEqual(package["items"], [])
+        self.assertEqual(package["status"], "needs_preparation")
+        self.assertIn("选项", package["needs_preparation"][0]["reason"])
+
+    def test_carried_choice_package_keeps_original_options_snapshot(self):
+        state = fixture(1)
+        original = {"A": "原二", "B": "原三"}
+        state["review_queue"][0]["practice_variants"][0]["options"] = original
+        yesterday = loop.prepare(state, AT)
+        self.assertEqual(yesterday["items"][0]["options"], original)
+        state["review_queue"][0]["practice_variants"][0]["options"] = {"A": "改四", "B": "改五", "C": "改六"}
+        today = loop.prepare(state, AT + timedelta(days=1))
+        self.assertEqual(today["items"][0]["status"], "pending")
+        self.assertEqual(today["items"][0]["variant_id"], "V0")
+        self.assertEqual(today["items"][0]["options"], original)
+        self.assertEqual(state["review_sessions"][1]["items"][0]["options"], original)
+        rendered = loop.render_today_review(state, AT + timedelta(days=1))
+        self.assertIn("A. 原二", rendered)
+        self.assertNotIn("改四", rendered)
+        self.assertTrue(loop.record_attempt(state, attempt(today, at=AT + timedelta(days=1, minutes=10)))["fsrs_rated"])
+
+    def test_old_package_missing_options_releases_budget_for_another_variant(self):
+        state = fixture(1, 2)
+        loop.prepare(state, AT, 5)
+        old = state["review_sessions"][0]["items"][0]
+        self.assertNotIn("options", old)
+        variants = state["review_queue"][0]["practice_variants"]
+        variants[0]["options"] = {"A": "二", "B": "三"}
+        variants[1]["options"] = {"A": "五", "B": "六"}
+        repeated = loop.prepare(state, AT, 5)
+        self.assertEqual(old["status"], "needs_review")
+        self.assertTrue(old["budget_exempt"])
+        self.assertIn("选项", old["options_review_reason"])
+        self.assertTrue(old["options_review_required_at"])
+        pending = [item for item in repeated["items"] if item["status"] == "pending"]
+        self.assertEqual([item["variant_id"] for item in pending], ["V1"])
+        self.assertEqual(repeated["committed_minutes"], 5)
+        self.assertIn("A. 五", loop.render_today_review(state, AT))
+
+    def test_old_package_missing_options_uses_alternative_and_keeps_reason(self):
+        state = fixture(1, 2)
+        loop.prepare(state, AT)
+        old = state["review_sessions"][0]["items"][0]
+        variants = state["review_queue"][0]["practice_variants"]
+        variants[0]["options"] = {"A": "二", "B": "三"}
+        variants[1]["options"] = {"A": "五", "B": "六"}
+        today = loop.prepare(state, AT + timedelta(days=1))
+        self.assertEqual(old["status"], "needs_review")
+        self.assertTrue(old["budget_exempt"])
+        reason = old["options_review_reason"]
+        self.assertIn("选项", reason)
+        self.assertTrue(old["options_review_required_at"])
+        self.assertEqual([item["variant_id"] for item in today["items"] if item["status"] == "pending"], ["V1"])
+        self.assertEqual(today["committed_minutes"], 5)
+        # A later bank edit or deletion must not clear the persistent review reason.
+        variants[:] = [variant for variant in variants if variant["id"] != "V0"]
+        repeated = loop.prepare(state, AT + timedelta(days=1))
+        self.assertEqual(old["status"], "needs_review")
+        self.assertEqual(old["options_review_reason"], reason)
+        self.assertEqual([item["variant_id"] for item in repeated["items"] if item["status"] == "pending"], ["V1"])
+        self.assertEqual(len(state["review_sessions"][1]["items"]), 1)
+
+    def test_old_package_with_malformed_options_is_not_repaired_from_bank(self):
+        state = fixture(1, 2)
+        loop.prepare(state, AT)
+        old = state["review_sessions"][0]["items"][0]
+        old["options"] = {"A": "唯一"}  # legacy snapshot too incomplete to display
+        variants = state["review_queue"][0]["practice_variants"]
+        variants[0]["options"] = {"A": "二", "B": "三"}
+        variants[1]["options"] = {"A": "五", "B": "六"}
+        today = loop.prepare(state, AT + timedelta(days=1))
+        self.assertEqual(old["status"], "needs_review")
+        self.assertEqual(old["options"], {"A": "唯一"})
+        self.assertIn("选项", old["options_review_reason"])
+        self.assertEqual([item["variant_id"] for item in today["items"] if item["status"] == "pending"], ["V1"])
+
+    def test_old_package_missing_options_without_alternative_needs_preparation(self):
+        state = fixture(1, 1)
+        loop.prepare(state, AT)
+        old = state["review_sessions"][0]["items"][0]
+        state["review_queue"][0]["practice_variants"][0]["options"] = {"A": "二", "B": "三"}
+        package = loop.prepare(state, AT + timedelta(days=1))
+        self.assertEqual(package["items"], [])
+        self.assertEqual(package["status"], "needs_preparation")
+        self.assertEqual(old["status"], "needs_review")
+        self.assertEqual(len(package["needs_preparation"]), 1)
+        self.assertIn("选项", package["needs_preparation"][0]["reason"])
+        repeated = loop.prepare(state, AT + timedelta(days=1))
+        self.assertEqual(repeated["needs_preparation"], package["needs_preparation"])
+        self.assertIn("还需要准备", loop.render_today_review(state, AT + timedelta(days=1)))
+
+    def test_independent_attempt_rejected_on_old_package_missing_options(self):
+        state = fixture(1, 2)
+        yesterday = loop.prepare(state, AT)
+        variants = state["review_queue"][0]["practice_variants"]
+        variants[0]["options"] = {"A": "二", "B": "三"}
+        variants[1]["options"] = {"A": "五", "B": "六"}
+        today = loop.prepare(state, AT + timedelta(days=1))
+        before = deepcopy(state)
+        payload = {"attempt_id": "OLD-ATTEMPT", "session_id": yesterday["session_id"],
+                   "review_id": "R0", "variant_id": "V0", "answer": "二", "feedback": "旧题核对",
+                   "evidence": {"type": "user_message", "message_id": "message-old"},
+                   "independent": True, "answer_seen_before_attempt": False, "rating": "good",
+                   "reviewed_at": (AT + timedelta(days=1, hours=1)).isoformat(), "actual_minutes": 5}
+        with self.assertRaisesRegex(ValueError, "选项"):
+            loop.record_attempt(state, payload)
+        self.assertEqual(state, before)
+        self.assertNotIn("fsrs", state["review_queue"][0])
+        pending = next(item for item in today["items"] if item["status"] == "pending")
+        alternative = {**payload, "attempt_id": "NEW-ATTEMPT", "session_id": today["session_id"],
+                       "variant_id": pending["variant_id"], "answer": "五", "rating": "good"}
+        self.assertTrue(loop.record_attempt(state, alternative)["fsrs_rated"])
+
+    def test_incomplete_question_stays_unratable_after_variant_deleted(self):
+        state = fixture(1, 1)
+        loop.prepare(state, AT)
+        old = state["review_sessions"][0]["items"][0]
+        state["review_queue"][0]["practice_variants"][0]["options"] = {"A": "二", "B": "三"}
+        loop.prepare(state, AT + timedelta(days=1))
+        self.assertEqual(old["status"], "needs_review")
+        state["review_queue"][0]["practice_variants"] = []
+        before = deepcopy(state)
+        payload = {"attempt_id": "DELETED-BANK", "session_id": state["review_sessions"][0]["id"],
+                   "review_id": "R0", "variant_id": "V0", "answer": "二", "feedback": "旧题核对",
+                   "evidence": {"type": "user_message", "message_id": "message-deleted"},
+                   "independent": True, "answer_seen_before_attempt": False, "rating": "good",
+                   "reviewed_at": (AT + timedelta(days=1, hours=1)).isoformat(), "actual_minutes": 5}
+        with self.assertRaisesRegex(ValueError, "选项"):
+            loop.record_attempt(state, payload)
+        self.assertEqual(state, before)
+        self.assertNotIn("fsrs", state["review_queue"][0])
+
+    def test_repeated_prepare_does_not_duplicate_choice_questions(self):
+        state = fixture(1, 2)
+        for variant in state["review_queue"][0]["practice_variants"]:
+            variant["options"] = {"A": "二", "B": "三"}
+        first = loop.prepare(state, AT)
+        second = loop.prepare(state, AT)
+        self.assertEqual(first["items"], second["items"])
+        self.assertEqual(len(state["review_sessions"][0]["items"]), 1)
+        self.assertEqual(second["items"][0]["options"], {"A": "二", "B": "三"})
+
     def test_preview_and_page_do_not_leak_answers_or_feedback(self):
         state = fixture()
         package = loop.prepare(state, AT)

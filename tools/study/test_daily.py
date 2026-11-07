@@ -59,6 +59,20 @@ class DailyIntegrationTests(unittest.TestCase):
         self.assertIn("2026-10-08", self.path.with_name("Today Plan.md").read_text(encoding="utf-8"))
         self.assertEqual(self.read()["tasks"], self.state["tasks"])
 
+    def test_choice_options_saved_and_shown_in_daily_views(self):
+        state = self.read()
+        state["review_queue"][0]["practice_variants"][0]["options"] = {"C": "四", "A": "二", "B": "三"}
+        self.path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        output = daily.execute(self.path, "run", self.now)
+        pending = next(item for item in output["review"]["items"] if item["status"] == "pending")
+        self.assertEqual(list(pending["options"]), ["C", "A", "B"])
+        self.assertEqual(pending["options"], {"C": "四", "A": "二", "B": "三"})
+        rendered = self.path.with_name("Today Review.md").read_text(encoding="utf-8")
+        positions = [rendered.index(text) for text in ("C. 四", "A. 二", "B. 三")]
+        self.assertEqual(positions, sorted(positions))
+        self.assertNotIn("SECRET_RUBRIC", rendered)
+        self.assertTrue(daily.execute(self.path, "check", self.now)["fresh"])
+
     def test_feedback_and_attempt_update_all_views_without_changing_submission(self):
         daily.execute(self.path, "run", self.now)
         session = self.read()["review_sessions"][0]

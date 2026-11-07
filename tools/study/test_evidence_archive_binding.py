@@ -132,7 +132,8 @@ class EvidenceArchiveBindingTests(unittest.TestCase):
         self.assertEqual(old['superseded_by'], 'new')
         self.assertEqual(old['version_status'], 'archived')
         self.assertEqual(current['version_status'], 'current')
-        # Original answer and its historical source are unchanged except the move.
+        # Original answer and its historical source are byte-for-byte unchanged:
+        # the archive moves files and index rows only, never learner evidence.
         pending = saved['courses'][0]['teaching_cursor']['pending_check']
         for record, pages in ((saved['mistakes'][0], [1]), (pending, [2]),
                               (saved['review_attempts'][0], [3])):
@@ -140,32 +141,12 @@ class EvidenceArchiveBindingTests(unittest.TestCase):
             self.assertEqual(record['conditions'], CONDITIONS)
             self.assertEqual(record['source']['material_id'], 'old')
             self.assertEqual(record['source']['pages'], pages)
-            self.assertEqual(record['source']['relative_path'], old['relative_path'])
+            self.assertEqual(record['source']['relative_path'], OLD_FILE)
         self.assertEqual(pending['parts'][0]['user_answer'], 'B')
         self.assertEqual(pending['parts'][0]['conditions'], CONDITIONS)
         self.assertEqual(saved['mistakes'][0]['answered_at'], '2026-01-01T00:00:00+00:00')
-        # Bindings were migrated instead of deleted or forged.
-        for observation_id in ('e1', 'e2', 'e3', 'e4'):
-            binding = saved['courses'][0]['evidence_bindings'][observation_id]
-            self.assertEqual(binding['status'], 'bound')
-            self.assertEqual(binding['course_id'], 'A')
-            self.assertEqual(binding['record_path_at_binding'],
-                             before_bindings[observation_id]['record_path_at_binding'])
-            self.assertEqual(binding['fields'], before_bindings[observation_id]['fields'])
-        # The answer records that contain the moved path get a new fingerprint;
-        # the part record keeps its own sha but moves with its parent question.
-        for observation_id in ('e1', 'e2', 'e4'):
-            self.assertNotEqual(saved['courses'][0]['evidence_bindings'][observation_id]['sha256'],
-                                before_bindings[observation_id]['sha256'])
-        self.assertEqual(saved['courses'][0]['evidence_bindings']['e3']['sha256'],
-                         before_bindings['e3']['sha256'])
-        # Parent-free records keep their empty anchors; a nested record whose
-        # parent question contains the path has its ancestor fingerprints moved too.
-        self.assertEqual(saved['courses'][0]['evidence_bindings']['e1']['ancestors'], [])
-        self.assertEqual(saved['courses'][0]['evidence_bindings']['e2']['ancestors'], [])
-        self.assertEqual(saved['courses'][0]['evidence_bindings']['e4']['ancestors'], [])
-        self.assertNotEqual(saved['courses'][0]['evidence_bindings']['e3']['ancestors'],
-                            before_bindings['e3']['ancestors'])
+        # Bindings are preserved, not migrated or re-fingerprinted.
+        self.assertEqual(saved['courses'][0]['evidence_bindings'], before_bindings)
         for observation_id, record_path in (
                 ('e1', '/mistakes/0'),
                 ('e2', '/courses/0/teaching_cursor/pending_check'),
@@ -175,7 +156,7 @@ class EvidenceArchiveBindingTests(unittest.TestCase):
             self.assertEqual(resolved['status'], 'resolved')
             self.assertEqual(resolved['record_path'], record_path)
         self.assertEqual(resolve_observation(saved, 'A', 'e1', include_record=True)['record']
-                         ['source']['relative_path'], old['relative_path'])
+                         ['source']['relative_path'], OLD_FILE)
         self.assertEqual(resolve_observation(saved, 'A', 'e3', include_record=True)['record']
                          ['user_answer'], 'B')
         # The documented read-only CLI resolves the archived original as well.
@@ -203,21 +184,30 @@ class EvidenceArchiveBindingTests(unittest.TestCase):
 
     def test_repeated_promotion_is_idempotent_and_second_archive_resolves(self):
         self.bind()
+        bound = read(self.path)
+        bindings_before = deepcopy(bound['courses'][0]['evidence_bindings'])
+        history_before = deepcopy({key: bound[key] for key in ('mistakes', 'review_attempts')})
         self.promote()
         byte_before = self.path.read_bytes()
         again = self.promote(self.material_row('new'), 'old')
         self.assertEqual(again['status'], 'already_promoted')
         self.assertEqual(self.path.read_bytes(), byte_before)
-        # A second real archive moves the now-current file again.
+        # A second real archive moves the now-current file again; history and
+        # bindings still stay byte-identical and remain resolvable.
         new2 = self.material('new2', '_Inbox/new2/lesson.pdf', 'NEW2_SENTINEL')
         self.assertEqual(v.promote(self.path, new2, 'new', at=T0)['status'], 'promoted')
         saved = read(self.path)
         self.assertEqual(saved['materials'][-1]['id'], 'new2')
         self.assertEqual(saved['materials'][-1]['relative_path'], OLD_FILE)
         self.assertEqual(saved['materials'][-1]['version_status'], 'current')
+        self.assertEqual(saved['courses'][0]['evidence_bindings'], bindings_before)
+        for key, value in history_before.items():
+            self.assertEqual(saved[key], value, key)
         for observation_id in ('e1', 'e2', 'e3', 'e4'):
             self.assertEqual(resolve_observation(saved, 'A', observation_id)['status'], 'resolved')
         self.save(saved, deepcopy(saved))
+        latest = read(self.path)
+        self.assertEqual(resolve_observation(latest, 'A', 'e1')['status'], 'resolved')
 
     def test_manual_answer_change_after_archive_is_still_rejected(self):
         self.bind()
@@ -262,8 +252,8 @@ class EvidenceArchiveBindingTests(unittest.TestCase):
         stale_e1 = deepcopy(stale['courses'][0]['evidence_bindings']['e1'])
         self.promote()
         saved = read(self.path)
-        # The stale fingerprint is byte-identical (no guessing); the still-valid
-        # bindings of the same archive are migrated normally.
+        # The stale fingerprint is byte-identical (no guessing). The archive does
+        # not rewrite any learner record, so it cannot silently "repair" a binding.
         self.assertEqual(saved['courses'][0]['evidence_bindings']['e1'], stale_e1)
         self.assertEqual(resolve_observation(saved, 'A', 'e1')['status'], 'source_missing')
         self.assertEqual(resolve_observation(saved, 'A', 'e2')['status'], 'resolved')
@@ -275,7 +265,7 @@ class EvidenceArchiveBindingTests(unittest.TestCase):
             self.save(saved, deepcopy(saved))
         self.assertEqual(self.path.read_bytes(), baseline)
 
-    def test_failed_promotion_rolls_back_migrated_bindings(self):
+    def test_failed_promotion_rolls_back_bindings_and_records(self):
         self.bind()
         before = self.path.read_bytes()
         real_write = v._write
@@ -316,28 +306,62 @@ class EvidenceArchiveBindingTests(unittest.TestCase):
             self.save(saved, deepcopy(saved))
         self.assertEqual(self.path.read_bytes(), baseline)
 
-    def test_first_registration_moves_binding_that_names_the_staged_file(self):
+    def test_first_registration_keeps_staged_history_and_resolves_by_material_id(self):
         staged = self.material('new', NEW_FILE, 'NEW_SENTINEL')
         base = fixture([staged])
         base['mistakes'][0]['source']['relative_path'] = NEW_FILE
         base['courses'][0]['teaching_cursor']['pending_check']['source']['relative_path'] = NEW_FILE
         atomic(self.path, base)
         bound = self.save(base, observed(base))
+        bindings_before = deepcopy(bound['courses'][0]['evidence_bindings'])
+        history_before = deepcopy({key: bound[key] for key in ('mistakes',)})
         for observation_id in ('e1', 'e2', 'e3', 'e4'):
             self.assertEqual(
                 resolve_observation(bound, 'A', observation_id)['status'], 'resolved')
         self.assertEqual(v.promote(self.path, deepcopy(staged), at=T0)['status'], 'promoted')
         saved = read(self.path)
+        # The material index points at the installed course file...
         self.assertEqual(saved['materials'][0]['relative_path'], OLD_FILE)
         self.assertFalse((self.study / NEW_FILE).exists())
+        # ...while historical answers keep the staged path they were recorded with.
+        self.assertEqual(saved['courses'][0]['evidence_bindings'], bindings_before)
+        for key, value in history_before.items():
+            self.assertEqual(saved[key], value, key)
+        self.assertEqual(saved['mistakes'][0]['source']['relative_path'], NEW_FILE)
+        self.assertEqual(saved['courses'][0]['teaching_cursor']['pending_check']
+                         ['source']['relative_path'], NEW_FILE)
         for observation_id in ('e1', 'e2', 'e3', 'e4'):
             resolved = resolve_observation(saved, 'A', observation_id, include_record=True)
             self.assertEqual(resolved['status'], 'resolved')
         self.assertEqual(resolve_observation(saved, 'A', 'e1', include_record=True)['record']
-                         ['source']['relative_path'], OLD_FILE)
-        self.assertEqual(resolve_observation(saved, 'A', 'e2', include_record=True)['record']
-                         ['source']['relative_path'], OLD_FILE)
+                         ['source']['relative_path'], NEW_FILE)
+        # The installed material is still readable through its material ID.
+        from library import Library
+        library = Library(self.path)
+        library.sync()
+        self.assertIn('NEW_SENTINEL', library.read('new')['pages'][0]['text'])
         self.save(saved, deepcopy(saved))
+
+    def test_path_only_history_is_not_retargeted_to_same_named_new_version(self):
+        self.bind()
+        state = read(self.path)
+        # Legacy record knows only the old path, not the material version identity.
+        state['mistakes'].append({'id': 'm2', 'course_id': 'A', 'user_answer': 'D',
+                                  'source': {'relative_path': OLD_FILE, 'pages': [5]}})
+        atomic(self.path, state)
+        self.promote()
+        saved = read(self.path)
+        legacy = saved['mistakes'][1]
+        self.assertEqual(legacy['source'], {'relative_path': OLD_FILE, 'pages': [5]})
+        self.assertNotIn('material_id', legacy['source'])
+        # The same-named current file must not be assumed to be the referenced
+        # version: the source stays flagged for review instead of being retargeted.
+        from material_eligibility import source_issue
+        self.assertTrue(source_issue(saved, legacy['source']))
+        rows = {row['id']: row for row in saved['materials']}
+        self.assertIn('_Archive', rows['old']['relative_path'])
+        self.assertEqual(rows['new']['relative_path'], OLD_FILE)
+        self.assertNotEqual(rows['old']['relative_path'], rows['new']['relative_path'])
 
     def test_legacy_unbound_observation_stays_unresolved_and_remains_savable(self):
         self.old = self.material('old', OLD_FILE, 'OLD_SENTINEL')

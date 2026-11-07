@@ -26,13 +26,28 @@ MCP 新增 5 个按需只读工具，读取工具由 10 个增至 15 个：`mood
 - 新方法仍经过 `ReadOnlyClient` 的 API 白名单、保留参数保护和重定向拒绝；没有新增作业提交、发帖、通知已读或下载入口。接口未启用时明确返回 `api_not_enabled`，不当作没有数据。
 - 完整采集（`continue` / `refresh`）的默认触发时机和范围不变；这些查询只是按当前任务需要读取。升级后需要重启本项目的 MCP 连接才能看到新工具。
 
-## 原答绑定跨资料归档（DeepSeek 版单独修复）
+## 归档不改写历史证据（DeepSeek 版修复，取代原先的绑定重算）
 
-旧问题：知识观察的 `evidence_bindings` 摘要覆盖原答记录全部内容。原答记录里含有课件相对路径时，真实资料归档/换版会把该路径改写为 `_Archive` 路径，旧摘要因此失配，`evidence-source` 无法解析原答，之后每次完整状态保存都会被拒绝（“已绑定的原答必须保留在同课程”）。
+旧问题：资料归档/首次安装会把原件移动到 `课程/_Archive/` 或正式目录，同时把整个学习状态里所有匹配的路径字符串递归替换。原答记录、父题来源里含有课件路径时会被改写，`evidence_bindings` 指纹随之失配，`evidence-source` 无法解析原答，之后每次完整状态保存都被拒绝（“已绑定的原答必须保留在同课程”）；记忆纠正的 `target_snapshot` 也会被改写，与 `target_sha256` 不符而被保存校验拒绝。
 
-修复：资料版本事务在真实归档/移位前保留迁移前快照，替换后只对满足下列条件的已绑定记录重算 `sha256` 与父记录 anchors——旧摘要唯一命中、新记录内容正好等于旧记录按同一组已发布路径替换的结果。未绑定、已经失配或有歧义的记录保持原样，保存时继续拒绝而不是猜测；人工改答案、改条件或伪造绑定仍会被拒绝。原答、历史来源、资料的 `original_relative_path`/`archived_at` 和 material ID 都保留，不做 ID 重定向。
+修复：资料版本事务不再递归替换学习状态。真实归档/首次安装只更新两处——`materials` 资料索引中的实际位置，以及真正指向被移动文件的 Markdown 链接目标；历史原答、来源路径、父题、`evidence_bindings` 和记忆纠正的 `target_snapshot` 一律不改写，因此指纹自然保持有效，不需要也不允许靠重算指纹来掩盖改写。原答、历史来源、资料的 `original_relative_path`/`archived_at` 和 material ID 都保留，不做 ID 重定向。
 
-边界：只覆盖资料版本工具记录的归档/移位路径替换。若历史状态在本次升级前已经失配，或在工具之外被人工改动，仍会拒绝保存，需要人工核对原答后处理，不会自动“修复”。
+- 旧资料仍按原 material ID 和原页码读取归档版本（`--include-archived`）；普通搜索/复习只读当前版本。
+- 只有旧路径、没有原 material ID 或无法唯一判断版本的引用保留为待核对，不指向同名新版；历史上同一原路径对应两个归档版本时，按 material ID 区分，不按路径猜测。
+- 归档/首次安装后的完整状态保存保持可用；人工改答案/条件、伪造绑定仍被拒绝。升级前已经失配的历史记录仍需人工核对，不会自动“修复”。
+- 本次不再保留归档时重算原答绑定摘要的旧实现（上一版报告的“原答绑定跨资料归档”方案已被取代），避免把历史改写当作正常迁移。
+
+## 复习选择题选项快照（DeepSeek 版修复）
+
+旧问题：复习题按题干保存到日包时没有保存选择题的 `options`，公开预览和“今日复习”不显示选项；题库后来编辑过时，旧日包也无法可靠还原当时题面。
+
+修复：
+
+- `practice_variants` 中的选择题变式可带 `options`（选项键→文本的字典，插入顺序即展示顺序，至少两项且键和文本均非空）；生成日包时把核验过的选项深拷贝为题目自己的快照。
+- `daily.py run` 返回、公开预览和 `Today Review.md` 按 `A. 文本` 原序完整显示选项；作答前仍不显示 `answer_check`、答案或反馈，非待答题目不公开选项。
+- 已有日包保存过选项时沿用其原快照，不因题库后来编辑而改写。
+- 旧日包缺少有效选项、而题库中的对应变式现在是选择题时，不从可能已编辑的题库补猜：保留原题并标 `needs_review`、`budget_exempt: true`，记录 `options_review_reason` 与 `options_review_required_at`，释放未用预算；可另选已核验、未使用的新变式，没有备选时在 `needs_preparation` 说明。不完整旧题不能获得独立 FSRS 评级；题库后来删除或修改也不会清除待核对原因。
+- 选项格式不完整的选择题变式不会被选为新题；非选择题行为不变。
 
 ## 同一档案换学校的数字 ID 隔离（DeepSeek 版单独修复）
 
@@ -58,24 +73,27 @@ Codex 的章节存在式锁与 `verify-chapter` 入口本次没有移植：本�
 
 ## 升级与范围
 
-更新程序时保留 `Study/`、`config.local.json` 和凭据，不需要重建个人档案或重建资料索引；已失配的旧原答绑定不会被自动修复。重启本项目 MCP 连接后才会出现 5 个新查询工具。没有升级依赖，也没有宣称完成安全审计。
+更新程序时保留 `Study/`、`config.local.json` 和凭据，不需要重建个人档案或重建资料索引。归档不再改写历史记录，因此不会制造新的原答绑定失配；升级前已经失配的旧绑定不会被自动修复，仍需人工核对。重启本项目 MCP 连接后才会出现 5 个新查询工具。没有升级依赖，也没有宣称完成安全审计。
 
 ## 验证
 
 Windows 本地、虚构档案、临时材料与模拟学校响应；不连接真实学校、不读取个人凭据、不修改任何个人学习数据。
 
-- 三套完整回归（仓库根、串行、冻结树）：安装/入口 Python **100** 项、学习工具 Python **520** 项、Node **138** 项，合计 **758** 项通过，**0 失败、0 跳过**（JavaScript 断言与 Python `unittest`/Node test 结果）。学习工具套件有既有的 pypdf 读取噪声输出，不影响结果；未把噪声当通过，也没有把此前的中间失败算作通过。
-- 聚焦回归：原答绑定归档新增 9 项，与 `evidence_bindings` 11 项、`material_versions` 14 项及相邻模块共 195 项通过；学习处理新增/扩展回归（曝光 19、材料晋升集成 7、模拟卷 30、复习 24、每日入口 8、来源 19、计划 23）全部通过；按需查询 Node 5 项与相邻 21 项通过；跨校隔离 Node 37 项、相邻 41 项、Python 50 项与登录 9 项通过；快照账号校验新增 Node 3 项、跨校护栏回传新增 Python 2 项。
+- 三套完整回归：安装/入口 Python **100** 项、学习工具 Python **535** 项、Node **138** 项，合计 **773** 项通过，**0 失败、0 跳过**（JavaScript 断言与 Python `unittest`/Node test 结果）。学习工具套件有既有的 pypdf 读取噪声输出，不影响结果；未把噪声当通过，也没有把此前的中间失败算作通过。本机系统临时目录受限时，安装/入口 Python 与 Node 套件会出现环境性失败（子进程写系统临时目录被拒）；把临时目录重定向到工作区后全部通过，与本改动无关。
+- 聚焦回归：本轮新增/更新——归档历史保护（连续两次归档、首次安装、原答/父题绑定、纠正快照、归档后完整保存、按原 ID 读取归档版本）、复习选项（保存与顺序显示、原快照承接、旧包不补猜与备选、独立评级拒绝、重复准备去重）全部通过；此前的原答绑定归档 9 项、`evidence_bindings` 11 项、`material_versions` 14 项及学习处理/按需查询/跨校隔离/快照账号等回归保持通过。
 - 真实操作链（由独立验证脚本执行，不是只改同一材料 ID 的哈希）：
-  1. 保存原答+绑定 → 真实资料换版归档（真实文件移动、旧 ID/哈希保留）→ 解析原答（模块与真实 `evidence-source` CLI）→ 完整状态再次保存 → 再保存一次；10 类篡改仍全部拒绝且状态字节不变。
+  1. 保存原答+绑定 → 真实资料换版归档（真实文件移动、旧 ID/哈希保留）→ 解析原答（模块与真实 `evidence-source` CLI）→ 完整状态再次保存；历史记录与绑定字节不变，10 类篡改仍全部拒绝且状态字节不变。
   2. 登记模拟卷 → 真实资料换版归档 → 检查旧卷失效 → 登记新卷（旧源被拒、新版源可登记）→ 准备复习（旧源待核验、预算释放、更新前真实作答可补录、更新后独立复评被拒）。
+  3. 复习选择题 → `daily.py run` 生成日包（选项按题库顺序快照）→ 预览与 `Today Review.md` 完整显示且不泄露答案 → 暂停/换日旧包处理 → `daily.py attempt` 记录真实原答。
 - 独立验证还覆盖：曝光先后与更早回填、计划适用起止日/补课/过期任务优先级、考试来源图片/链接/附件/内嵌文件/编辑时间变化、日历与通知分页及只读边界、跨校同编号正常与拒绝路径。
+- 真实本地 `Study/` 只读审计：状态哈希检查前后一致（revision 408），394 份资料版本备份形成连续写入历史；两处问题均未发现受影响的真实记录（归档事务只改 `materials` 行；复习队列与日包为空），因此未做任何恢复；该审计报告只保存在本地，不进入公开仓库。
 - 真实学校 SSO/MFA、新机完整安装、真实学校接口权限和交互式 CLI 真实网络链路仍未验证。
 
 ## 限制
 
-- 原答绑定迁移只覆盖资料版本工具记录的归档/移位；历史已失配记录仍需人工核对，保存会继续拒绝。
+- 归档/首次安装只更新资料索引中的实际位置和 Markdown 实际链接目标，不改写历史原答、父题、证据绑定或记忆纠正快照；升级前已经失配的记录仍需人工核对，保存会继续拒绝。只有旧路径、无法唯一判断版本的引用保留待核对，不指向同名新版。
 - 一档一校一账号是刻意隔离，不提供自动迁移；已有课程/资料/授权但完全缺少学校或账号证据的旧档案会 fail-closed，需恢复可证明账号的备份，或在独立目录使用独立档案。
+- 旧包缺少有效选项、而题库仍能证明其对应变式是选择题时，标为待核对并释放预算；若题库在首次准备前已经删除或改到无法再证明选项内容，只能保留原记录待人工核对，不猜测补写。已标记或仍能核对出的不完整旧题不能获得独立 FSRS 评级。
 - 复用暂存快照或显式指定 `--snapshot` 前会核对快照记录的学校/账号；没有账号信息的旧自动缓存会被跳过并改用只读 API 现场读取，显式指定的旧快照会被拒绝。真实学校旧快照（没有 `account_scope` 字段）因此需要重新采集一次，不能直接当作本轮文字来源。
 - 同题识别保守：题干改写、缺少来源或页码变化会当作新题，不会因“看起来像”而合并。
 - 按需查询的完整性只描述所选接口与时间范围，不代表所有学校事件，也不代表 AI 已核读。
@@ -90,6 +108,6 @@ This update only changes the public repository's `deepseek` (DeepSeek Harness) e
 - Exam-source indexes track non-text evidence (images, links, attachments, inline files, edit timestamps); such changes require re-review while preserving previous sources, URLs, site and course mapping.
 - After real material archiving/replacement, old papers become stale, new papers reject old sources, and pending old-source review questions are marked as needing verification with budget released; original prompts, sources and history are kept, real answers completed before the update remain backfillable at their original time, and material IDs are never silently retargeted.
 - Five on-demand read-only MCP queries were added (calendar, grades, notifications, resources, site info; 10→15 read tools). Calendar reports honest completeness and pages by event cursor; notifications paginate without marking read; resources are metadata only with no download and no authorization bypass; grades use the current account; site info is whitelisted and redacted. Read-only allowlists, reserved-parameter protection and redirect refusal remain; no new write/download tool. Restart the MCP connection after upgrading.
-- DeepSeek-only fixes: (1) original-answer bindings survive real material archive/move by re-anchoring only bindings whose old digest uniquely matched and whose new record equals the old record with exactly the documented path replacements; unbound/stale/ambiguous bindings stay untouched and tamper checks are not relaxed; (2) one Study profile keeps one school account: selection, legacy CLI authorization, library sync, collection, content sync, downloads, refresh precheck, chapter checks, reused/supplied snapshot checks and login verify the recorded school/account first and fail closed without writing or re-binding old grants, ledger, chapter baselines or reused snapshot text. Legacy grants without account information are never guessed or back-filled; a `continue` collection stopped by this guard reports the real reason, writes no failed receipt and keeps learning state byte-identical; changing school/account requires a separate project folder and profile.
+- DeepSeek-only fixes: (1) courseware archiving/first installation updates only the actual location in the material index and real Markdown link destinations; historical original answers, parent-question sources, evidence bindings and memory-correction snapshots are never rewritten, archived versions stay readable through their original material IDs, old-path-only or ambiguous references remain flagged for review instead of being retargeted to a same-named new version, and fingerprints are never recomputed to mask a rewrite; (2) one Study profile keeps one school account: selection, legacy CLI authorization, library sync, collection, content sync, downloads, refresh precheck, chapter checks, reused/supplied snapshot checks and login verify the recorded school/account first and fail closed without writing or re-binding old grants, ledger, chapter baselines or reused snapshot text. Legacy grants without account information are never guessed or back-filled; a `continue` collection stopped by this guard reports the real reason, writes no failed receipt and keeps learning state byte-identical; changing school/account requires a separate project folder and profile; (3) review packages now snapshot valid multiple-choice `options` (label→text dict, insertion order preserved) and show them in order without leaking answer checks, answers or feedback; carried packages keep their original snapshot, old packages missing options are marked for review with budget released and a persistent reason, an unused verified variant may replace them, and incomplete old questions cannot receive an independent FSRS rating once their package has been checked or their choice identity is still verifiable; if the bank can no longer establish that identity before the first preparation, the original record is kept for manual review instead of guessed.
 - Preserved DeepSeek-specific behavior: Harness configuration, `DSH_SESSION_ID` and main-chat/subtask rules; `course_library_authorization`, `full`/`info_only`, `library-sync`, `subject`/`source_pages`, LibrarySync ledger and `archive_subdir`; strict `chapter-check --section --mode strict` verification-only semantics; state locks, snapshots, original-answer and history protection; unchanged `continue`/`refresh` collection defaults. Codex's existence-based chapter lock and `verify-chapter` entry were deliberately not ported.
-- Validation: offline Windows tests with fictional data and mock school responses; frozen tree, serial run: **100** setup/entry Python, **520** study Python and **138** Node tests all pass with 0 failures and 0 skips (758 total). Independent checks also re-ran both real operation chains (save original answer → archive courseware → resolve original answer → save again; register paper → archive courseware → old paper stale → register new paper → prepare review) and tamper rejection, exposure chronology/backfill, planning boundaries, media-change detection, query pagination/read-only boundaries and cross-school ID isolation. Real school SSO/MFA, fresh-machine installation, real school API permissions and the interactive CLI against a real network remain unverified. Known limitations: the binding migration covers only version-tool archive/move replacements (pre-existing mismatches still require manual review); one profile deliberately maps to one school account (no automatic migration); old cached snapshots without account information need one fresh collection before being reused as a text source; same-question identity is conservative (rewritten stems or missing sources are treated as new questions); read-query completeness describes the selected API and time window only.
+- Validation: offline Windows tests with fictional data and mock school responses: **100** setup/entry Python, **535** study Python and **138** Node tests all pass (0 failures, 0 skips; **773** total). On this machine a restricted system temporary directory caused environment-only failures in the setup/entry Python and Node suites; redirecting temporary files into the workspace passed completely and those failures are unrelated to this change. Independent checks re-ran both real operation chains (save original answer → archive courseware → resolve original answer → save again; register paper → archive courseware → old paper stale → register new paper → prepare review), and a third chain covered choice-option packages (snapshot → preview/view without leakage → old-package handling → real attempt). A read-only audit of the real local `Study/` state and its 394 material-version backups (hashes identical before and after) found no real records affected by either bug, so no recovery was performed. Real school SSO/MFA, fresh-machine installation, real school API permissions and the interactive CLI against a real network remain unverified. Known limitations: history is preserved exactly as recorded, so pre-existing mismatches are never auto-repaired; one profile deliberately maps to one school account (no automatic migration); old cached snapshots without account information need one fresh collection before being reused as a text source; an old package whose choice identity can no longer be established before the first preparation is kept for manual review instead of guessed; same-question identity is conservative (rewritten stems or missing sources are treated as new questions); read-query completeness describes the selected API and time window only.

@@ -74,6 +74,19 @@ def _due_items(state, now, course=None):
         item.get("due_date") or "9999-12-31", item.get("review_order", 999), item["id"]))
 
 
+def _valid_options(options):
+    """A choice-question snapshot: display-ordered label -> text, all non-empty."""
+    return (isinstance(options, dict) and len(options) >= 2
+            and all(isinstance(label, str) and label.strip() for label in options)
+            and all(isinstance(text, str) and text.strip() for text in options.values()))
+
+
+def _malformed_options(question):
+    """True when a question carries an options field that cannot be displayed."""
+    options = question.get("options")
+    return options is not None and not _valid_options(options)
+
+
 def _valid_variant(variant):
     source = variant.get("source")
     cost = variant.get("estimated_minutes")
@@ -82,10 +95,44 @@ def _valid_variant(variant):
             and bool(variant["prompt"].strip()) and isinstance(variant.get("answer_check"), list)
             and bool(variant["answer_check"])
             and all(isinstance(a, str) and a.strip() for a in variant["answer_check"])
+            and not _malformed_options(variant)
             and isinstance(source, dict) and bool(source.get("material_id"))
             and isinstance(source.get("pages"), list) and bool(source.get("detail"))
             and isinstance(cost, (int, float)) and not isinstance(cost, bool)
             and math.isfinite(cost) and cost > 0)
+
+
+def _options_snapshot(question):
+    """Deepcopy a valid options mapping so neither the bank nor a preview can edit it."""
+    options = question.get("options")
+    return deepcopy(options) if _valid_options(options) else None
+
+
+def _bank_item(state, review_id):
+    return next((item for item in state.get("review_queue", []) if item.get("id") == review_id), None)
+
+
+def _bank_variant(queue_item, variant_id):
+    return next((variant for variant in queue_item.get("practice_variants", [])
+                 if variant.get("id") == variant_id), None)
+
+
+def _options_review_reason(state, item):
+    """Why a pending old package cannot be shown as-is without guessing its options.
+
+    A package that already keeps a valid snapshot is carried byte-for-byte. When the
+    snapshot is missing or invalid while the current bank variant is a choice question,
+    the options must not be copied from the possibly edited bank: the old question stays
+    as history and a different verified variant may be prepared instead.
+    """
+    if _valid_options(item.get("options")):
+        return None
+    queue_item = _bank_item(state, item.get("review_id"))
+    variant = _bank_variant(queue_item, item.get("variant_id")) if queue_item else None
+    if variant is None or not _valid_options(variant.get("options")):
+        return None
+    return ("原日包缺少选择题选项快照，当前题库变式已有选项；不能按可能已编辑的题库补猜，"
+            "保留原题记录并重新核验")
 
 
 def _budget(session):
@@ -153,6 +200,8 @@ def _public_session(state, session):
         visible["estimated_minutes"] = item["reserved_minutes"]
         if item["status"] == "pending":
             visible["prompt"] = item["prompt"]
+            if _valid_options(item.get("options")):
+                visible["options"] = deepcopy(item["options"])
         visible["next_review_at"] = _next_review(state, item["review_id"])
         items.append(visible)
     pending = any(item["status"] == "pending" for item in items)
@@ -169,6 +218,10 @@ def prepare(state, now, minutes=15, course=None):
     """Reuse today's shared budget and select verified, unseen, due variants.
 
     An unfinished, unexposed question carries forward without using a new variant.
+    A carried package keeps its original ``options`` snapshot instead of re-reading
+    a possibly edited bank variant. An old package whose choice options are missing
+    cannot be repaired from the bank: it becomes ``needs_review`` (budget released)
+    and another verified, unused variant of the same item may be prepared.
     Old package links are retained as history; lateness creates no failure.
     Subsequent calls may fill unused budget when a new FSRS retest becomes due.
     They may reduce the budget and defer unstarted questions, but cannot increase
@@ -181,6 +234,11 @@ def prepare(state, now, minutes=15, course=None):
     session = _session_for(state, now, minutes)
     # Previously assigned, unanswered work is historical evidence too. Keep its
     # original question/source, but do not carry it as currently verified work.
+    # A needs_review status is never overwritten or cleared by a later prepare;
+    # its stable reason also keeps the needs_preparation message explanatory.
+    options_review_ids = {old_item.get("review_id")
+                          for old_session in state["review_sessions"] for old_item in old_session["items"]
+                          if old_item.get("status") == "needs_review" and old_item.get("options_review_reason")}
     for old_session in state["review_sessions"]:
         for old_item in old_session["items"]:
             if old_item["status"] in {"pending", "deferred"}:
@@ -191,6 +249,11 @@ def prepare(state, now, minutes=15, course=None):
                                     source_review_required_at=now.astimezone(study_time.local_zone()).isoformat())
                 elif was_exposed(state, review_key(state, old_item), now):
                     old_item["status"] = "explained"
+                elif (options_reason := _options_review_reason(state, old_item)):
+                    old_item.update(status="needs_review", budget_exempt=True,
+                                    options_review_reason=options_reason,
+                                    options_review_required_at=now.astimezone(study_time.local_zone()).isoformat())
+                    options_review_ids.add(old_item["review_id"])
     _reduce_budget(session, minutes, now)
     sessions = state["review_sessions"]
     used_ids = {(item["review_id"], item["variant_id"])
@@ -242,9 +305,14 @@ def prepare(state, now, minutes=15, course=None):
         if not variants:
             source_problems = [source_issue(state, v.get("source"))
                                for v in item.get("practice_variants", []) if _valid_variant(v)]
+            reason = next((reason for reason in source_problems if reason), None)
+            if reason is None and item["id"] in options_review_ids:
+                reason = "原日包缺少选择题选项快照，已标记待核验；暂时没有可用的备用变式"
+            if reason is None and any(_malformed_options(v) for v in item.get("practice_variants", [])
+                                      if isinstance(v, dict)):
+                reason = "选择题选项格式不完整，需重新核验后准备新变式"
             missing.append({"review_id": item["id"], "course_id": item.get("course_id"),
-                            "reason": next((reason for reason in source_problems if reason),
-                                           "需要核验过且未展示答案的新变式")})
+                            "reason": reason or "需要核验过且未展示答案的新变式"})
             continue
         variant = next((v for v in variants if v["estimated_minutes"] <= remaining), None)
         if variant is None:
@@ -255,8 +323,9 @@ def prepare(state, now, minutes=15, course=None):
                   "prompt": variant["prompt"], "source": deepcopy(variant["source"]),
                   "reserved_minutes": variant["estimated_minutes"], "status": "pending",
                   "assigned_at": now.astimezone(study_time.local_zone()).isoformat(), "actual_minutes": None}
-        if variant.get("options"):
-            chosen["options"] = deepcopy(variant["options"])
+        options = _options_snapshot(variant)
+        if options is not None:
+            chosen["options"] = options
         session["items"].append(chosen)
         if (key := review_key(state, chosen)) is not None:
             used_keys.add(key)
@@ -339,6 +408,14 @@ def record_attempt(state, payload):
     queue_item = next((q for q in state.get("review_queue", []) if q["id"] == item["review_id"]), None)
     if queue_item is None:
         raise ValueError("关联复习项目已不存在")
+    # An incomplete old package must never feed the FSRS rating: the bank may have
+    # changed since the question was assigned and guessing its options is forbidden.
+    # A recorded options review reason stays blocking even if that bank variant is
+    # later edited or deleted.
+    if request["independent"] and not _valid_options(item.get("options")):
+        variant = _bank_variant(queue_item, item["variant_id"])
+        if item.get("options_review_reason") or (variant is not None and _valid_options(variant.get("options"))):
+            raise ValueError("原题包缺少选择题选项快照，不能作为独立复测评级；请先核验完整选项再准备新变式")
     exposed = any(occurred_by(i.get("answer_shown_at"), now)
                   and i["review_id"] == item["review_id"]
                   and (i["variant_id"] == item["variant_id"] or i["prompt"].strip() == item["prompt"].strip())
@@ -458,14 +535,18 @@ def render_today_review(state, now):
     if session is None:
         return "\n".join(lines + ["今天尚未准备复习题；请先生成当日复习包。", ""])
     result = _public_session(state, session)
+    stored = {(item["review_id"], item["variant_id"]): item for item in session["items"]}
     pending_minutes = sum(x["reserved_minutes"] for x in result["items"] if x["status"] == "pending")
     lines += [f"今日总预算：{result['budget_minutes']:g} 分钟；待答题已预留 {pending_minutes:g} 分钟；可额外加题 {result['remaining_minutes']:g} 分钟。", ""]
     number = 0
     for item in result["items"]:
         if item["status"] == "pending":
             number += 1
-            lines += [f"## {number}. {item['course_id']} · {item['title']}", "",
-                      item["prompt"], "", f"预计 {item['estimated_minutes']:g} 分钟。", ""]
+            lines += [f"## {number}. {item['course_id']} · {item['title']}", "", item["prompt"], ""]
+            if item.get("options"):
+                lines += [f"{label}. {text}" for label, text in item["options"].items()]
+                lines += [""]
+            lines += [f"预计 {item['estimated_minutes']:g} 分钟。", ""]
         elif item["status"] == "explained":
             lines += [f"已讲解：{item['course_id']} · {item['title']}。待新变式独立验证。", ""]
         elif item["status"] == "carried_forward":
@@ -473,7 +554,12 @@ def render_today_review(state, now):
         elif item["status"] == "deferred":
             lines += [f"今日预算不足暂缓：{item['course_id']} · {item['title']}。未作答，不记失败。", ""]
         elif item["status"] == "needs_review":
-            lines += [f"题源待核验：{item['course_id']} · {item['title']}。课件已变化或缺失，保留原题记录。", ""]
+            raw = stored.get((item["review_id"], item["variant_id"]), {})
+            if raw.get("options_review_reason"):
+                lines += [f"选项快照待核验：{item['course_id']} · {item['title']}。原日包缺少完整选项，"
+                          "保留原题记录，不计入今日预算。", ""]
+            else:
+                lines += [f"题源待核验：{item['course_id']} · {item['title']}。课件已变化或缺失，保留原题记录。", ""]
         else:
             lines += [f"已记录：{item['course_id']} · {item['title']}。"]
             if item["next_review_at"]:
@@ -487,6 +573,9 @@ def render_today_review(state, now):
         lines += ["当前没有待答的新题；根据下次复测时间与当天剩余预算继续。", ""]
     if result["needs_preparation"]:
         lines += ["部分到期项目还需要准备并核验新变式，暂不作为可答题目。", ""]
+        for entry in result["needs_preparation"]:
+            lines += [f"- {entry['review_id']}：{entry['reason']}"]
+        lines += [""]
     lines += ["完成后可直接回复：做了哪些题、大约用了多久、卡在哪里、下一步想继续什么。",
               "不知道用时可留空；自报完成不会自动标成已提交或已掌握。", ""]
     return "\n".join(lines)

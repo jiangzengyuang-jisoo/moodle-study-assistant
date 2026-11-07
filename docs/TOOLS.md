@@ -70,6 +70,7 @@ node tools/moodle/run.mjs download 123 --authorized
 - `render` 只重建当前状态视图，不创建题包或作答。
 - `check` 检查学习时区的日期、状态版本、9份当前系统页面、已登记试卷与模拟题错题区；失败后重读状态并重新运行。不启动后台刷新。
 - 队列 `review_queue` 项通过 `mistake_id` 关联真实问题，具体题在 `practice_variants`。每题需有 id、完整 prompt、非空字符串列表 `answer_check`、`estimated_minutes`、材料依据 `source` 和 `verified: true`。`source` 包含 `material_id`、`pages` 与 `detail`。AI 必须实际核验答案；不能只把标志改成 true。答案只供批改，不提前出现在今日待答题单。
+- 复习选择题沿用考试题库的 `options` 协议：`practice_variants` 中的选择题变式带 `options`，即“选项键 → 选项文本”的字典，键的插入顺序就是展示顺序；至少两项，键和文本都须为非空字符串。`daily.py run` 生成日包时把核验过的选项深拷贝为题目自己的 `options` 快照，`prepare` 公开预览和 `Today Review.md` 会按原顺序逐行显示 `A. 文本`，作答前仍不显示 `answer_check`、答案或反馈；非待答题目（已讲解、已作答等）不公开选项。已生成日包中的选项快照按原样沿用，题库变式之后被编辑也不改写。旧日包若没有有效选项快照、而题库中的对应变式已是选择题，不从题库补猜：原题保留为历史并标为 `needs_review`、`budget_exempt: true`，记录 `options_review_reason` 与 `options_review_required_at`；该条不再占用当天预算，可另选未使用的新变式，没有备用变式时在 `needs_preparation` 说明。这类未补全选项的旧选择题只能作历史或辅助记录，独立 FSRS 评级会被拒绝。
 
 ### 保存作答
 
