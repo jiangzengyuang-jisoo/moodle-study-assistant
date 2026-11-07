@@ -6,7 +6,9 @@
 
 [English](README.md) · **简体中文**
 
-**下载零基础教程（PDF）：[Moodle学习助手教程 · 中文](docs/tutorials/Moodle学习助手教程.pdf?raw=1) · [English](docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf?raw=1)**
+**下载零基础教程（PDF）：[Moodle学习助手教程 · 中文](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/codex/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf) · [English](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/codex/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf)**
+
+也可先在 GitHub 预览：[中文版](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/blob/codex/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf) · [English](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/blob/codex/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf)。如果浏览器直接打开 PDF，点击下载按钮或按 Ctrl+S 保存到电脑。
 
 14 页教程同时介绍 Codex 与 DeepSeek Harness 两条路线，包括版本选择、客户端与环境安装、工作区、学校登录、日常学习、不同话题分开聊天，以及 GitHub 问题反馈。英文版已适配安装提示词，并解释截图中的中文按钮。
 
