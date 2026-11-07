@@ -23,6 +23,13 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-08
 
+### Chinese and English PDF tutorials
+
+- Publish the finalized Chinese tutorial and an English adaptation, each with 14 pages, with download links near the top of both READMEs.
+- Both cover Codex and DeepSeek Harness, the edition recommendation for Pro users, and separate topic chats within the same workspace. The English edition translates complete setup prompts and explains Chinese UI screenshot labels.
+- Validation: Checked PDF text completeness, page counts, bookmarks, links and rendered layout. This is a documentation-only addition: no runtime code changed or code test suites rerun, and no fresh-machine setup or real school sign-in was repeated.
+- Download the tutorials from the README; no upgrade or reset of an existing study workspace is needed.
+
 ### Audit-fix publication
 
 - This publication uses `5bf6a51` as its code baseline and targets `codex`. Plans, official review packages and read-only previews share remaining capacity, stop adding questions when time is exhausted and avoid deducting review time already included in cumulative feedback twice.

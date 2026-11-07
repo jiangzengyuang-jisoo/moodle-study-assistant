@@ -6,6 +6,10 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
+**Download the beginner tutorial (PDF): [English](docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf?raw=1) · [简体中文](docs/tutorials/Moodle学习助手教程.pdf?raw=1)**
+
+The 14-page tutorial covers both Codex and DeepSeek Harness: choosing an edition, installing the app and dependencies, creating a workspace, school sign-in, daily study, separate chats for different topics, and GitHub feedback. The English edition includes translated setup prompts and explanations of the Chinese screenshot labels.
+
 [Why use it?](#why-use-it) · [Study examples](#study-examples) · [Get started](#get-started) · [FAQ and privacy](#faq-and-privacy) · [Updates](#recent-updates)
 
 A personal course workspace used through a **Codex chat**. Keep slides, handouts, exercises, and learning records on your computer. Connect Moodle to bring in assignment requirements, deadlines, announcements, and discussions, then use that context for explanations, practice, and exam preparation.
@@ -168,7 +172,7 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
-| [2026-11-08](CHANGELOG.en.md#2026-11-08) | Publish audit fixes for remaining study capacity and bound-answer grading |
+| [2026-11-08](CHANGELOG.en.md#2026-11-08) | Publish audit fixes and downloadable Chinese/English beginner PDF tutorials |
 | [2026-11-07](CHANGELOG.en.md#2026-11-07) | Respect remaining study time; allow grading workflow updates to bound answers; preserve archived evidence and review options |
 | [2026-11-06](CHANGELOG.en.md#2026-11-06) | Complete English changelog and bilingual navigation |
 
