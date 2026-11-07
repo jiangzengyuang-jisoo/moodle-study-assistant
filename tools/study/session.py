@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import threading
 import uuid
 
 from chat_identity import ChatIdentityError, resolve_chat_id
@@ -44,6 +45,50 @@ def profile_account_guard(stderr):
 def stamp():
     return datetime.now(timezone.utc).isoformat()
 
+
+def stream_command(command, cwd, timeout, output=None):
+    """Run one child process, forwarding its progress lines while it runs.
+
+    A chapter check is network-bound: Node reports each stage on stderr, and the
+    user should see that progress immediately instead of only when the command
+    ends. stdout is the structured channel and is collected verbatim; it is
+    never mixed with progress text. Both pipes are drained by threads so a chatty
+    or hung child cannot defeat the timeout.
+    """
+    if output is None:
+        output = sys.stderr
+    process = subprocess.Popen(command, cwd=str(cwd), stdin=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout_chunks = []
+    stderr_chunks = []
+
+    def read_stderr():
+        for raw in iter(process.stderr.readline, b''):
+            text = raw.decode('utf-8', 'replace')
+            stderr_chunks.append(text)
+            output.write(text)
+            output.flush()
+
+    def read_stdout():
+        stdout_chunks.append(process.stdout.read())
+
+    stderr_reader = threading.Thread(target=read_stderr, name='chapter-check-stderr', daemon=True)
+    stdout_reader = threading.Thread(target=read_stdout, name='chapter-check-stdout', daemon=True)
+    stderr_reader.start()
+    stdout_reader.start()
+    try:
+        returncode = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+        raise ValueError('章节核对超时；本地资料保留，可稍后明确重查') from None
+    finally:
+        stderr_reader.join(timeout=5)
+        stdout_reader.join(timeout=5)
+        for stream in (process.stdout, process.stderr):
+            if stream:
+                stream.close()
+    return returncode, b''.join(stdout_chunks), ''.join(stderr_chunks)
 
 
 class Session:
@@ -392,8 +437,14 @@ class Session:
             from learning_library.versions import cleanup
             return cleanup(self.state)
 
-    def chapter_check(self, course, section=None, mode='quick', modules=None):
-        """Narrow, read-only verification of one chapter's already local files."""
+    def chapter_check(self, course, section=None, mode='strict', modules=None, force=False):
+        """Narrow, read-only verification of one chapter's already local files.
+
+        The receipt is bound to the original chat key so the same chat reuses a
+        recent check without touching the network, and ``force`` asks for a real
+        re-check after the user explicitly requested one. A chapter check never
+        writes learning state: strict still compares file content hashes.
+        """
         if not course:
             raise ValueError('请提供课程 ID；章节核对只查这一门课')
         if not section and not modules:
@@ -404,22 +455,27 @@ class Session:
         if not node:
             raise ValueError('未找到 Node；请先运行 setup.cmd')
         command = [node, str(self.root / 'tools/moodle/run.mjs'), 'chapter-check',
-                   '--course', str(course), '--mode', mode]
+                   '--course', str(course), '--mode', mode,
+                   '--chat-key', self.key]
         if section:
             command += ['--section', str(section)]
         if modules:
             command += ['--module', str(modules)]
+        if force:
+            command.append('--force')
+        print('正在核对本章资料范围；同聊天且本地文件未变时复用回执，不联网…',
+              file=sys.stderr, flush=True)
         with self.timing('chapter_check'):
-            result = subprocess.run(command, cwd=self.root, capture_output=True, timeout=900)
-        if result.returncode != 0 or not result.stdout.strip():
+            returncode, stdout, stderr_text = stream_command(command, self.root, timeout=900)
+        if returncode != 0 or not stdout.strip():
             from connection_errors import safe_connection_error
-            detail = safe_connection_error(result.stderr)
+            detail = safe_connection_error(stderr_text)
             if detail:
                 raise ValueError(f'{detail[0]}: {detail[1]} {detail[2]} 本地资料保留')
-            lines = [line for line in result.stderr.decode('utf-8-sig', 'replace').splitlines() if line.strip()]
-            raise ValueError(lines[-1] if lines else '章节核对失败；本地资料保留，可改用快速核对')
+            lines = [line for line in stderr_text.splitlines() if line.strip()]
+            raise ValueError(lines[-1] if lines else '章节核对失败；本地资料保留')
         try:
-            receipt = json.loads(result.stdout.decode('utf-8-sig').strip())
+            receipt = json.loads(stdout.decode('utf-8-sig').strip())
         except (ValueError, UnicodeError):
             raise ValueError('章节核对未返回有效结果') from None
         # A chapter check never touches learning state; it only writes its receipt.
@@ -437,6 +493,8 @@ def main():
     parser.add_argument('--course')
     parser.add_argument('--section')
     parser.add_argument('--mode', choices=['quick', 'strict'])
+    parser.add_argument('--force', action='store_true',
+                        help='chapter-check 明确重查；忽略同聊天回执缓存')
     parser.add_argument('--modules')
     parser.add_argument('--snapshot-hash')
     args = parser.parse_args()
@@ -467,7 +525,8 @@ def main():
     elif args.command == 'review':
         output = session.acknowledge(args.snapshot_hash, json.load(sys.stdin))
     elif args.command == 'chapter-check':
-        output = session.chapter_check(args.course, args.section, args.mode or 'quick', args.modules)
+        output = session.chapter_check(args.course, args.section, args.mode or 'strict',
+                                       args.modules, force=args.force)
     else:
         # Emit local context before waiting on school networking. No school claim yet.
         output = session.context(args.course)

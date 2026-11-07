@@ -9,14 +9,14 @@ node tools/moodle/run.mjs init
 node tools/moodle/run.mjs check
 node tools/moodle/run.mjs courses
 node tools/moodle/run.mjs library-sync
-node tools/moodle/run.mjs chapter-check --course 课程ID --section "第8章" --mode strict
+node tools/moodle/run.mjs chapter-check --course 课程ID --section "Topic 5" --mode strict [--force]
 node tools/moodle/run.mjs refresh
 node tools/moodle/run.mjs mcp
 ```
 
-`init` 只创建缺失的配置/空白状态，不覆盖已有资料。`courses` 交互选择跟踪页面，并确认课程级资料授权（完整初始化或只同步课程信息），保留未选页面的既有历史；完整初始化、非交互入口和授权保存位置见 [课程级资料授权与自动同步](COURSE_LIBRARY.md)。`library-sync` 对已保存完整授权的课程页面增量枚举、下载、归档、登记并建立索引；学校接口仍只用只读调用，不开始测验尝试、不提交作业、不发帖、不修改学校状态。`chapter-check` 只枚举一门课并比对某一章已有文件（`--mode quick|strict`），不写状态、不装文件、不建索引，回执在 `Study/_System/ChapterChecks/`，回执同时记录本次学校/账号归属；判定见 [单章资料核对](WORKFLOW.md#单章资料核对不触发完整采集)。`refresh` 采集到 `Study/_System/Runtime/runs/<run_id>/snapshot.json`，完整成功另存 `refresh-last-complete.json`；不直接更新个人掌握、作业完成或 AI 核读状态。退出码2表示部分采集失败。一个 `Study/` 档案只对应一所学校和账号：选课、旧 CLI 授权、资料同步、采集、下载、刷新预检、章节核对和登录会先核对档案已记录的学校/账号，不一致时停止且不写入；换学校请复制/新建独立项目目录并使用独立档案，见 [课程级资料授权](COURSE_LIBRARY.md#一档一校一账号)。
+`init` 只创建缺失的配置/空白状态，不覆盖已有资料。`courses` 交互选择跟踪页面，并确认课程级资料授权（完整初始化或只同步课程信息），保留未选页面的既有历史；完整初始化、非交互入口和授权保存位置见 [课程级资料授权与自动同步](COURSE_LIBRARY.md)。`library-sync` 对已保存完整授权的课程页面增量枚举、下载、归档、登记并建立索引；学校接口仍只用只读调用，不开始测验尝试、不提交作业、不发帖、不修改学校状态。`chapter-check` 先用本地资料索引与来源映射定位本章模块，再只比对本章文件（默认 `--mode strict` 内容哈希，`quick` 只看元数据）；Moodle 区块位置、日期和 Tutorial 编号不会仅因数字相同被选中，匹配不唯一时返回候选和原因，不写状态、不装文件、不建索引，回执在 `Study/_System/ChapterChecks/`，记录学校/账号归属、已定位模块和本地文件内容哈希；同聊天同范围严格回执可按聊天摘要复用、本地新增资料只核对新增部分，`--force` 强制重查。判定见 [单章资料核对](WORKFLOW.md#单章资料核对不触发完整采集)。`refresh` 采集到 `Study/_System/Runtime/runs/<run_id>/snapshot.json`，完整成功另存 `refresh-last-complete.json`；不直接更新个人掌握、作业完成或 AI 核读状态。退出码2表示部分采集失败。一个 `Study/` 档案只对应一所学校和账号：选课、旧 CLI 授权、资料同步、采集、下载、刷新预检、章节核对和登录会先核对档案已记录的学校/账号，不一致时停止且不写入；换学校请复制/新建独立项目目录并使用独立档案，见 [课程级资料授权](COURSE_LIBRARY.md#一档一校一账号)。
 
-AI 在需要校务信息或用户明确要求时调用 `continue/refresh`，不会每条追问重复执行；单章教学用 `chapter-check`，不会触发完整采集。命令本身始终进行真实采集。采集器全局最多同时执行4个 API 请求，每个论坛的分页仍按顺序读取，完整正文、回复和权限核对保留。不要把没有重新联网的缓存复用记为新的检查。
+AI 在需要校务信息或用户明确要求时调用 `continue/refresh`，不会每条追问重复执行；单章教学用 `chapter-check`，不会触发完整采集。命令本身始终进行真实采集。采集器全局最多同时执行4个 API 请求，每个论坛的分页仍按顺序读取，完整正文、回复和权限核对保留。同聊天复用返回的是上次严格回执（标记 `reused: true`、`network_started: false`），不是新的联网检查；需要新的学校结论时必须 `--force` 或换聊天/刷新。`chapter-check` 的阶段进度在 stderr，最终结构化结果只在 stdout；慢速首次核对可由助手用 Harness 后台任务跟进同一任务，不用 `Select-Object -Last 40` 截断进度。不要把没有重新联网的缓存复用记为新的检查。
 
 MCP 暴露课程、作业、测验、论坛、日历、成绩、通知、资源目录和站点信息只读查询（合计 15 个读取工具）；全论坛分页用 `study_all_discussions`，回复用 `study_discussion_posts`。上游 recent discussions 只有最近20条，不能替代完整采集。不注册学校写操作；普通 MCP 查询不下载文件。正常刷新在采集后为有课程级完整授权的范围自动下载、归档和索引；没有授权的范围只同步信息。选课授权、结果和重试入口见 [COURSE_CONTENT.md](COURSE_CONTENT.md)。
 
@@ -150,7 +150,7 @@ npm test
 & '.venv/Scripts/python.exe' -m unittest discover -s tools/study -p 'test_*.py'
 ```
 
-测试使用虚构课程和临时状态，不连接学校，不读取个人 Token。课程级授权与资料同步的新增回归为 `tests/course-library.test.mjs`（Node）和 `tools/study/test_course_library.py`（Python）；按章核对的新增回归为 `tests/chapter-check.test.mjs`（Node）和 `tools/study/test_session.py` 的 `ChapterCheckTests`（Python），都随上面的命令执行。本轮的按需查询回归为 `tests/read-queries.test.mjs`（Node），学习处理回归为 `tools/study/test_question_exposure.py`、`test_material_learning_integration.py`，原答绑定归档回归为 `tools/study/test_evidence_archive_binding.py`，跨校数字 ID 回归分布在 `tests/chat-course-selection.test.mjs`、`tests/course-selection.test.mjs`、`tests/chapter-check.test.mjs`、`tools/study/test_course_library.py` 和 `tests/test_auth.py`。可选 `tests/browser_smoke.py` 只访问本机模拟服务，使用无界面 Edge，不验证学校真实 SSO；真实连接需本人登录后运行 `node tools/moodle/run.mjs check`。
+测试使用虚构课程和临时状态，不连接学校，不读取个人 Token。课程级授权与资料同步的新增回归为 `tests/course-library.test.mjs`（Node）和 `tools/study/test_course_library.py`（Python）；按章核对回归为 `tests/chapter-check.test.mjs`（Node）和 `tools/study/test_session.py` 的 `ChapterCheckTests`（Python），本轮覆盖：Topic 5 不误选其他 Topic、日期或 Tutorial 区块；区块序号不被当章节号；匹配不唯一返回候选且不联网；同聊天第二次不联网；新增本章资料增量核对；本地文件改变/新聊天/账号变化/`--force` 使回执失效；失败或缺基线不误报成功且不自动重试；stderr 阶段进度实时可见且 stdout 仍是可解析 JSON。本轮的按需查询回归为 `tests/read-queries.test.mjs`（Node），学习处理回归为 `tools/study/test_question_exposure.py`、`test_material_learning_integration.py`，原答绑定归档回归为 `tools/study/test_evidence_archive_binding.py`，跨校数字 ID 回归分布在 `tests/chat-course-selection.test.mjs`、`tests/course-selection.test.mjs`、`tests/chapter-check.test.mjs`、`tools/study/test_course_library.py` 和 `tests/test_auth.py`。可选 `tests/browser_smoke.py` 只访问本机模拟服务，使用无界面 Edge，不验证学校真实 SSO；真实连接需本人登录后运行 `node tools/moodle/run.mjs check`。
 
 发布前从通用源码文件清单建立提交，检查 `git status`。不得加入 `Study/`、`.private/`、本地配置、依赖环境、个人附件、真实题库或状态备份，不用 `git add -f` 绕过忽略规则。Node 依赖锁在 package-lock.json；Python 固定版本见 requirements.txt。
 

@@ -105,9 +105,17 @@
 .\study.cmd continue          # 需要校务信息的学习接续；本聊天首次调用会完整采集一次
 .\study.cmd today             # 接续 + 今日复习与视图
 .\study.cmd status            # 只看本地状态，不联网
-.\study.cmd chapter-check --course 课程ID --section "第8章" --mode strict   # 只核对本章文件，不完整采集
+.\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode strict   # 只核对本章文件，不完整采集
+.\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode strict --force  # 本人明确要求重新核对
 .\study.cmd refresh           # 本人明确要求更新学校信息时才用
 ```
+
+### 慢速章节核对与后台任务
+
+- `chapter-check` 的 stderr 是简短阶段进度，stdout 只有最终 JSON；不要用 `Select-Object -Last 40` 等截断进度，也不要在前台等待时反复启动同一条命令。
+- 本机 DSH 实测支持 shell 后台任务：启动后可用任务输出读取运行中的 stderr 阶段行，任务完成会收到完成通知；等待时继续跟进**原任务**即可，不重复启动，不另起第二个核对。
+- 同聊天同范围且本地文件未变时使用上次严格回执（`reused: true`、`network_started: false`），通常数秒内返回且不联网；只有真实首次核对、资料变化、换聊天/账号或 `--force` 才需要较长联网时间。
+- 进度输出不代表核对完成；最终以 stdout 的 JSON 回执 `verdict`、`verified.complete` 和 `receipt_path` 为准。
 
 ## 4. 原页图片
 
