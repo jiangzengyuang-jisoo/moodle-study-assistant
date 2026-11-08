@@ -7,7 +7,7 @@
 
 | 项目 | 实测值 |
 | --- | --- |
-| 客户端 | DeepSeek Harness 桌面版 `0.2.1-rc.5`（Windows） |
+| 客户端 | DeepSeek Harness 桌面版 `0.2.2-rc.1`（Windows；Electron `44.7.0`、Chromium `152.0.7977.130`） |
 | 运行时 | 自带 Node `24.21.0`、Python `3.12.14`；系统 Node `24.19.0`、Python `3.12.15` 亦可 |
 | 模型 | DeepSeek V4.1（DSH 中显示为 `deepseek-flash`），声明 `text`/`image` 输入；已实测 `read_image` 能读取原页 PNG/JPEG |
 | 会话标识 | DSH 为每次 shell 调用注入 `DSH_SESSION_ID`；主聊天形如 `session-<uuid>`，内部子会话为裸 UUID |
@@ -16,7 +16,7 @@
 | MCP | 通过 `@deepseek-ai/dsh-mcp-client`（stdio）托管本项目 `tools/moodle/run.mjs mcp`，只读工具 |
 | 图片输入 | 单边 ≤ 8192px、≤ 20MiB、≤ 64MP；PNG/JPEG/WebP/GIF；超出会在 `read_image` 处明确报错 |
 
-以上为 2026-11-02 在本机实测/代码核对结果。换机器、升级 DSH 或更换模型后需重新验证。
+以上为 2026-11-02 在本机实测/代码核对结果；客户端版本与运行时已于 2026-11-08 重新核实（当前安装 `0.2.2-rc.1`）。换机器、升级 DSH 或更换模型后需重新验证。
 
 ## 2. 一次性安装
 
@@ -107,15 +107,32 @@
 .\study.cmd status            # 只看本地状态，不联网
 .\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode strict   # 只核对本章文件，不完整采集
 .\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode strict --force  # 本人明确要求重新核对
+.\study.cmd teaching-event    # 讲解后保存教学位置（stdin 小 JSON；见 SESSION.md）
 .\study.cmd refresh           # 本人明确要求更新学校信息时才用
 ```
+
+教或复习某一章前，可先用只读批量准备（不联网、不写学习状态）：
+
+```powershell
+& 'tools/study/library.cmd' chapter-prep --course 课程ID --section "Topic 6"
+& 'tools/study/library.cmd' render <material_id> --units 34,35,36
+```
+
+`chapter-prep` 一次返回本章材料/unit 清单、headings 目录、预算内整页正文、公式图表候选页（复用哈希渲染缓存）和本章接续；它的 `strict_check.last_receipt` 只是上次回执背景，**不是本轮核验**，本章文件仍须 `chapter-check --mode strict` 核对。
 
 ### 慢速章节核对与后台任务
 
 - `chapter-check` 的 stderr 是简短阶段进度，stdout 只有最终 JSON；不要用 `Select-Object -Last 40` 等截断进度，也不要在前台等待时反复启动同一条命令。
-- 本机 DSH 实测支持 shell 后台任务：启动后可用任务输出读取运行中的 stderr 阶段行，任务完成会收到完成通知；等待时继续跟进**原任务**即可，不重复启动，不另起第二个核对。
+- 本机 DSH 实测支持 shell 后台任务：`run_in_background` 立即返回 job id，运行中可用 `job_output` 读取已产生的 stdout/stderr（`[status: running]`）；等待时继续跟进**原任务**即可，不重复启动，不另起第二个核对。
+- 完成通知不是收尾保证：后台任务在 DSH 进程内运行，会话被处置、DSH 退出或通知竞态都可能让通知/结果不可靠；最终结果应在给出答复前用 `job_output`（必要时 `wait: true`）汇总，不能承诺“最终回复后自动后台收尾”。
 - 同聊天同范围且本地文件未变时使用上次严格回执（`reused: true`、`network_started: false`），通常数秒内返回且不联网；只有真实首次核对、资料变化、换聊天/账号或 `--force` 才需要较长联网时间。
 - 进度输出不代表核对完成；最终以 stdout 的 JSON 回执 `verdict`、`verified.complete` 和 `receipt_path` 为准。
+
+### 工具并行、Auto review 与后台任务边界（2026-11-08 核实）
+
+- **工具并行**：DSH 支持同一 assistant 消息内多个工具调用，但只有声明为并发安全的工具（本版包括 `read`、`read_image`、`web_search`/`web_fetch`、`subagent` 等）会并行执行，本机默认上限 10 个在飞；`pwsh`、`grep`、`glob`、`skill`、`job_*`、写文件工具、MCP 工具等是**独占屏障**，同一消息里的多个 `pwsh` 不会并行。准备阶段（`tools/pre-execute` 中的策略/审批）按模型顺序串行，只有工具体重叠，结果按模型顺序提交。独立长命令要并发，请用 `run_in_background` 启动、后续用 `job_output` 收集；不要把“同一消息多个 `pwsh`”当作并行加速。
+- **实验性 Auto review**：客户端带实验性 `auto` 权限预设（`/permission auto`），选中后每次工具调用会额外发起一次审批模型请求，本机实测约 **+2 秒/调用**。它不是项目默认，本文也不建议为教学任务修改全局权限配置来启用；教学等耗时敏感任务优先减少工具调用次数或在工具侧批量化（一次读多页、一次核对多文件），这比提高并发上限更有效。
+- **后台任务边界**：job 记录与输出环是**进程内**的，DSH 退出或会话被处置后不会继续或恢复；单个 owner 的后台作业默认最多 10 个；完成通知在“忙”时注入下一步、“空闲”时默认以 follow-up turn 唤醒，但存在 retirement-window 竞态，pending 通知也不随会话处置保留。后台任务只用于同一聊天内的慢操作跟进，不能作为收尾的唯一依赖；需要结果时在最终答复前用 `job_output` 汇总，不承诺“最终回复后在后台自动跑完并自动收尾”。
 
 ## 4. 原页图片
 
@@ -127,7 +144,7 @@
 ## 5. 只读与数据边界
 
 - Moodle MCP 工具仍是只读查询集合；不注册提交、发帖、改完成状态等操作。选课时确认完整初始化后，刷新通过独立资料阶段自动下载、归档与索引授权课程的可访问内容；仅信息或未授权范围不下载。详见 [课程内容同步](COURSE_CONTENT.md)。
-- 所有学习状态写入仍走 `study.cmd review` / `state_io.py` 等正式入口：锁、版本哈希、快照绑定、操作去重、历史证据保护不变；助手不直接改写 `state.json`。
+- 所有学习状态写入仍走正式入口：纯教学位置用 `study.cmd teaching-event`（只交本轮变化，程序合并、校验、原子保存并至多重建一次视图），完整核读用 `study.cmd review`，其他状态用 `state_io.py` 等既有入口；锁、版本哈希、快照绑定、操作去重、历史证据保护不变；助手不直接改写 `state.json`。
 - 普通问答、查询或纠正本地记忆不触发 Moodle 联网；只有学习启动或本人明确刷新才检查学校信息。
 - DSH 配置里只有本机路径和 `serverName`，不含凭据；Moodle Token 仍由 Windows DPAPI 加密保存在 `.private/`，不进入聊天、状态或 Git。
 

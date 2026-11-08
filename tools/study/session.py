@@ -96,6 +96,7 @@ class Session:
         if not chat or not chat.strip():
             raise ValueError('请明确提供原始用户聊天 ID；不自动使用子任务 ID 或随机 ID')
         self.root = Path(root).resolve()
+        self.chat = chat
         self.state = self.root / 'Study/_System/state.json'
         self.runtime = self.state.parent / 'Runtime'
         self.key = digest(chat)
@@ -432,6 +433,37 @@ class Session:
         import review
         daily.execute(self.state, 'render', review.timestamp())
 
+    def teaching_event(self, payload, operation_id=None):
+        """Merge one small teaching-position event through the shared save path.
+
+        The caller supplies only this turn's change; ``daily.execute`` reads the
+        latest state under the shared workspace lock, merges, validates the full
+        draft, saves atomically once and rebuilds views at most once. A payload
+        chat ID must match this chat, because the chat identity belongs to the
+        entry point, not to the model. Without an explicit operation ID the same
+        content derives the same ID, so a retry is a duplicate instead of a
+        second event.
+        """
+        if not isinstance(payload, dict):
+            raise ValueError('teaching-event 需要标准输入 JSON 事件对象')
+        provided = payload.get('chat_id')
+        if provided is not None and provided != self.chat:
+            raise ValueError('事件里的聊天 ID 与入口身份不一致；请由当前聊天直接提交，不要手填聊天 ID')
+        body = dict(payload)
+        body['chat_id'] = self.chat
+        content = {key: value for key, value in body.items() if key != 'event_id'}
+        effective = operation_id or ('teach-' + digest({'chat': self.chat, 'payload': content}))
+        import daily
+        import review
+        with self.timing('teaching_event'):
+            result = daily.execute(self.state, 'teaching-event', review.timestamp(),
+                                   payload=body, operation_id=effective)
+        if result.get('duplicate'):
+            # The stored receipt describes the original recorded save; expose a
+            # single retry status so the caller can tell "already saved" apart.
+            result['status'] = 'duplicate'
+        return result
+
     def maintain(self):
         with self.timing('archive_maintenance'):
             from learning_library.versions import cleanup
@@ -489,7 +521,7 @@ def main():
     parser.add_argument('--chat', help='原始用户聊天 ID；缺省时按稳定会话标识解析（见 docs/SESSION.md）')
     parser.add_argument('--subtask', action='store_true')
     parser.add_argument('command', choices=['continue', 'today', 'refresh', 'status', 'review', 'maintain',
-                                            'chapter-check', 'operation-id', 'chat-id'])
+                                            'chapter-check', 'teaching-event', 'operation-id', 'chat-id'])
     parser.add_argument('--course')
     parser.add_argument('--section')
     parser.add_argument('--mode', choices=['quick', 'strict'])
@@ -497,6 +529,8 @@ def main():
                         help='chapter-check 明确重查；忽略同聊天回执缓存')
     parser.add_argument('--modules')
     parser.add_argument('--snapshot-hash')
+    parser.add_argument('--operation-id',
+                        help='teaching-event 等学习事件重试时沿用原编号；省略则按事件内容派生')
     args = parser.parse_args()
     try:
         chat, chat_source = resolve_chat_id(args.chat)
@@ -524,6 +558,14 @@ def main():
         output = session.maintain()
     elif args.command == 'review':
         output = session.acknowledge(args.snapshot_hash, json.load(sys.stdin))
+    elif args.command == 'teaching-event':
+        # One small learning event: only this turn's change, merged and saved by
+        # the shared pipeline (workspace lock, byte-CAS, receipts, one view build).
+        try:
+            payload = json.load(sys.stdin)
+        except ValueError:
+            raise ValueError('teaching-event 需要标准输入的有效 JSON 事件') from None
+        output = session.teaching_event(payload, args.operation_id)
     elif args.command == 'chapter-check':
         output = session.chapter_check(args.course, args.section, args.mode or 'strict',
                                        args.modules, force=args.force)

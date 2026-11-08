@@ -409,17 +409,18 @@ class Library:
                 'assignment_focus':c.get('assignment_focus'),'materials':result,'unavailable':issues,
                 'coverage_complete':False,'instruction':'Full review must use the confirmed exam/assignment scope and account for all relevant materials and units; top search results are not a coverage checklist.'}
 
-    def render(self, mid, unit, dpi=130, include_solutions=False, include_archived=False):
-        source=self.read(mid,unit,unit,0,include_solutions,include_archived)
-        row=next(m for m in self.catalog()['materials'] if m['id']==mid)
+    def _render_unit(self, source, unit, dpi=130):
+        """Render or reuse one unit for an already validated source projection."""
+        unit_kind=source.get('unit_kind')
         original=Path(source['source_path'])
-        if row['unit_kind']=='image':
-            return {'path':str(original),'unit':unit,'source_sha256':source['source_sha256'],'verified':False}
-        if row['unit_kind']!='pdf_page':
-            return {'path':str(original),'unit':unit,'unit_kind':row['unit_kind'],'rendered':False,
-                    'instruction':'Open the original at this slide/section; no fake PDF page mapping is provided.'}
+        sha=source['source_sha256']
+        if unit_kind=='image':
+            return {'path':str(original),'unit':unit,'source_sha256':sha,'verified':False}, False
+        if unit_kind!='pdf_page':
+            return {'path':str(original),'unit':unit,'unit_kind':unit_kind,'rendered':False,
+                    'instruction':'Open the original at this slide/section; no fake PDF page mapping is provided.'}, False
         tool=shutil.which('pdftoppm')
-        folder=self.folder/'renders'/source['source_sha256']
+        folder=self.folder/'renders'/sha
         if folder.resolve() != folder:
             raise ValueError('Render directory must not be a link to another location')
         folder.mkdir(parents=True,exist_ok=True)
@@ -429,7 +430,7 @@ class Library:
         if output.exists() and manifest.exists():
             try:
                 record=read_json(manifest)
-                valid=(record.get('source_sha256')==source['source_sha256'] and record.get('image_sha256')==digest(output)
+                valid=(record.get('source_sha256')==sha and record.get('image_sha256')==digest(output)
                        and record.get('unit')==unit and record.get('dpi')==dpi)
             except (ValueError,OSError):
                 pass
@@ -443,14 +444,372 @@ class Library:
                 else:
                     from learning_library.render import render_pdfium
                     render_pdfium(original,unit,dpi,Path(str(prefix)+'.png'))
-                if digest(original)!=source['source_sha256']: raise ValueError('Source changed during rendering')
+                if digest(original)!=sha: raise ValueError('Source changed during rendering')
                 os.replace(str(prefix)+'.png',output)
-                atomic_json(manifest,{'source_sha256':source['source_sha256'],'image_sha256':digest(output),
+                atomic_json(manifest,{'source_sha256':sha,'image_sha256':digest(output),
                                       'unit':unit,'dpi':dpi,'rendered_at':now(),'verified':False})
             finally:
                 candidate=Path(str(prefix)+'.png')
                 if candidate.exists(): candidate.unlink()
-        return {'path':str(output),'source_path':str(original),'unit':unit,'source_sha256':source['source_sha256'],'verified':False}
+        return {'path':str(output),'source_path':str(original),'unit':unit,'source_sha256':sha,'verified':False}, valid
+
+    def render(self, mid, unit, dpi=130, include_solutions=False, include_archived=False):
+        source=self.read(mid,unit,unit,0,include_solutions,include_archived)
+        result,_=self._render_unit(source,unit,dpi)
+        return result
+
+    def render_many(self, mid, units, dpi=130, include_solutions=False, include_archived=False):
+        """Validate one source once, then render/reuse several units in a batch."""
+        requested=[]
+        for value in units or []:
+            if isinstance(value,bool) or not isinstance(value,int) or value<1:
+                raise ValueError('Units must be positive integers')
+            if value not in requested:
+                requested.append(value)
+        if not requested:
+            raise ValueError('Supply at least one unit')
+        # One source/provenance validation for the whole batch; per-page
+        # render() would otherwise re-hash the original once per page.
+        source=self.read(mid,requested[0],requested[0],0,include_solutions,include_archived)
+        total=source.get('total_units') or 0
+        for value in requested:
+            if value>total:
+                raise ValueError('Unit range outside source')
+        results=[]
+        for value in requested:
+            result,cached=self._render_unit(source,value,dpi)
+            result['cached']=cached
+            results.append(result)
+        return results
+
+    def _available_sections(self, state, course_id):
+        """Offline section-name hint from a captured Moodle course page, if any."""
+        from learning_library import chapter as chapter_lib
+        for material in state.get('materials') or []:
+            if not isinstance(material,dict) or material.get('course_id')!=course_id:
+                continue
+            filename=str(material.get('filename') or '')
+            if not filename.startswith('course-page-') or not filename.endswith('.md'):
+                continue
+            if material.get('superseded_by') or material.get('version_status') in {'archived','deleted'}:
+                continue
+            try:
+                _,rows,_=self.fresh_rows(mid=material.get('id'))
+                if not rows:
+                    continue
+                data=self.data(rows[0])
+                text='\n'.join(str(page.get('text') or '') for page in data.get('pages') or [])
+                sections=chapter_lib.parse_sections_from_course_page(text)
+                if sections:
+                    return sections
+            except (OSError,ValueError):
+                continue
+        return None
+
+    def chapter_prep(self, course, section=None, modules=None, chat=None, text='auto',
+                     text_budget=60000, render='auto', render_limit=8, dpi=130,
+                     include_solutions=False, include_archived=False):
+        """One read-only call preparing everything needed to teach one chapter.
+
+        It never writes learning state or chapter-check receipts, never triggers
+        sync/OCR/archive maintenance and never reads old text when a source or
+        cache is stale: stale materials are reported as needs_sync instead.
+        Only derived PDF render files under Library/renders may be created.
+        """
+        from learning_library import chapter as chapter_lib
+        from learning_library.context import build_context
+        started=time.perf_counter()
+        state=self.state()  # rejects an interrupted material version transaction
+        subject=chapter_lib.resolve_course_id(state,course)
+        course_row=next((row for row in state.get('courses',[]) if isinstance(row,dict) and row.get('id')==subject),None)
+        if course_row is None:
+            raise ValueError('Unknown course: '+str(course))
+        modules_list=None
+        if modules is not None:
+            values=[]
+            for value in modules:
+                try:
+                    number=int(value)
+                except (TypeError,ValueError):
+                    continue
+                if number>0 and number not in values:
+                    values.append(number)
+            if not values:
+                raise ValueError('--modules 需要至少一个有效的模块编号')
+            modules_list=sorted(values)
+        if modules_list is None and not section:
+            raise ValueError('请提供章节名称/编号，或用 --modules 指定模块')
+        text_mode=text if text in {'auto','full','outline','none'} else 'auto'
+        render_mode=render if render in {'auto','none','always'} else 'auto'
+        try:
+            budget=max(0,min(400000,int(text_budget)))
+        except (TypeError,ValueError):
+            budget=60000
+        try:
+            limit=max(0,min(64,int(render_limit)))
+        except (TypeError,ValueError):
+            limit=8
+        try:
+            render_dpi=max(72,min(300,int(dpi)))
+        except (TypeError,ValueError):
+            render_dpi=130
+        resolution=chapter_lib.resolve_chapter_materials(state,subject,section,modules_list,include_archived)
+        result={
+            'command':'chapter-prep',
+            'status':'ready',
+            'state_revision':state.get('revision'),
+            'timezone':state.get('timezone'),
+            'course':{'id':course_row.get('id'),'name':course_row.get('name'),
+                      'current_topic':course_row.get('current_topic')},
+            'request':{'section':section,'modules':modules_list,'chat_provided':bool(chat)},
+            'resolution':{'status':resolution['status'],'basis':resolution.get('basis'),
+                          'intent':resolution.get('intent'),
+                          'module_ids':resolution.get('module_ids') or [],
+                          'candidate_count':resolution.get('candidate_count') or 0,
+                          'candidates':resolution.get('candidates') or [],
+                          'reason':resolution.get('reason')},
+            'materials':[],
+            'strict_scope':{'note':'chapter-check strict 以 moduleIds 过滤课程目录；文件夹模块会整夹核对，范围可能大于按文件名匹配到的本章文件。',
+                            'module_ids':resolution.get('module_ids') or [],
+                            'files':[],'files_count':0,'wider_than_matched':False},
+            'outline':{'materials':[],
+                       'note':'heading 是抽取导航，不是已核读证明；空 heading 不代表无内容。'},
+            'text':{'mode':text_mode,'budget':budget,'returned_characters':0,
+                    'materials':[],'omitted':[]},
+            'visuals':{'policy':'渲染缓存不等于核读；公式、图表、表格、题号必须看原页。',
+                       'candidates':[],'candidates_total':0,'rendered':[],
+                       'render_errors':[],
+                       'view_hint':'把 path 交给 read_image；PPTX/DOCX 无页图时此处给原文件入口与说明。'},
+            'continuity':None,
+            'strict_check':{'required':True,'command':None,'last_receipt':None,
+                            'note':'chapter-prep 不替代 strict 章节核对；本章文件哈希核验仍由 chapter-check --mode strict 完成，上次回执只是背景信息。'},
+            'coverage':{'units_total':0,'units_text':0,'units_solutions_hidden':0,
+                        'visual_review_required':[],'verified':False,
+                        'policy':'整章覆盖必须逐 unit 核读文字或原页；未核实项要写明；准备资料不等于核读或掌握。'},
+            'cache':{'extract_reused':0,'extract_unavailable':0,
+                     'render_reused':0,'render_created':0,
+                     'source_hash_verified':[],'invalid':[],'sync_command':None},
+            'limits':{'network':False,'state_written':False,'maintenance':False,
+                      'sync':False,'ocr':False,
+                      'solutions_hidden_by_default':not include_solutions},
+            'elapsed_ms':0,
+            'omitted':[],
+        }
+        chat_hint=chat if chat else '<原始聊天ID>'
+        if modules_list is not None:
+            module_argument=','.join(str(number) for number in modules_list)
+            command=('.\\study.cmd --chat "'+chat_hint+'" chapter-check --course '+str(subject)
+                     +' --modules '+module_argument+' --mode strict')
+        else:
+            command=('.\\study.cmd --chat "'+chat_hint+'" chapter-check --course '+str(subject)
+                     +' --section "'+str(section)+'" --mode strict')
+        result['strict_check']['command']=command
+        result['strict_check']['last_receipt']=chapter_lib.receipt_summary(
+            self.study.parent,
+            subject,
+            None if modules_list is not None else section,
+            modules_list,
+            chat,
+        )
+        if resolution['status']!='resolved':
+            result['status']='ambiguous' if resolution['status']=='ambiguous' else 'no_materials'
+            if resolution['status']=='none':
+                result['resolution']['available_sections']=self._available_sections(state,subject)
+                if resolution.get('date_like'):
+                    result['resolution']['date_like']=True
+                    hint='“'+str(section)+'”看起来是日期，不是章节编号；请改用 Topic 5、Chapter 8 这类明确章节名，或用 --modules 指定模块编号。'
+                else:
+                    hint='本地资料索引没有匹配到本章文件；请改用更明确的章节名，或用 --modules 指定模块编号。'
+                result['omitted'].append({'path':'/materials','reason':'no_local_material_matched',
+                                          'next_read':hint})
+            else:
+                result['omitted'].append({'path':'/materials','reason':'ambiguous_scope',
+                                          'next_read':'根据 resolution.candidates 换用更明确的章节名，或用 --modules 指定模块编号。'})
+            result['elapsed_ms']=round((time.perf_counter()-started)*1000,1)
+            return result
+        valid, invalid = [], []
+        budget_used=0
+        budget_exhausted=False
+        text_cap=400000 if text_mode=='full' else budget
+        coverage_units=0
+        coverage_text=0
+        hidden_units=0
+        material_order={}
+        for candidate in resolution['materials']:
+            material=candidate.get('material') or {}
+            mid=material.get('id')
+            entry={'id':mid,'title':material.get('title'),'filename':material.get('filename'),
+                   'relative_path':material.get('relative_path'),
+                   'category':material.get('category'),'unit_kind':None,'units':0,
+                   'text_units':0,'unit_range':[],'solutions_hidden':False,
+                   'module_id':candidate.get('module_id'),
+                   'module_name':candidate.get('module_name'),
+                   'section':((candidate.get('sections') or [{}])[0]).get('name'),
+                   'source_sha256':material.get('sha256'),'cache_hit':False,'status':'ok'}
+            try:
+                _,rows,issues=self.fresh_rows(mid=mid,include_archived=include_archived)
+                if not rows:
+                    reasons=[]
+                    for issue in issues:
+                        if isinstance(issue,dict) and issue.get('id')==mid:
+                            reasons.append(str(issue.get('reason')))
+                    raise ValueError('; '.join(reasons) or 'cache_or_source_unavailable')
+                row=rows[0]
+                data=self.data(row)
+            except Exception as exc:
+                entry['status']='needs_sync'
+                entry['reason']=type(exc).__name__+': '+str(exc)[:240]
+                result['materials'].append(entry)
+                invalid.append({'material_id':mid,'reason':entry['reason']})
+                continue
+            units=len(data.get('pages') or [])
+            hidden=is_solution(row) and not include_solutions
+            entry.update(unit_kind=data.get('unit_kind'),units=units,
+                         text_units=sum(bool((page.get('text') or '').strip())
+                                        for page in data.get('pages') or []),
+                         unit_range=[1,units] if units else [],
+                         solutions_hidden=hidden,
+                         source_sha256=row.get('sha256'),cache_hit=True)
+            result['materials'].append(entry)
+            result['cache']['extract_reused']+=1
+            result['cache']['source_hash_verified'].append(row.get('sha256'))
+            material_order[str(mid)]=len(material_order)
+            coverage_units+=units
+            if hidden:
+                hidden_units+=units
+                result['outline']['materials'].append({
+                    'material_id':mid,'unit_kind':entry['unit_kind'],'units':units,
+                    'text_units':entry['text_units'],'headings':[],
+                    'page_map':[],'visual_candidates':[],'solutions_hidden':True})
+                if text_mode in {'auto','full'}:
+                    result['text']['omitted'].append({
+                        'material_id':mid,'from_unit':1,'to_unit':units,
+                        'reason':'solutions_hidden_by_default',
+                        'next_read':('tools/study/library.cmd read '+str(mid)
+                                     +' --start 1 --end '+str(units)+' --include-solutions')})
+                continue
+            candidates_list=chapter_lib.visual_candidates(data)
+            result['outline']['materials'].append({
+                'material_id':mid,'unit_kind':entry['unit_kind'],'units':units,
+                'text_units':entry['text_units'],
+                'headings':[{'unit':page.get('page'),'heading':page.get('heading') or ''}
+                            for page in data.get('pages') or []],
+                'page_map':row.get('page_map') or [],
+                'visual_candidates':[item['unit'] for item in candidates_list],
+                'solutions_hidden':False})
+            coverage_text+=entry['text_units']
+            for item in candidates_list:
+                result['visuals']['candidates'].append({
+                    'material_id':mid,'unit':item['unit'],'why':item['why'],
+                    'priority':item['priority'],'verified':False})
+            valid.append({'mid':mid,'entry':entry,'data':data,'candidates':candidates_list})
+            if text_mode not in {'auto','full'}:
+                continue
+            if budget_exhausted:
+                result['text']['omitted'].append({
+                    'material_id':mid,'from_unit':1,'to_unit':units,
+                    'reason':'text_budget',
+                    'next_read':('tools/study/library.cmd read '+str(mid)
+                                 +' --start 1 --end '+str(units))})
+                continue
+            pages=data.get('pages') or []
+            included=[]
+            for page in pages:
+                cost=chapter_lib.page_text_cost(page)
+                if budget_used+cost>text_cap:
+                    first=page.get('page'); last=pages[-1].get('page')
+                    result['text']['omitted'].append({
+                        'material_id':mid,'from_unit':first,'to_unit':last,
+                        'reason':'text_budget',
+                        'next_read':('tools/study/library.cmd read '+str(mid)
+                                     +' --start '+str(first)+' --end '+str(last))})
+                    budget_exhausted=True
+                    break
+                included.append(chapter_lib.compact_page(page))
+                budget_used+=cost
+            if included:
+                result['text']['materials'].append({
+                    'material_id':mid,'unit_kind':entry['unit_kind'],
+                    'included_units':[included[0]['page'],included[-1]['page']],
+                    'pages':included})
+        result['text']['returned_characters']=sum(
+            len(page.get('text') or '') for material in result['text']['materials']
+            for page in material['pages'])
+        result['visuals']['candidates_total']=len(result['visuals']['candidates'])
+        if render_mode!='none' and result['visuals']['candidates']:
+            ordered=sorted(result['visuals']['candidates'],
+                           key=lambda item:(-item['priority'],
+                                            material_order.get(str(item['material_id']),0),
+                                            item['unit']))
+            selected=ordered if render_mode=='always' else ordered[:limit]
+            groups={}
+            for item in selected:
+                groups.setdefault(item['material_id'],[]).append(item['unit'])
+            unit_kinds={str(item['entry'].get('id')):item['entry'].get('unit_kind')
+                        for item in valid}
+            for mid,units in groups.items():
+                try:
+                    renders=self.render_many(mid,units,render_dpi,include_solutions,include_archived)
+                except Exception as exc:
+                    result['visuals']['render_errors'].append({
+                        'material_id':mid,'units':units,
+                        'error':type(exc).__name__+': '+str(exc)[:180]})
+                    continue
+                for unit,item in zip(units,renders):
+                    rendered={'material_id':mid,'unit':unit,'path':item.get('path'),
+                              'cached':bool(item.get('cached')),'verified':False}
+                    if item.get('rendered') is False:
+                        rendered['rendered']=False
+                        rendered['instruction']=item.get('instruction')
+                    result['visuals']['rendered'].append(rendered)
+                    if (item.get('rendered') is not False
+                            and unit_kinds.get(str(mid))=='pdf_page'):
+                        if item.get('cached'):
+                            result['cache']['render_reused']+=1
+                        else:
+                            result['cache']['render_created']+=1
+        if not result['materials'] and not invalid:
+            # Explicit --modules resolved to nothing local, or a chapter label
+            # matched no registered material: never pretend there is content.
+            result['status']='no_materials'
+            result['omitted'].append({
+                'path':'/materials','reason':'no_local_material_matched',
+                'next_read':'本地资料索引没有匹配到本章文件；请改用更明确的章节名，或用 --modules 指定模块编号。'})
+        result['coverage'].update({
+            'units_total':coverage_units,'units_text':coverage_text,
+            'units_solutions_hidden':hidden_units,
+            'visual_review_required':sorted({number for number in
+                                             (item['unit'] for item in result['visuals']['candidates'])
+                                             if isinstance(number,int)}),
+        })
+        strict_files=chapter_lib.strict_file_rows(state,resolution.get('module_ids') or [],include_archived)
+        matched_scope={(item.get('module_id'),item.get('relative_path'))
+                       for item in resolution.get('materials') or []}
+        result['strict_scope'].update({
+            'files':strict_files,'files_count':len(strict_files),
+            'wider_than_matched':len(strict_files)>len(matched_scope)})
+        result['cache'].update({
+            'extract_unavailable':len(invalid),'invalid':invalid,
+            'sync_command':('tools/study/library.cmd sync --course '+str(subject))
+                           if invalid else None})
+        if result['status']!='no_materials':
+            result['status']='needs_sync' if invalid else 'ready'
+        try:
+            context=build_context(state,subject)
+            course_index=next((index for index,row in enumerate(state.get('courses',[]))
+                               if isinstance(row,dict) and row.get('id')==subject),None)
+            material_ids={str(item.get('material_id')) for item in resolution.get('materials') or []}
+            intent=None
+            if (resolution.get('intent') or {}).get('kind')!='modules':
+                intent=resolution.get('intent')
+            result['continuity']=chapter_lib.contextual_continuity(
+                context,course_index,intent,material_ids)
+        except Exception as exc:
+            result['continuity']={'error':type(exc).__name__+': '+str(exc)[:200],
+                                  'note':'continuity projection unavailable; read context --read-only instead.'}
+        result['limits']['text_truncated']=bool(result['text']['omitted'])
+        result['elapsed_ms']=round((time.perf_counter()-started)*1000,1)
+        return result
 
 
 def norm(text):
@@ -501,6 +860,24 @@ def page_topics(row,page):
     return result
 
 
+def parse_int_list(value):
+    """Parse a comma separated list of positive integer ids without reordering."""
+    numbers=[]
+    for part in str(value or '').split(','):
+        part=part.strip()
+        if not part:
+            continue
+        try:
+            number=int(part)
+        except ValueError:
+            raise ValueError('无效的编号：'+part) from None
+        if number<1:
+            raise ValueError('编号必须是正整数：'+part)
+        if number not in numbers:
+            numbers.append(number)
+    return numbers
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state',type=Path,default=DEFAULT_STATE)
@@ -512,7 +889,20 @@ def main():
     p=sub.add_parser('search'); p.add_argument('query'); p.add_argument('--course'); p.add_argument('--limit',type=int,default=8); p.add_argument('--include-solutions',action='store_true')
     p=sub.add_parser('read'); p.add_argument('material_id'); p.add_argument('--start',type=int,default=1); p.add_argument('--end',type=int); p.add_argument('--around',type=int,default=1); p.add_argument('--include-solutions',action='store_true'); p.add_argument('--include-archived',action='store_true')
     p=sub.add_parser('outline'); p.add_argument('--course',required=True); p.add_argument('--include-solutions',action='store_true')
-    p=sub.add_parser('render'); p.add_argument('material_id'); p.add_argument('--unit',type=int,required=True); p.add_argument('--dpi',type=int,default=130); p.add_argument('--include-solutions',action='store_true'); p.add_argument('--include-archived',action='store_true')
+    p=sub.add_parser('render'); p.add_argument('material_id'); p.add_argument('--unit',type=int); p.add_argument('--units'); p.add_argument('--dpi',type=int,default=130); p.add_argument('--include-solutions',action='store_true'); p.add_argument('--include-archived',action='store_true')
+    p=sub.add_parser('chapter-prep')
+    p.add_argument('--course',required=True)
+    p.add_argument('--section')
+    p.add_argument('--modules')
+    p.add_argument('--chat')
+    p.add_argument('--text',choices=['auto','full','outline','none'],default='auto')
+    p.add_argument('--text-budget',type=int,default=60000)
+    p.add_argument('--render',choices=['auto','none','always'],default='auto')
+    p.add_argument('--render-limit',type=int,default=8)
+    p.add_argument('--dpi',type=int,default=130)
+    p.add_argument('--include-solutions',action='store_true')
+    p.add_argument('--include-archived',action='store_true')
+    p.add_argument('--read-only',action='store_true')
     p=sub.add_parser('context'); p.add_argument('--read-only',action='store_true'); p.add_argument('--course'); p.add_argument('--detail',action='store_true')
     p=sub.add_parser('evidence'); p.add_argument('--course',required=True); p.add_argument('--query',required=True); p.add_argument('--limit',type=int,default=8)
     p=sub.add_parser('evidence-source'); p.add_argument('--course',required=True); p.add_argument('--observation',required=True)
@@ -544,7 +934,8 @@ def main():
         print(json.dumps(result,ensure_ascii=False,indent=2))
         return
     from state_io import timed
-    with timed(args.state, "library_" + args.command):
+    stage = "library_chapter_prep" if args.command=='chapter-prep' else "library_" + args.command
+    with timed(args.state, stage):
         maintenance = {}
         if args.command in {'context','sync'} and not getattr(args,'read_only',False):
             from learning_library.versions import cleanup
@@ -561,7 +952,24 @@ def main():
         elif args.command=='search': result=lib.search(args.query,args.course,max(1,min(100,args.limit)),args.include_solutions)
         elif args.command=='read': result=lib.read(args.material_id,args.start,args.end,max(0,args.around),args.include_solutions,args.include_archived)
         elif args.command=='outline': result=lib.outline(args.course,args.include_solutions)
-        elif args.command=='render': result=lib.render(args.material_id,args.unit,max(72,min(300,args.dpi)),args.include_solutions,args.include_archived)
+        elif args.command=='render':
+            if args.units:
+                units=parse_int_list(args.units)
+                if args.unit is not None and args.unit not in units:
+                    units=[args.unit]+units
+                result={'material_id':args.material_id,'verified':False,
+                        'renders':lib.render_many(args.material_id,units,max(72,min(300,args.dpi)),
+                                                  args.include_solutions,args.include_archived)}
+            elif args.unit is not None:
+                result=lib.render(args.material_id,args.unit,max(72,min(300,args.dpi)),args.include_solutions,args.include_archived)
+            else:
+                raise ValueError('render 需要 --unit 或 --units')
+        elif args.command=='chapter-prep':
+            modules=parse_int_list(args.modules) if args.modules else None
+            result=lib.chapter_prep(args.course,args.section,modules,args.chat,
+                                    args.text,args.text_budget,args.render,
+                                    args.render_limit,args.dpi,
+                                    args.include_solutions,args.include_archived)
         elif args.command=='context':
             from learning_library.context import build_context
             from product_tour import tour_status
@@ -576,7 +984,12 @@ def main():
         if maintenance.get('deleted'):
             result['archive_maintenance'] = maintenance
             result['state_written'] = True
-        print(json.dumps(result,ensure_ascii=False,indent=2))
+        if args.command=='chapter-prep':
+            # chapter-prep stays on one line so it is easy to feed to a model;
+            # everything else keeps the existing formatted JSON output.
+            print(json.dumps(result,ensure_ascii=False))
+        else:
+            print(json.dumps(result,ensure_ascii=False,indent=2))
 
 
 if __name__=='__main__':

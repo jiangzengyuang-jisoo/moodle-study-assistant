@@ -18,15 +18,37 @@
 
 该命令完全只读，不写计时日志、不维护归档、不刷新学校、不修改状态；不会把旧笔记自动迁移成掌握证据。字段与教学意图约定见 [教学规则](TUTORING.md)。
 
+## 一次准备一章
+
+教或复习某一章时，先用一次只读调用批量准备，再按需补读：
+
+```powershell
+& 'tools/study/library.cmd' chapter-prep --course COURSE101 --section "Topic 6"
+& 'tools/study/library.cmd' render COURSE101-LECTURE1 --units 34,35,36
+```
+
+`chapter-prep` 一次返回：本章材料/unit 清单（含 `unit_range`、源哈希与 `strict_scope`）、headings 目录、预算内的整页正文（`--text-budget` 默认 60000 字符，超出部分在 `text.omitted` 里给补读命令）、公式图表候选页（`--render auto` 默认渲染优先级最高的 `--render-limit` 页并复用哈希渲染缓存）、本章接续（当前教学位置、本章待答题题干、本科本章相关待复习项；答案隐藏，不返回作业/考试/任务集合）和上次 strict 回执摘要。输出为一行 JSON，便于直接读取。
+
+边界：
+
+- 命令只读：不联网、不写学习状态、不写核读回执、不建索引；只可能在 `Library/renders/` 新建派生页图。与其它 library 命令一样，它仍会写一行不含题目/答案/聊天 ID 的本地耗时日志。`--read-only` 是兼容标志。
+- `strict_check.last_receipt` 只是**上次**严格核对的背景，**不是本轮核验**；本章文件仍必须 `chapter-check --mode strict`。`chapter-prep` 会给出要执行的 `chapter-check` 命令与 `strict_check.required: true`。
+- `coverage.verified` 恒为 false，`visual_review_required` 只是待看候选；公式、图表、表格、题号必须看原页，整章覆盖仍要逐 unit 核对文字或原页。准备资料不等于核读或掌握。
+- 源文件或缓存不新鲜时返回 `needs_sync` 而不返回旧文本，先按 `cache.sync_command` 同步/重建再准备。
+- `render --units` 一次校验来源后批量渲染/复用多页；`--unit` 单页用法继续兼容。`search`、`read --start/--end` 仍用于定向补读，不是每次都要逐页往返。
+
+参数、输出块与缓存字段见 [TOOLS.md](TOOLS.md#一次准备一章chapter-prep)。
+
 ## 每次复习
 
-从工作区根目录运行：
+快速顺序：`context` 看接续 → `chapter-prep` 一次准备本章材料 → 需要时 `read`/`render --units` 补读或看原页；`search` 用于定向定位。从工作区根目录运行：
 
 ```powershell
 & 'tools/study/library.cmd' context --course COURSE101
+& 'tools/study/library.cmd' chapter-prep --course COURSE101 --section "Topic 6"
 & 'tools/study/library.cmd' search '示例知识点' --course COURSE101
 & 'tools/study/library.cmd' read COURSE101-LECTURE1 --start 7
-& 'tools/study/library.cmd' render COURSE101-LECTURE1 --unit 7
+& 'tools/study/library.cmd' render COURSE101-LECTURE1 --units 7,9
 ```
 
 1. `context` 直接读最新状态，带版本、待答题、教学接续、作业重点和遗漏项路径。没有课程参数时只返回课程总览。返回的 `request_policy` 说明当前请求优先于长期课程安排与考试背景；orientation、作业、截止日期和考试信息只是背景，不替代本章教学主线。不能把摘要当成完整个人历史；相关 `orientation`、`assistant_notes`、讨论与错题用 `detail` 补读。计划另读 schedules/settings 和相关任务。
@@ -66,7 +88,7 @@
 
 `Study/_System/Library/catalog.json` 是全库累计索引，包含当前版本行和 `_Archive` 归档版本行；报告里的 `materials` 总数不等于某一门课的当前材料数，单科当前材料以 `state.materials`、`outline --course` 或缺口清单中的逐课程统计为准。
 
-需要校务信息的任务在每个新对话首次进入时完整检查一次，开始教某一章时只核对本章文件（`chapter-check`，见 [WORKFLOW.md](WORKFLOW.md#单章资料核对不触发完整采集)）；用户明确要求刷新或查询最新学校信息时再次完整检查。同一对话后续消息复用已核验结果，切换课程、跨日、上下文压缩和重新打开旧对话不另触发，不设固定间隔。网络只读采集使用全局最多4个并发请求，各论坛分页顺序、正文/回复数量和权限检查保留。需要刷新时可与本地context/定位并行，依赖此次学校检查的结论须等刷新与变更核读完成。刷新成功不自动表示内容已审阅，复用旧结果不写成当前刚完成检查。
+需要校务信息的任务在每个新对话首次进入时完整检查一次，开始教某一章时只核对本章文件（`chapter-check`，见 [WORKFLOW.md](WORKFLOW.md#单章资料核对不触发完整采集)）；用户明确要求刷新或查询最新学校信息时再次完整检查。同一对话后续消息复用已核验结果，切换课程、跨日、上下文压缩和重新打开旧对话不另触发，不设固定间隔。网络只读采集使用全局最多4个并发请求，各论坛分页顺序、正文/回复数量和权限检查保留。需要刷新时，只有把刷新命令作为 Harness 后台任务（`run_in_background`）启动后，才能在等待期间用 `job_output` 读取结果并继续本地 context/chapter-prep 准备；前台 shell 调用是独占屏障，多个 `pwsh` 不会并行，别把“同一消息发两条命令”当作并行。依赖此次学校检查的结论须等刷新与变更核读完成。刷新成功不自动表示内容已审阅，复用旧结果不写成当前刚完成检查。
 
 ## 学科合并与缺口
 

@@ -13,7 +13,7 @@
 
 先确认学校地址。默认 HKU 不能当作其他学校用户的选择。有已有加密授权时先检查是否需要重新连接，不要求每次登录。
 
-助手执行 `.venv/Scripts/python.exe tools/moodle/auth.py --browser msedge`（或用户选择的 Chrome），保持该进程运行，告诉用户在弹出的学校网页完成登录和验证；使用客户端长任务/轮询机制继续等待。收到成功结果后自动继续列课程，不让用户打开 CMD、输入命令或处理进程编号。不得读取 `.private/`、索取密码/验证码/Token 或读取浏览器 Cookie。
+助手执行 `.venv/Scripts/python.exe tools/moodle/auth.py --browser msedge`（或用户选择的 Chrome），保持该进程运行，告诉用户在弹出的学校网页完成登录和验证；用 Harness 的后台任务（`run_in_background`）启动并继续等待，再用 `job_output`（必要时 `wait: true`）读取结果；不要在前台反复启动同一条命令，也不要把“同一消息发两条命令”当作并行。收到成功结果后自动继续列课程，不让用户打开 CMD、输入命令或处理进程编号。不得读取 `.private/`、索取密码/验证码/Token 或读取浏览器 Cookie。
 
 如果浏览器登录失败，准确说明失败步骤；本人选择官方 Token 备用方式时才使用隐藏输入的本机界面，绝不让其把 Token 发进聊天。真实 SSO/MFA 仍需现场验证，不保证所有学校都支持。
 
@@ -71,7 +71,7 @@ node tools/moodle/run.mjs courses --select-file tmp/course-selection.json
 .venv/Scripts/python.exe tools/study/product_tour.py shown --chat "当前原始聊天ID"
 ```
 
-只有本人明确说跳过引导时改为 `skipped`。状态通过共享锁与安全写入保存到 `settings.product_onboarding.events`；重复登记同一事件不重复写入。不更改学科掌握状态，不清空历史。若准备在最终回复展示，可先在中间回复展示教程并登记，再结束；不要在尚未输出时提前标记 shown。保存引导状态后按原规则重建并检查视图。
+只有本人明确说跳过引导时改为 `skipped`。状态通过共享锁与安全写入保存到 `settings.product_onboarding.events`；重复登记同一事件不重复写入。不更改学科掌握状态，不清空历史。若同一次教学位置变化也要保存，可把 `onboarding: "shown"` 合并进该次 `teaching-event`（同一事务、已登记不重复），不必单独再存一次；但仍须等教程**实际展示后**才登记，不要在尚未输出时提前标记 shown。保存引导状态后按原规则重建并检查视图；如果本次已由 `teaching-event` 在同一事务内重建视图，则不需再单独跑 `daily.py run/check`。
 
 已经讲过则继续用户任务，不在每个聊天重复整份教程。用户说“再教我怎么用”时随时重讲。未完成的安装/登录/选课仍依真实文件和诊断接续，与是否讲过用法分开。
 
