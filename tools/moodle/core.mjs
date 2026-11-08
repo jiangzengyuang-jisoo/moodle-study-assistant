@@ -1,9 +1,12 @@
 import { saveState } from './state-bridge.mjs';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { MoodleClient } from 'moodle-mcp/dist/moodle-client.js';
 import { redactEvidence } from './refresh.mjs';
 import {connectionError, classifyTransportError} from './connection-errors.mjs';
+
+const programRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 export function normalizeSite(value) {
   const url = new URL(value);
@@ -29,7 +32,10 @@ export function clientTarget(root) {
 }
 
 export function initialize(root) {
-  const target = clientTarget(root);
+  // client-target.json marks the installed distribution, not personal data: with
+  // a separate data root it must be read from the program directory, otherwise
+  // the data root would silently fall back to the legacy Codex branch.
+  const target = clientTarget(process.env.STUDY_DATA_ROOT ? programRoot : root);
   for (const dir of ['Study/_System', 'Study/_Inbox', '.private', ...(target === 'codex' ? ['.codex'] : [])]) mkdirSync(join(root, dir), {recursive: true});
   const configPath = join(root, 'config.local.json');
   if (!existsSync(configPath)) atomicJSON(configPath, {moodle_url: 'https://moodle.hku.hk', timezone: 'Asia/Hong_Kong'});
@@ -55,7 +61,7 @@ export function initialize(root) {
   const mcpPath = join(root, '.codex/config.toml');
   if (target === 'codex' && !existsSync(mcpPath)) writeFileSync(mcpPath,
     '[mcp_servers.moodle_study]\ncommand = ' + JSON.stringify(process.execPath.replaceAll('\\', '/')) +
-    '\nargs = [' + JSON.stringify(join(root, 'tools/moodle/run.mjs').replaceAll('\\', '/')) + ', "mcp"]\nstartup_timeout_sec = 60\ntool_timeout_sec = 180\n', 'utf8');
+    '\nargs = [' + JSON.stringify(join(programRoot, 'tools/moodle/run.mjs').replaceAll('\\', '/')) + ', "mcp"]\nstartup_timeout_sec = 60\ntool_timeout_sec = 180\n', 'utf8');
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 

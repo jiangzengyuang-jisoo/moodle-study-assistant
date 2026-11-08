@@ -1,0 +1,9 @@
+# Minimal runtime used by the study engine and the Moodle read-only tools.
+# Keep versions in sync with the repository requirements.txt subset; the
+# optional math-check dependency (sympy) is not required for chat learning.
+fsrs==6.3.2
+pypdf==6.10.0
+pypdfium2==5.14.0
+Pillow==12.3.0
+tzdata==2026.4
+typing_extensions==4.16.0

@@ -15,7 +15,10 @@ from state_io import atomic, digest, file_lock, read, workspace_lock, timed, val
 
 from snapshot_guard import file_sha, scope_details, validate_binding, validate_current_snapshot
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[2]  # program (package) directory
+# Personal data may live outside the installed program directory (STUDY_DATA_ROOT);
+# without the override the data root is the program root, exactly as before.
+DATA_ROOT = Path(os.environ.get('STUDY_DATA_ROOT') or ROOT).resolve()
 
 # Stable marker printed by the Node collector when the one-profile-one-school-
 # account guard stops a collection on purpose. This is not a network failure:
@@ -216,8 +219,8 @@ class Session:
         node = os.environ.get('STUDY_NODE') or shutil.which('node')
         if not node:
             raise ValueError('未找到 Node；请先运行 setup.cmd')
-        result = subprocess.run([node, str(self.root / 'tools/moodle/run.mjs'), 'collect',
-                                 '--output', str(snapshot_path), '--request', str(snapshot_path.with_name('request.json'))], cwd=self.root,
+        result = subprocess.run([node, str(ROOT / 'tools/moodle/run.mjs'), 'collect',
+                                 '--output', str(snapshot_path), '--request', str(snapshot_path.with_name('request.json'))], cwd=ROOT,
                                 capture_output=True, timeout=300)
         if result.returncode not in (0, 2) or not snapshot_path.exists():
             guard = profile_account_guard(result.stderr)
@@ -263,8 +266,8 @@ class Session:
         print(json.dumps({'stage': 'course_content_sync',
                           'message': f'正在下载、归档课程资料并建立索引，首次可能需要较长时间。结果保存在 Study/_System/{report_folder}/latest.json；失败的资料可在明确刷新时增量补齐。'},
                          ensure_ascii=False), flush=True)
-        result = subprocess.run([node, str(self.root / 'tools/moodle/run.mjs'), 'content-sync',
-                                 '--snapshot', str(snapshot_path)], cwd=self.root,
+        result = subprocess.run([node, str(ROOT / 'tools/moodle/run.mjs'), 'content-sync',
+                                 '--snapshot', str(snapshot_path)], cwd=ROOT,
                                 capture_output=True, timeout=7200)
         if result.returncode not in (0, 2):
             raise ValueError('课程资料同步未完成')
@@ -486,7 +489,7 @@ class Session:
         node = os.environ.get('STUDY_NODE') or shutil.which('node')
         if not node:
             raise ValueError('未找到 Node；请先运行 setup.cmd')
-        command = [node, str(self.root / 'tools/moodle/run.mjs'), 'chapter-check',
+        command = [node, str(ROOT / 'tools/moodle/run.mjs'), 'chapter-check',
                    '--course', str(course), '--mode', mode,
                    '--chat-key', self.key]
         if section:
@@ -498,7 +501,7 @@ class Session:
         print('正在核对本章资料范围；同聊天且本地文件未变时复用回执，不联网…',
               file=sys.stderr, flush=True)
         with self.timing('chapter_check'):
-            returncode, stdout, stderr_text = stream_command(command, self.root, timeout=900)
+            returncode, stdout, stderr_text = stream_command(command, ROOT, timeout=900)
         if returncode != 0 or not stdout.strip():
             from connection_errors import safe_connection_error
             detail = safe_connection_error(stderr_text)
@@ -517,7 +520,7 @@ class Session:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--root', type=Path, default=ROOT)
+    parser.add_argument('--root', type=Path, default=DATA_ROOT)
     parser.add_argument('--chat', help='原始用户聊天 ID；缺省时按稳定会话标识解析（见 docs/SESSION.md）')
     parser.add_argument('--subtask', action='store_true')
     parser.add_argument('command', choices=['continue', 'today', 'refresh', 'status', 'review', 'maintain',

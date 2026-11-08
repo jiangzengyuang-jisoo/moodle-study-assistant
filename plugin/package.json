@@ -1,0 +1,32 @@
+{
+  "name": "dsh-moodle-study",
+  "version": "0.6.0-trial.1",
+  "description": "Moodle study assistant: connect your school Moodle account and study course chapters from downloaded materials inside DeepSeek Harness.",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "docs",
+    "resources",
+    "program"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml",
+      "platforms": ["win32"]
+    }
+  },
+  "engines": {
+    "dsh": "^0.2.2-rc.1"
+  }
+}

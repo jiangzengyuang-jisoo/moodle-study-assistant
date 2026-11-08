@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Moodle Study Assistant">
+  <defs>
+    <linearGradient id="cover" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#f8fafc"/>
+  <path d="M10 20c6-4 14-4 20 0v30c-6-4-14-4-20 0V20z" fill="url(#cover)" opacity="0.92"/>
+  <path d="M54 20c-6-4-14-4-20 0v30c6-4 14-4 20 0V20z" fill="url(#cover)" opacity="0.72"/>
+  <path d="M30 20v30" stroke="#f8fafc" stroke-width="2" stroke-linecap="round" opacity="0.85"/>
+  <path d="M36 8h16a6 6 0 0 1 6 6v8a6 6 0 0 1-6 6h-5l-5 5v-5h-6a6 6 0 0 1-6-6v-8a6 6 0 0 1 6-6z" fill="#f59e0b"/>
+  <path d="M38 15h12M38 20h8" stroke="#fff7ed" stroke-width="2.2" stroke-linecap="round"/>
+</svg>

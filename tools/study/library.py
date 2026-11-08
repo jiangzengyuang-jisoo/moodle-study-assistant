@@ -17,7 +17,10 @@ import time
 import unicodedata
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_STATE = ROOT / 'Study/_System/state.json'
+# Personal data may live outside the installed program directory (STUDY_DATA_ROOT);
+# without the override the data root is the program root, exactly as before.
+DATA_ROOT = Path(os.environ.get('STUDY_DATA_ROOT') or ROOT).resolve()
+DEFAULT_STATE = DATA_ROOT / 'Study/_System/state.json'
 SCHEMA = 1
 
 # Search vocabulary is a locator, never authority for an answer or exam scope.

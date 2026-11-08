@@ -1,0 +1,27 @@
+# Moodle Study Assistant bundle layer.
+#
+# Row 1 provides the `moodleStudy` service: current program directory, support
+# directory, and the Electron executable used as the Node runtime for the
+# stdio MCP server. Row 2 injects that service and starts the bundled MCP
+# server, so no machine-specific path is written into the patch.
+- insert:
+    - id: moodle-study-assistant
+      name: dsh-moodle-study
+    - id: moodle-study-assistant-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      inject: [moodleStudy]
+      config:
+        serverName: moodle_study
+        transport: stdio
+        command: !!js ctx.moodleStudy.nodePath
+        args: !!js ctx.moodleStudy.mcpArgs
+        cwd: !!js ctx.moodleStudy.programDir
+        toolCallTimeoutMs: 180000
+        failOnStartupError: false
+        env:
+          ELECTRON_RUN_AS_NODE: '1'
+          PYTHONDONTWRITEBYTECODE: '1'
+          MOODLE_STUDY_SUPPORT_DIR: !!js ctx.moodleStudy.supportDir
+          MOODLE_STUDY_PROGRAM_DIR: !!js ctx.moodleStudy.programDir
+          MOODLE_STUDY_DSH_HOME: !!js ctx.moodleStudy.dshHome
+          MOODLE_STUDY_PLUGIN_VERSION: !!js ctx.moodleStudy.version

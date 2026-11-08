@@ -1,0 +1,88 @@
+{
+  "format": 1,
+  "title": {
+    "en": "Moodle Study Assistant plugin index",
+    "zh": "Moodle 学习助手插件索引"
+  },
+  "description": {
+    "en": "Community plugin index template for the Moodle Study Assistant DeepSeek Harness bundle. Replace every placeholder field before publishing.",
+    "zh": "Moodle 学习助手 DeepSeek Harness 插件的社区索引模板；发布前必须替换所有占位字段。"
+  },
+  "metadata": {
+    "categories": {
+      "study": {
+        "title": {
+          "en": "Study",
+          "zh": "学习"
+        }
+      }
+    },
+    "labels": {
+      "windows": {
+        "title": {
+          "en": "Windows only",
+          "zh": "仅 Windows"
+        }
+      },
+      "read-only": {
+        "title": {
+          "en": "Read-only school access",
+          "zh": "学校只读访问"
+        }
+      }
+    },
+    "sortKeys": {
+      "featured": {
+        "title": {
+          "en": "Featured",
+          "zh": "推荐"
+        },
+        "order": "asc"
+      }
+    }
+  },
+  "plugins": [
+    {
+      "name": "dsh-moodle-study",
+      "title": {
+        "en": "Moodle Study Assistant",
+        "zh": "Moodle 学习助手"
+      },
+      "description": {
+        "en": "Connect your school Moodle account and study course chapters from materials saved on your own computer, inside the chat.",
+        "zh": "连接学校 Moodle 账号，在聊天里按章节学习保存在本机的课程资料。"
+      },
+      "author": "REPLACE_WITH_AUTHOR",
+      "homepage": "https://github.com/jiangzengyuang-jisoo/moodle-study-assistant",
+      "metadata": {
+        "category": "study",
+        "labels": [
+          "windows",
+          "read-only"
+        ],
+        "keywords": [
+          "moodle",
+          "study",
+          "course",
+          "tutoring",
+          "local materials"
+        ],
+        "sortKeys": {
+          "featured": 1
+        }
+      },
+      "versions": [
+        {
+          "version": "0.6.0-trial.1",
+          "publishTimestamp": 1794096000,
+          "source": {
+            "type": "npm"
+          },
+          "engines": {
+            "dsh": "^0.2.2-rc.1"
+          }
+        }
+      ]
+    }
+  ]
+}

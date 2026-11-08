@@ -6,7 +6,7 @@ import {resolveChatId} from './chat-identity.mjs';
 import { saveState, python } from './state-bridge.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { initialize, atomicJSON, ReadOnlyClient } from './core.mjs';
@@ -19,7 +19,10 @@ import {
   readJSON, selectedPages, syncCourseLibrary,
 } from './course-library.mjs';
 
-const root = fileURLToPath(new URL('../../', import.meta.url));
+const programRoot = fileURLToPath(new URL('../../', import.meta.url));
+// Personal data lives in STUDY_DATA_ROOT when the engine is installed as a
+// plugin; the program files themselves stay in the package directory.
+const root = process.env.STUDY_DATA_ROOT ? resolve(process.env.STUDY_DATA_ROOT) : programRoot;
 const statePath = join(root, 'Study/_System/state.json');
 const json = path => JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
 const loadState = () => json(statePath);
@@ -90,10 +93,10 @@ function authorizeSelected(state, mode, account) {
 }
 
 function refreshForCourseSync(chat, explicit) {
-  const args = [join(root, 'tools/moodle/run.mjs'), 'refresh'];
+  const args = [join(programRoot, 'tools/moodle/run.mjs'), 'refresh'];
   if (chat) args.push('--chat', chat);
   const result = spawnSync(process.execPath, args, {
-    cwd: root, stdio: 'inherit', windowsHide: true,
+    cwd: programRoot, stdio: 'inherit', windowsHide: true,
     // The chooser runs its library stage immediately after this metadata refresh.
     env: {...process.env, STUDY_PYTHON: python(root), STUDY_DEFER_CONTENT_SYNC: '1'},
   });
@@ -344,7 +347,7 @@ async function main() {
         return;
       }
     }
-    const result = spawnSync(python(root), [join(root, 'tools/study/session.py'), '--chat', chat, 'refresh'],
+    const result = spawnSync(python(root), [join(programRoot, 'tools/study/session.py'), '--chat', chat, 'refresh'],
       {stdio: 'inherit', windowsHide: true, env: {...process.env, STUDY_NODE: process.execPath}});
     process.exitCode = result.status ?? 1;
     return;
@@ -434,7 +437,7 @@ async function main() {
     // changed school/course scope must not start downloads.
     const checked = spawnSync(python(root), ['-B', '-c',
       'import sys; sys.path.insert(0, sys.argv[1]); from snapshot_guard import validate_current_snapshot; from state_io import read; validate_current_snapshot(sys.argv[2], read(sys.argv[3]), allow_legacy=False)',
-      join(root, 'tools/study'), statePath, path], {encoding: 'utf8', windowsHide: true});
+      join(programRoot, 'tools/study'), statePath, path], {encoding: 'utf8', windowsHide: true});
     if (checked.status !== 0) throw new Error('本轮快照或课程范围已变化，未启动资料下载；请明确重新同步');
     const snapshot = json(path);
     if (snapshot.account_scope?.user_id !== client.userId

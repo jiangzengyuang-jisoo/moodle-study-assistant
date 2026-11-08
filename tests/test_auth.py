@@ -113,7 +113,7 @@ class AuthTests(unittest.TestCase):
     def test_dpapi_stores_ciphertext_and_round_trips_without_plaintext_file(self):
         with tempfile.TemporaryDirectory(prefix='study auth ') as directory:
             root = Path(directory)
-            with patch.object(auth, 'ROOT', root):
+            with patch.object(auth, 'ROOT', root), patch.object(auth, 'DATA_ROOT', root):
                 auth.store_token('synthetic456')
             path = root / '.private/moodle-token.dpapi'
             self.assertNotIn(b'synthetic456', path.read_bytes())

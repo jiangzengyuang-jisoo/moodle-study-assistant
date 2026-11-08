@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Moodle 学习助手",
+    "description": "连接学校 Moodle 账号，在聊天里按章节学习保存在本机的课程资料。",
+    "detail": "docs/DETAIL.zh.md"
+  }
+}

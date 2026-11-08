@@ -11,12 +11,15 @@ import {createHash, randomUUID} from 'node:crypto';
 import {existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync, unlinkSync, rmSync} from 'node:fs';
 import {dirname, join, relative, resolve, sep} from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {python} from './state-bridge.mjs';
 import {
   MAX_BYTES, digest, fetchCourseFile, isDownloadableName, isImageName, remoteName,
   safeName, safeSubdir, webserviceFileURL, extensionOf,
 } from './course-files.mjs';
 import {checkWarnings, readDiscussions, verifyPosts} from './refresh.mjs';
+
+const programRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 export const SCOPE_VERSION = 1;
 export const SCOPE_TEXT = '所选课程当前账号可访问、可直接下载的全部课程资料（课件、作业题目附件、阅读材料、练习文件、论坛附件、正文图片、可直接下载的音视频），以及公告、作业要求、讨论文字及准确出处；不开始测验尝试、不提交作业、不发帖、不修改学校状态；流媒体、外部网站、额外登录或权限受限内容只保留入口和原因。';
@@ -799,7 +802,7 @@ function readLedger(path) {
 }
 
 function pythonJSON(root, statePath, script, args, payload) {
-  const child = spawnSync(python(root), [join(root, 'tools/study', script), '--state', statePath, ...args], {
+  const child = spawnSync(python(root), [join(programRoot, 'tools/study', script), '--state', statePath, ...args], {
     input: JSON.stringify(payload), encoding: 'utf8', windowsHide: true,
     env: {...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1'},
     maxBuffer: 64 * 1024 * 1024,

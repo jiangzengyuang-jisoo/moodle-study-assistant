@@ -17,7 +17,7 @@
 
 | 日期 | 这次主要改变了什么 |
 | --- | --- |
-| [2026-11-08](#2026-11-08) | 发布审计修复：复习剩余容量与已绑定原答批改；章节核对精确定位、同聊天回执复用与阶段进度；教学意图路由与考试信息使用时机修复；章节讲解批量准备与 teaching-event 保存提速 |
+| [2026-11-08](#2026-11-08) | 发布审计修复：复习剩余容量与已绑定原答批改；章节核对精确定位、同聊天回执复用与阶段进度；教学意图路由与考试信息使用时机修复；章节讲解批量准备与 teaching-event 保存提速；DeepSeek Harness 插件试用版：可安装插件包、聊天内首次设置引导、教学技能与章节核对接入、个人资料与程序分离 |
 | [2026-11-07](#2026-11-07) | 迁入同题曝光、计划和考试来源检查；课件归档后旧卷/旧题按新源重新核验；补齐 5 个按需只读查询；修复归档改写历史证据与复习选择题遗漏选项；修复换校数字 ID 碰撞；审计复核后修复复习剩余容量未统一与绑定后批改状态无法保存 |
 | [2026-11-06](#2026-11-06) | 补齐 Harness 版完整英文更新日志、中英文切换与英文首页入口 |
 | [2026-11-05](#2026-11-05) | 新增按章核对入口：开始教某一章只核对本章课件（严格比对内容），不再整校采集 |
@@ -31,6 +31,16 @@
 | [2026-09-22](#2026-09-22) | 首次发布：Windows 安装、学校账号连接、课程信息与学习记录 |
 
 ## 2026-11-08
+
+### DeepSeek Harness 插件试用版
+
+- 新增可安装的 DSH bundle `dsh-moodle-study@0.6.0-trial.1`：插件源码在 `plugin/`，构建脚本 `tools/release/build-plugin.mjs` 输出自包含的 `dist/moodle-study-assistant/`（约 9.8MB、2042 个文件；零 npm 安装依赖，随包内置 6 个 Node 运行时包）。学生在 DSH 左侧 `Plugins` → `Add plugin` 粘贴试用包绝对路径或 `.tgz` 路径，阅读第三方提示后安装并保持插件开关为 On；桌面版 profile 由 Electron 管理，不能用 CLI 管理插件。这是试用包，未发布到 npm，也未进入任何市场索引。
+- 首次使用改为聊天内引导（新增 `study_setup_status`、`study_setup_location`、`study_setup_runtime`、`study_connect_school`、`study_setup_courses`、`study_setup_select_courses`、`study_setup_sync`、`study_setup_finish`、`study_job_status`）：选择资料位置（默认 `文档\MoodleStudy`，旧项目资料夹可直接沿用）→ 用 Harness 自带 Python 3.12 建私有环境并安装运行依赖（首次约 20MB 下载）→ 本人在浏览器完成学校 SSO/MFA（Token 仍由 Windows DPAPI 加密保存，不读密码、Cookie 或 `.private/`）→ 选择课程与 `full`/`info_only` 资料授权 → 首次同步 → 完成后按状态自动重连。每步都有状态与错误路径，失败可重试，不覆盖已有资料。
+- 教学接入插件：注册 `self-study-tutor` 技能、`moodle-study` 使用技能与常驻教学规则（一次讲透一个适量知识点、可渲染 LaTeX、指定章节不扩大范围、回复不堆技术日志和无关核验尾注）；章节核对走 MCP 工具 `study_check_chapter`，同一聊天同一章节且本地文件未变时复用严格回执、本地新增本章资料只核对新增范围；异常时仍按既有的 CLI 后备与单次授权恢复规则处理。
+- 新增本地学习工具（无需 shell）：`study_local_context`、`study_chapter_prep`、`study_material_read`、`study_material_render`、`study_teaching_event`、`study_local_status`、`study_refresh`、`study_job_status`；Host 侧新增 `moodle_study_chat`（取当前聊天标识）与 `moodle_study_status`（MCP 启动失败时仍能读取设置状态并给出恢复步骤）。原有 15 个只读 Moodle 工具与 `study_check_chapter` 保持可用。
+- 程序与个人数据分离：程序在插件包内；学习资料、`config.local.json` 与 DPAPI Token 在学生选择的资料目录（布局仍是 `<资料目录>/Study/`）；运行环境、日志与设置状态在 `%LOCALAPPDATA%\MoodleStudyAssistant`，卸载插件默认保留个人资料。引擎新增 `STUDY_DATA_ROOT` 数据根覆盖（未设置时行为与旧版一致），Node/Python 按程序根定位自身文件、按数据根读写学生数据。
+- 验证：插件包构建与个人数据审计通过（9.8MB/2042 文件）；MCP 握手、设置工具注册、资料位置、运行依赖真实安装（DSH Python 3.12）、错误路径与状态重连提示 22/22 检查通过；学习模式 8/8 工具注册并完成真实本地引擎调用；数据根分离回归 node 177 + Python 103 + 学习工具 638 通过；DPAPI 加密往返与真实本地 `chapter-prep` 通过。未验证：真实学校账号登录与真实课程同步（需本人完成）、桌面 UI 点击安装的完整走查与截图、npm 发布、市场索引托管与 `Discover` 实际安装；离线/本机验证不代表其他学校、电脑或 Windows 账户可用。
+- 升级：在 `Plugins` 页卸载旧版后安装新试用包（本地路径/tarball 来源没有 `Versions`/`Update`，同包已装时直接重装会被拒绝），个人资料目录保留，重装后选择原资料文件夹继续；回滚到未插件化工作流时卸载插件、按原项目方式使用，数据布局一致，回滚前建议先备份资料文件夹。学生安装与首次设置步骤见[插件试用说明](docs/PLUGIN_TRIAL_GUIDE.md)；发布到 npm 或市场索引仍需维护者另行授权，流程见[市场提交材料](docs/market/README.md)。
 
 ### 章节核对接入 Moodle 工具
 

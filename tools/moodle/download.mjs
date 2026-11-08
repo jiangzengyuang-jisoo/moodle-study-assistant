@@ -2,7 +2,10 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, extname, join, relative, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { installVersion } from './version-files.mjs';
+
+const programRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 const LIMIT = 64 * 1024 * 1024;
 const EXTENSIONS = new Set(['.pdf', '.pptx', '.docx', '.xlsx', '.ppt', '.doc', '.xls', '.odt', '.txt', '.csv', '.rtf']);
@@ -104,8 +107,8 @@ export async function downloadModules(client, state, root, {moduleIds, authorize
             && remoteName(s) === file.filename && (s.filepath ?? '/') === (file.filepath ?? '/')));
         if (latest.settings?.material_version_policy?.enabled && matches.length === 1) {
           const installed = installVersion({study, statePath,
-            script: join(project, 'tools/study/material_versions.py'),
-            python: join(project, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'),
+            script: join(programRoot, 'tools/study/material_versions.py'),
+            python: process.env.STUDY_PYTHON || join(programRoot, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'),
             source: {course_id, module_id: id, filename: file.filename, filepath: file.filepath ?? '/',
               category: matches[0].category, title: module.name, source_url,
               module_url: module.url}, bytes});
