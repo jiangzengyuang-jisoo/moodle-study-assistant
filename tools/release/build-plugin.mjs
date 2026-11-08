@@ -1,6 +1,6 @@
 // Build the installable DeepSeek Harness bundle for the Moodle Study Assistant.
 //
-// Output: dist/moodle-study-assistant/ 鈥?a self-contained plugin package:
+// Output: dist/moodle-study-assistant/ — a self-contained plugin package:
 //   * Host plugin (index.js), bundle patch, locale, icon
 //   * program/  the study engine + MCP server + the six vendored Node packages
 //   * no personal data: Study/, .private/, config.local.json, .venv, logs and
@@ -30,7 +30,6 @@ const VENDORED_NODE_PACKAGES = [
 const SKIP_DIRS = new Set(['__pycache__', 'node_modules', '.venv', '.git'])
 const SKIP_TMP_PREFIX = /^tmp/i
 const SKIP_FILE = /^(test_.*\.py|.*\.pyc|.*\.dpapi|config\.local\.json)$/
-const SKIP_TOP_LEVEL_STUDY = new Set(['Study', '.private', 'tmp', '.venv', 'node_modules', 'dist'])
 
 function fail(message) {
   console.error(`build-plugin: ${message}`)
@@ -127,10 +126,11 @@ function copyPluginShell() {
 }
 
 const FORBIDDEN_PATTERNS = [
-  { name: 'developer absolute path', pattern: /D:[\\\\/]deepseek harness/i },
+  { name: 'developer absolute path', pattern: /D:[\\/]deepseek harness/i },
   { name: 'developer Windows user name', pattern: /Peter Jiang/i },
   { name: 'OpenAI-style secret', pattern: /sk-[A-Za-z0-9]{20,}/ },
   { name: 'Moodle token literal', pattern: /\bwstoken=[A-Za-z0-9]{20,}/ },
+  { name: 'encoding corruption marker', pattern: /\uFFFD/ },
 ]
 
 function auditPackage() {

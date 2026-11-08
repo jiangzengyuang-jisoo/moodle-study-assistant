@@ -1,6 +1,6 @@
 # 市场条目文案（LISTING）
 
-本文件是插件在 DSH 社区索引/市场中的展示文案草稿，供发布者复制到索引条目、插件详情页或发布公告。**当前没有发布，也没有上架**。
+本文件是插件在 DSH 社区索引/市场中的展示文案草稿，供发布者复制到索引条目、插件详情页或发布公告。**当前没有发布，也没有上架**。当前对应试用版本：`0.6.0-trial.2`。
 
 ## 标题
 
@@ -22,9 +22,10 @@ Moodle 学习助手是一个 DeepSeek Harness 插件：它直连你所在学校�
 - **本机资料优先**：课件、笔记、错题和复习记录都在你的电脑上；插件安装目录不含个人数据，升级或卸载插件不会删除资料。
 - **章节文件核对**：讲师课件更新后，助手会用 Harness 内的 Moodle 工具严格核对本章文件；同一聊天、同一章节且文件未变时不重复联网，只有你明确要求才重新核对。
 - **学校信息按需更新**：只在当前请求确实需要作业要求、截止日期、公告或考试安排时，才读取学校最新信息并同步已授权资料。
+- **设置与恢复能力**：设置进度保存在本机，任一步中断后重新打开聊天会从当前进度继续；学校暂时连不上时，本机资料读取、章节讲解和教学记录仍可用，联网内容会明确标注不是最新；同步中断后重跑是增量的，空目录或未完成的同步不会被显示为“设置完成”。
 - **只读边界**：不提交作业、不代替你作答学校测验、不发帖、不修改学校完成状态、不发邮件；登录由你本人在学校网页完成，密码和验证码不进入聊天、日志或插件配置。
 
-首次使用有引导：选择资料位置 → 安装运行依赖 → 本人登录学校 → 选择课程与资料范围（完整同步或只同步课程信息）→ 首次同步，之后即可开始学习。
+首次使用有引导：选择资料位置 → 安装运行依赖 → 本人登录学校 → 选择课程与资料范围（完整同步或只同步课程信息）→ 首次同步，之后即可开始学习。设置完成后也可以在聊天里换课程、换资料位置或修复运行依赖，旧资料目录默认保留。
 
 ## 长描述（English, for the entry detail page）
 
@@ -34,9 +35,10 @@ Moodle Study Assistant is a DeepSeek Harness plugin. It connects to your school'
 - **Local-first data**: course files, notes, mistakes and review records stay on your computer. The plugin directory holds no personal data, and upgrading or uninstalling the plugin does not delete your materials.
 - **Chapter file verification**: when the lecturer's files change, the assistant verifies this chapter through the Moodle tool inside Harness. If the same chat and chapter are unchanged it reuses the previous strict receipt instead of reconnecting; a forced recheck only happens when you ask.
 - **On-demand school information**: the assistant reads current assignments, deadlines, announcements or exam arrangements only when the request genuinely needs them, and syncs only materials you authorised.
+- **Setup and recovery**: setup progress is kept locally, so an interrupted step resumes from where it stopped when you reopen the chat. During a temporary school outage, local material reading, chapter teaching and the teaching record keep working, and online information is clearly labelled as not the latest. Re-running an interrupted sync fills in what is missing; an empty folder or an unfinished sync is never shown as setup complete.
 - **Read-only boundaries**: it never submits assignments, answers school quizzes for you, posts, changes completion status or sends email. Sign-in happens in your own browser on the school page; passwords and verification codes never enter the chat, logs or plugin configuration.
 
-The first run is guided: choose a data location → install the runtime dependencies → sign in to your school yourself → choose courses and the material scope (full sync or information only) → first sync, then start studying.
+The first run is guided: choose a data location → install the runtime dependencies → sign in to your school yourself → choose courses and the material scope (full sync or information only) → first sync, then start studying. After setup you can also change courses or the data location, or repair the runtime, from the chat; the old data folder is kept by default.
 
 ## 关键词
 

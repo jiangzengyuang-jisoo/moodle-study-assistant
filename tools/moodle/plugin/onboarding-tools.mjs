@@ -1,8 +1,9 @@
-// First-use setup and recovery handlers for the Moodle Study Assistant plugin.
+// First-use, maintenance and recovery handlers for the Moodle Study Assistant.
 //
-// These tools are registered both before setup completes (the MCP server runs
-// in a reduced "setup" mode) and in the normal study server, so a broken
-// setup always has a visible entry point and no shell command is required.
+// The same handlers are registered in every MCP mode. Local study tools never
+// depend on a live school connection, setup steps can resume after any
+// interruption, and completion is derived from real sync evidence rather than
+// from files that merely exist.
 //
 // Nothing here reads or prints credentials: sign-in happens in the student's
 // own browser and the API token is stored by the existing Windows DPAPI
@@ -11,8 +12,8 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { ReadOnlyClient } from '../core.mjs'
-import { decryptWindowsToken } from '../windows-token.mjs'
+import { courseCatalog, selectCoursesInChat } from '../chat-course-selection.mjs'
+import { saveState } from '../state-bridge.mjs'
 import { jobSummary, latestJob, runningJob, startJob } from './jobs.mjs'
 import {
   coreRuntimeReady,
@@ -24,27 +25,43 @@ import {
   pythonStep,
   venvPython,
 } from './python-runtime.mjs'
+import { RemoteError, createRemoteGateway } from './remote.mjs'
 import {
   DEFAULT_SCHOOL_URL,
   defaultDataDir,
+  localCapabilities,
   looksLikeExistingProfile,
   normalizeSchoolUrl,
   normalizeTimeZone,
   programDir,
   readConfig,
-  readRuntime,
-  readSettings,
   readState,
+  readSettings,
   resolveDataDir,
   runtimePython,
-  studyReadiness,
   supportDir,
   tokenPath,
   writeConfig,
   writeSettings,
 } from './settings.mjs'
+import { evaluateSyncEvidence, selectedCoursesFromState, syncSummaryText } from './sync-evidence.mjs'
 
 const PENDING_COURSES_FILE = 'pending-courses.json'
+const LOCAL_STUDY_TOOLS = [
+  'study_local_context',
+  'study_chapter_prep',
+  'study_material_read',
+  'study_material_render',
+  'study_teaching_event',
+  'study_local_status',
+]
+
+let defaultGateway = null
+function gatewayOf(context) {
+  if (context?.remote) return context.remote
+  if (!defaultGateway) defaultGateway = createRemoteGateway()
+  return defaultGateway
+}
 
 function pendingPath() {
   return join(supportDir(), 'pending', PENDING_COURSES_FILE)
@@ -105,80 +122,102 @@ function readableError(result) {
   return `命令失败（退出码 ${result.exitCode}）`
 }
 
-// ---------------------------------------------------------------------------
-// State inspection
-// ---------------------------------------------------------------------------
-
-let schoolCache = { at: 0, value: null }
-
-async function schoolStatus(settings, { force = false } = {}) {
-  const now = Date.now()
-  if (!force && schoolCache.value && now - schoolCache.at < 20000) return schoolCache.value
-  const base = {
-    configured: Boolean(readConfig(settings.dataDir)),
-    tokenPresent: existsSync(tokenPath(settings.dataDir)),
-    connected: false,
-    siteName: null,
-    userId: null,
-    error: null,
+export function remoteFailure(error) {
+  if (error instanceof RemoteError) {
+    return {
+      error: error.code,
+      kind: error.kind,
+      message: error.message,
+      next_step: error.next_step,
+      retryable: error.retryable,
+      requires_login: error.requiresLogin,
+    }
   }
-  if (!base.configured || !base.tokenPresent) {
-    schoolCache = { at: now, value: base }
-    return base
+  const message = String(error?.message ?? '')
+  if (/STUDY_TOKEN_DECRYPT_FAILED|STUDY_AUTH/.test(message)) {
+    return {
+      error: 'SCHOOL_AUTH_REQUIRED',
+      kind: 'auth',
+      message: '学校登录需要重新确认。已下载的本地资料仍可学习；需要联网时请让学生本人重新连接学校。',
+      next_step: 'study_connect_school',
+      retryable: false,
+      requires_login: true,
+    }
   }
-  const config = readConfig(settings.dataDir)
-  try {
-    const credential = readFileSync(tokenPath(settings.dataDir))
-    const client = await new ReadOnlyClient(config.moodle_url, decryptWindowsToken(credential)).connect()
-    base.connected = true
-    base.siteName = client.siteName ?? null
-    base.userId = client.userId ?? null
-  } catch (error) {
-    const message = String(error?.message ?? '')
-    base.error = /STUDY_TOKEN_DECRYPT_FAILED|decrypt/i.test(message)
-      ? '本机保存的学校授权无法解密（可能换了 Windows 账户）；请重新连接学校。'
-      : /network|fetch|timeout|ENOTFOUND|ETIMEDOUT|ECONN/i.test(message)
-        ? '学校连接暂时失败，请检查网络后重试。'
-        : '学校连接验证失败，请重新连接学校。'
+  if (/PROFILE_ACCOUNT_GUARD|同一个学习档案|学习档案已有课程|学习档案中已存在/.test(message)) {
+    return {
+      error: 'PROFILE_ACCOUNT_GUARD',
+      kind: 'account',
+      message: message.slice(0, 400),
+      next_step: 'study_setup_status',
+      retryable: false,
+      requires_login: false,
+    }
   }
-  schoolCache = { at: now, value: base }
-  return base
-}
-
-function stateSummary(settings) {
-  const state = settings.dataDir ? readState(settings.dataDir) : null
-  const courses = Array.isArray(state?.courses)
-    ? state.courses.map((course) => ({
-        id: course.id,
-        name: course.name,
-        shortname: course.shortname,
-        moodle_course_ids: course.moodle_course_ids ?? [],
-      }))
-    : []
-  const authorization = state?.settings?.course_library_authorization ?? null
-  const granted = authorization?.courses && typeof authorization.courses === 'object' ? authorization.courses : {}
-  const materialCount = Array.isArray(state?.materials) ? state.materials.length : 0
-  const hasSnapshot = Boolean(
-    settings.dataDir &&
-      (existsSync(join(settings.dataDir, 'Study', '_System', 'LibrarySync', 'latest.json')) ||
-        existsSync(join(settings.dataDir, 'Study', '_System', 'refresh-latest.json')) ||
-        existsSync(join(settings.dataDir, 'Study', '_System', 'Library'))),
-  )
+  if (/学习状态已变化|课程 ID 不在|课程不存在|没有找到课程/.test(message)) {
+    return {
+      error: 'COURSE_LIST_STALE',
+      kind: 'state',
+      message: '课程列表或学习档案已变化，请重新列出课程后让学生再确认一次。',
+      next_step: 'study_setup_courses',
+      retryable: true,
+      requires_login: false,
+    }
+  }
+  if (/学校拒绝了|没有可用的完整资料授权|authorization/.test(message)) {
+    return {
+      error: 'AUTHORIZATION_REQUIRED',
+      kind: 'access',
+      message: '当前账号或课程资料授权不满足这次操作；请核对课程与资料范围，不要绕过学校限制。',
+      next_step: 'study_setup_status',
+      retryable: false,
+      requires_login: false,
+    }
+  }
   return {
-    initialized: Boolean(state),
-    courses,
-    authorization: {
-      mode: granted && Object.keys(granted).length ? granted[Object.keys(granted)[0]].mode ?? null : null,
-      authorizedCourses: Object.keys(granted).length,
-    },
-    materialCount,
-    hasSnapshot,
+    error: 'SCHOOL_UNAVAILABLE',
+    kind: 'network',
+    message: '学校暂时连接不上；已下载的本地资料仍可学习，网络恢复后调用 study_reconnect 再试。',
+    next_step: 'study_reconnect',
+    retryable: true,
+    requires_login: false,
   }
 }
 
-function nextSteps({ settings, runtime, school, state }) {
+// ---------------------------------------------------------------------------
+// Capability collection and next steps
+// ---------------------------------------------------------------------------
+
+function buildCapabilities({ settings, local, school, state, evidence }) {
+  const selected = selectedCoursesFromState(state)
+  const evidenceCourses = evidence?.courses ?? []
+  const authorizationComplete =
+    selected.length > 0 &&
+    evidenceCourses.length === selected.length &&
+    evidenceCourses.every((course) => course.status !== 'authorization_missing' && course.status !== 'authorization_invalid')
+  return {
+    locationSet: Boolean(local.dataDir && local.dataDirExists),
+    configReady: Boolean(local.configPresent),
+    runtimeReady: Boolean(local.runtimeReady),
+    tokenPresent: Boolean(local.tokenPresent),
+    schoolConnected: school.state === 'connected',
+    schoolNetworkIssue: school.state === 'network',
+    schoolAuthRequired: Boolean(school.requiresLogin),
+    coursesSelected: selected.length > 0,
+    authorizationComplete,
+    syncReady: Boolean(evidence?.ready),
+    setupComplete: settings?.stage === 'ready',
+    localStudyAvailable: Boolean(local.studyToolsUsable),
+    canFinish: Boolean(local.configPresent && local.runtimeReady && local.tokenPresent && selected.length && evidence?.ready),
+    dataDir: local.dataDir,
+  }
+}
+
+// Pure next-step computation: every referenced tool is always registered by
+// the MCP server, so a restart at any setup stage can continue correctly.
+export function nextSteps(capabilities, evidence = null) {
   const steps = []
-  if (!settings.dataDir) {
+  if (!capabilities.locationSet) {
     steps.push({
       step: 'choose_location',
       title: '选择资料保存位置',
@@ -187,34 +226,52 @@ function nextSteps({ settings, runtime, school, state }) {
     })
     return steps
   }
-  if (!runtime.coreReady) {
+  if (!capabilities.configReady) {
     steps.push({
-      step: 'install_runtime',
-      title: '安装学习引擎运行依赖',
-      tool: 'study_setup_runtime',
-      hint: '首次安装需要联网下载约 20MB，请调用后用 study_job_status 查看进度。',
+      step: 'choose_location',
+      title: '补全资料目录的学校配置',
+      tool: 'study_setup_location',
+      hint: '选择原来的资料文件夹后再次确认即可补全学校连接配置；已有资料不会被覆盖。',
     })
     return steps
   }
-  if (!school.tokenPresent) {
+  if (!capabilities.runtimeReady) {
+    steps.push({
+      step: 'install_runtime',
+      title: '安装/修复学习引擎运行依赖',
+      tool: 'study_setup_runtime',
+      hint: '首次安装需要联网下载约 20MB；安装中断或损坏时可重复调用，已完成的步骤会跳过。',
+    })
+    return steps
+  }
+  if (!capabilities.tokenPresent) {
     steps.push({
       step: 'connect_school',
       title: '连接学校账号',
       tool: 'study_connect_school',
-      hint: '调用后学校网页会在浏览器中打开，由学生本人完成登录（含学校的验证码/双重验证）。登录组件缺失时会先自动安装。',
+      hint: '学校网页会在浏览器中打开，由学生本人完成登录（可含验证码/双重验证）。',
     })
     return steps
   }
-  if (!school.connected) {
+  if (capabilities.schoolAuthRequired) {
+    steps.push({
+      step: 'connect_school',
+      title: '重新连接学校账号',
+      tool: 'study_connect_school',
+      hint: '已保存的学校登录失效或无法解密，需要学生本人重新登录。已下载的本地资料仍可学习。',
+    })
+    return steps
+  }
+  if (capabilities.schoolNetworkIssue && !capabilities.coursesSelected) {
     steps.push({
       step: 'reconnect_school',
-      title: '学校连接需要重新确认',
-      tool: 'study_connect_school',
-      hint: school.error ?? '请重新连接学校账号后再继续。',
+      title: '恢复学校连接',
+      tool: 'study_reconnect',
+      hint: '学校暂时连接不上；恢复网络后重试即可，不需要重新登录。已下载的本地资料仍可学习。',
     })
     return steps
   }
-  if (!state.courses.length) {
+  if (!capabilities.coursesSelected) {
     steps.push({
       step: 'list_courses',
       title: '列出课程并让学生选择',
@@ -229,79 +286,138 @@ function nextSteps({ settings, runtime, school, state }) {
     })
     return steps
   }
-  if (!state.hasSnapshot && !state.materialCount) {
+  if (!capabilities.authorizationComplete) {
+    steps.push({
+      step: 'save_courses',
+      title: '确认课程资料范围',
+      tool: 'study_setup_select_courses',
+      hint: '所选课程缺少当前账号的资料范围授权；请重新列出课程并让学生确认“完整同步”或“只同步信息”。',
+    })
+    return steps
+  }
+  if (!capabilities.syncReady) {
     steps.push({
       step: 'sync',
-      title: '首次同步学校信息与资料',
+      title: '完成首次学校信息与资料同步',
       tool: 'study_setup_sync',
-      hint: '需要先调用 moodle_study_chat 取得 chat_id，再把 chat_id 传给 study_setup_sync。',
+      hint: '需要先调用 moodle_study_chat 取得 chat_id，再传给 study_setup_sync；中断或部分失败后重跑会增量补齐已成功的内容。',
     })
+    if (evidence) steps.push({ step: 'sync_detail', title: '当前同步范围', tool: 'study_setup_status', hint: syncSummaryText(evidence) })
+    return steps
   }
-  steps.push({
-    step: 'finish',
-    title: '完成设置',
-    tool: 'study_setup_finish',
-    hint: '完成设置后工具会自动重新连接，即可开始学习。',
-  })
+  if (!capabilities.setupComplete) {
+    steps.push({
+      step: 'finish',
+      title: '完成设置',
+      tool: 'study_setup_finish',
+      hint: '同步证据已匹配当前账号和课程授权，可以完成设置并开始学习。',
+    })
+    return steps
+  }
   return steps
 }
 
-export async function statusPayload({ verifySchool = true } = {}) {
+export async function collectStatus({ remote = gatewayOf(null), verifySchool = true } = {}) {
   const settings = readSettings() ?? {}
-  const runtime = readRuntime()
-  const coreReady = coreRuntimeReady()
-  const loginReady = loginRuntimeReady()
+  const local = localCapabilities(settings)
+  const state = local.dataDirExists ? readState(local.dataDir) : null
   const activeJob = runningJob()
-  const lastJobs = ['setup-runtime', 'setup-login', 'setup-sync']
+  const failedJobs = ['setup-runtime', 'setup-login', 'setup-sync']
     .map((name) => latestJob(name))
     .filter(Boolean)
+    .filter((job) => job.state === 'failed')
     .map((job) => jobSummary(job))
-  let school = { configured: false, tokenPresent: false, connected: false, error: null }
-  if (settings.dataDir && verifySchool) {
-    school = await schoolStatus(settings, { force: false })
-  } else if (settings.dataDir) {
-    school = {
-      configured: Boolean(readConfig(settings.dataDir)),
-      tokenPresent: existsSync(tokenPath(settings.dataDir)),
-      connected: false,
-      error: null,
-    }
+
+  let school
+  if (!local.dataDirExists || !local.configPresent) {
+    school = { state: 'setup', connected: false, message: '还没有完成资料位置或学校配置。', requiresLogin: false, retryable: false, next_step: 'study_setup_location' }
+  } else if (verifySchool) {
+    school = await remote.probe()
+  } else {
+    school = remote.status()
   }
-  const state = stateSummary(settings)
-  const steps = nextSteps({ settings, runtime: { coreReady }, school, state })
+
+  const connectedAccount =
+    school.state === 'connected' && school.baseUrl && school.userId
+      ? { site: school.baseUrl, user_id: school.userId }
+      : null
+  const profileAccount = state?.settings?.profile_account_scope ?? null
+  const evidence = local.dataDirExists
+    ? evaluateSyncEvidence({ dataDir: local.dataDir, state, connectedAccount, profileAccount })
+    : null
+  const capabilities = buildCapabilities({ settings, local, school, state, evidence })
+  const steps = nextSteps(capabilities, evidence)
   return {
     pluginVersion: process.env.MOODLE_STUDY_PLUGIN_VERSION ?? null,
     supportDir: supportDir(),
-    dataDirDefault: defaultDataDir(),
     settings: {
       dataDir: settings.dataDir ?? null,
       schoolUrl: settings.schoolUrl ?? null,
       timezone: settings.timezone ?? null,
       stage: settings.stage ?? 'new',
-      syncedAt: settings.syncedAt ?? null,
-      onboardedAt: settings.onboardedAt ?? null,
+      onboardingAt: settings.onboardedAt ?? null,
     },
-    dataDir: settings.dataDir ?? null,
-    runtime: {
+    local: {
+      dataDir: local.dataDir,
+      dataDirExists: local.dataDirExists,
+      dataDirDefault: local.dataDirDefault,
+      configPresent: local.configPresent,
+      pythonPresent: local.pythonPresent,
+      coreInstalled: local.coreInstalled,
+      runtimeReady: local.runtimeReady,
+      loginRuntimeReady: local.loginRuntimeReady,
       python: runtimePython(),
-      coreReady,
-      loginReady,
-      basePython: runtime.core?.basePython ?? null,
+      tokenPresent: local.tokenPresent,
+      stateInitialized: local.stateInitialized,
+      studyToolsUsable: local.studyToolsUsable,
     },
     school,
-    courses: state.courses,
-    authorization: state.authorization,
-    materialCount: state.materialCount,
-    hasSnapshot: state.hasSnapshot,
+    courses: state?.courses ?? [],
+    authorization: {
+      mode: state?.settings?.course_library_authorization?.courses
+        ? selectedCoursesFromState(state).map((course) => course.mode).filter(Boolean)[0] ?? null
+        : null,
+      authorizedCourses: Object.keys(state?.settings?.course_library_authorization?.courses ?? {}).length,
+    },
+    sync: evidence
+      ? {
+          ready: evidence.ready,
+          mode: evidence.mode,
+          summary: evidence.summary,
+          blockers: evidence.blockers,
+          courses: evidence.courses.map((course) => ({
+            id: course.id,
+            name: course.name,
+            mode: course.mode,
+            status: course.status,
+            issues: course.issues,
+            available: course.available,
+          })),
+          evidence: { snapshot: evidence.snapshot, report: evidence.report },
+          checkedAt: evidence.checkedAt,
+          text: syncSummaryText(evidence),
+        }
+      : null,
+    capabilities,
+    local_study: {
+      available: Boolean(local.studyToolsUsable),
+      stateInitialized: Boolean(state),
+      tools: LOCAL_STUDY_TOOLS,
+      note: '学校暂时连不上时，本地资料读取、章节准备、原页渲染和教学记录仍可使用；但采集/核对不是最新线上结果。',
+    },
     next_steps: steps,
     job: activeJob ? jobSummary(activeJob) : null,
-    recent_jobs: lastJobs.filter((job) => job.state === 'failed').slice(-2),
+    recent_failed_jobs: failedJobs.slice(-2),
     recovery: [
-      '资料位置、学校登录和运行依赖都可以在这里重新设置，不会删除已有学习资料。',
-      '如果工具一直没有出现，请完全退出并重新打开 DeepSeek Harness（插件会自动重新连接）。',
-      '运行依赖安装失败时，确认网络可用后再次调用 study_setup_runtime。',
+      '任何一步中断后重新调用 study_setup_status，会从当前进度继续，不会删除已有资料。',
+      '学校网络故障用 study_reconnect 重试；只有登录失效或凭据无法解密才需要学生本人重新连接学校。',
+      '资料同步中断或部分失败时重跑 study_setup_sync 会增量补齐，不会重复下载已成功内容。',
     ],
   }
+}
+
+export async function statusPayload(args = {}, context = {}) {
+  return collectStatus({ remote: gatewayOf(context), verifySchool: true })
 }
 
 // ---------------------------------------------------------------------------
@@ -332,8 +448,15 @@ function engineNode(args, settings) {
   return nodeStep('学校只读接口', 'tools/moodle/run.mjs', args, settings)
 }
 
-export function locationHandler(args) {
+function scheduleReconnect(context, reason) {
+  if (typeof context?.requestReconnect !== 'function') return false
+  context.requestReconnect(reason)
+  return true
+}
+
+export function locationHandler(args, context = {}) {
   const settings = readSettings() ?? {}
+  const previous = settings.dataDir ?? null
   const dataDir = resolveDataDir(args.data_dir ?? settings.dataDir ?? defaultDataDir())
   const existing = looksLikeExistingProfile(dataDir)
   const existingConfig = readConfig(dataDir)
@@ -347,7 +470,9 @@ export function locationHandler(args) {
     }
   }
   mkdirSync(dataDir, { recursive: true })
-  for (const dir of ['Study/_System', 'Study/_Inbox', '.private']) mkdirSync(join(dataDir, ...dir.split('/')), { recursive: true })
+  for (const dir of ['Study/_System', 'Study/_Inbox', '.private']) {
+    mkdirSync(join(dataDir, ...dir.split('/')), { recursive: true })
+  }
   let config = existingConfig
   if (!config) {
     config = {
@@ -356,31 +481,51 @@ export function locationHandler(args) {
     }
     writeConfig(dataDir, config)
   }
-  const next = writeSettings({
+  const changed = previous !== dataDir
+  writeSettings({
     dataDir,
     schoolUrl: config.moodle_url,
     timezone: config.timezone ?? normalizeTimeZone(settings.timezone),
-    stage: existing ? 'adopted' : 'located',
+    stage: !changed && settings.stage === 'ready' ? 'ready' : existing ? 'adopted' : 'located',
+    syncEpoch: previous === dataDir ? settings.syncEpoch ?? null : null,
   })
+  const reconnecting = changed ? scheduleReconnect(context, 'data-location-changed') : false
+  const gateway = gatewayOf(context)
+  if (changed) gateway.invalidate()
+  const state = readState(dataDir)
+  const evidence = evaluateSyncEvidence({ dataDir, state, profileAccount: state?.settings?.profile_account_scope ?? null })
+  const school = gateway.status()
+  const capabilities = buildCapabilities({
+    settings: readSettings(),
+    local: localCapabilities(readSettings()),
+    school,
+    state,
+    evidence,
+  })
+  const steps = nextSteps(capabilities, evidence)
   return {
     ok: true,
     dataDir,
-    schoolUrl: next.schoolUrl,
+    schoolUrl: config.moodle_url,
     adoptedExistingProfile: existing,
-    message: existing
-      ? '已使用这个文件夹里的现有学习资料；不会覆盖或重建已有记录。'
-      : '资料保存位置已设置。下一步安装学习引擎运行依赖。',
-    next_step: coreRuntimeReady() ? 'connect_school' : 'install_runtime',
+    changed,
+    reconnecting,
+    message: changed
+      ? '已切换到新的资料位置并保留原目录的全部资料。工具会自动重新连接；新位置不会沿用旧文件夹的登录凭据，需要联网时请学生本人重新连接学校。'
+      : existing
+        ? '已使用这个文件夹里的现有学习资料；不会覆盖或重建已有记录。'
+        : '资料保存位置已设置。',
+    next_steps: steps,
   }
 }
 
-export function runtimeHandler() {
+export function runtimeHandler(args, context = {}) {
   const settings = readSettings()
   if (!settings?.dataDir) {
     return { error: 'LOCATION_REQUIRED', message: '请先调用 study_setup_location 选择资料保存位置。' }
   }
   if (coreRuntimeReady()) {
-    return { ok: true, alreadyReady: true, message: '运行依赖已安装。', next_step: 'connect_school' }
+    return { ok: true, alreadyReady: true, message: '运行依赖已安装。', next_steps: nextSteps(buildCapabilities({ settings, local: localCapabilities(settings), school: gatewayOf(context).status(), state: readState(settings.dataDir), evidence: null })) }
   }
   const chain = coreRuntimeSteps()
   if (chain.error) return { error: 'PYTHON_NOT_FOUND', message: chain.error }
@@ -398,17 +543,17 @@ export function runtimeHandler() {
     ok: true,
     job: jobSummary(job),
     message:
-      '正在安装学习引擎运行依赖（首次约 20MB 下载，通常 1-3 分钟）。请调用 study_job_status 查看进度；完成后继续连接学校。',
+      '正在安装/修复学习引擎运行依赖（首次约 20MB 下载）。安装中断后可重复调用；请用 study_job_status 查看进度。',
   }
 }
 
-export function connectHandler(args, { mode } = {}) {
+export function connectHandler(args, context = {}) {
   const settings = readSettings()
   if (!settings?.dataDir) {
     return { error: 'LOCATION_REQUIRED', message: '请先调用 study_setup_location 选择资料保存位置。' }
   }
   if (!coreRuntimeReady()) {
-    return { error: 'RUNTIME_REQUIRED', message: '请先调用 study_setup_runtime 安装运行依赖。' }
+    return { error: 'RUNTIME_REQUIRED', message: '请先调用 study_setup_runtime 安装运行依赖后再登录学校。' }
   }
   const steps = []
   if (!loginRuntimeReady()) {
@@ -430,8 +575,12 @@ export function connectHandler(args, { mode } = {}) {
     logPath: join(supportDir(), 'logs', 'setup-login.log'),
     onSuccess: () => {
       loginRuntimeSteps().markRuntime?.()
-      writeSettings({ stage: 'connected' })
-      schoolCache = { at: 0, value: null }
+      writeSettings({ stage: 'connected', lastError: null })
+      gatewayOf(context).invalidate()
+      // Restart the MCP server so the new credential generation is loaded by
+      // the gateway and the chapter-check context. Tool names stay identical;
+      // after reconnecting the student continues exactly where they stopped.
+      scheduleReconnect(context, 'school-sign-in')
     },
     onFailure: (message) => writeSettings({ lastError: message }),
   })
@@ -439,104 +588,105 @@ export function connectHandler(args, { mode } = {}) {
     ok: true,
     job: jobSummary(job),
     message:
-      '正在准备学校登录：如果日志显示“请在弹出的学校网页完成登录”，请让学生在本机弹出的浏览器窗口里完成学校登录（可含验证码/双重验证）。登录完成后调用 study_setup_status 查看结果。工具不会读取或保存学生密码。',
-    next_step: mode === 'study' ? 'relogin_then_finish' : 'list_courses',
+      '正在准备学校登录：如果日志显示“请在弹出的学校网页完成登录”，请让学生在本机弹出的浏览器窗口里完成学校登录（可含验证码/双重验证）。登录成功后工具会自动重新连接（约几秒），然后可以继续选课。工具不会读取或保存学生密码。',
+    next_step: 'list_courses',
   }
 }
 
-export function coursesHandler() {
+export async function coursesHandler(args, context = {}) {
   const settings = readSettings()
-  if (!settings?.dataDir) return { error: 'LOCATION_REQUIRED', message: '请先完成资料位置设置。' }
-  if (!existsSync(tokenPath(settings.dataDir))) {
-    return { error: 'SCHOOL_REQUIRED', message: '请先连接学校账号。' }
-  }
+  const local = localCapabilities(settings)
+  if (!local.dataDir) return { error: 'LOCATION_REQUIRED', message: '请先完成资料位置设置。' }
+  if (!local.tokenPresent) return { error: 'SCHOOL_REQUIRED', message: '请先连接学校账号。' }
   const init = ensureInitializedSync(settings)
   if (!init.ok) {
-    return { error: 'INIT_FAILED', message: '学习档案初始化失败，请重试或查看运行日志。', detail: init }
+    return { error: 'INIT_FAILED', message: '学习档案初始化失败；可重试或先修复运行依赖。', detail: init }
   }
-  const result = runSync(engineNode(['courses', '--list'], settings))
-  const payload = result.ok ? lastJsonLine(result.stdout) : null
-  if (!payload) {
+  const gateway = gatewayOf(context)
+  try {
+    // Connect first so the account identity used for the catalog request is
+    // the real signed-in account, not the saved account fallback.
+    await gateway.connect()
+    const payload = await courseCatalog({
+      client: gateway,
+      readState: () => readState(settings.dataDir),
+      root: settings.dataDir,
+    })
+    writePending({
+      account_scope: payload.account_scope,
+      state_fingerprint: payload.state_fingerprint,
+      listed_at: new Date().toISOString(),
+      course_ids: payload.courses.map((course) => course.id),
+    })
     return {
-      error: 'COURSE_LIST_FAILED',
-      message: '课程列表读取失败；请确认学校连接可用后重试。',
-      detail: readableError(result),
+      ok: true,
+      instruction:
+        '请把下面的课程名称告诉学生，让学生本人选择本学期要跟踪的课程（可以多门），并确认资料范围：“完整资料同步”会下载所选课程的资料，“只同步课程信息”不下载。学生明确选择后再调用 study_setup_select_courses。',
+      courses: payload.courses,
+      modes: payload.modes,
+      scope: payload.scope,
+      selected: payload.courses.filter((course) => course.selected).map((course) => course.id),
     }
-  }
-  writePending({
-    account_scope: payload.account_scope,
-    state_fingerprint: payload.state_fingerprint,
-    listed_at: new Date().toISOString(),
-    course_ids: payload.courses.map((course) => course.id),
-  })
-  return {
-    ok: true,
-    instruction:
-      '请把下面的课程名称告诉学生，让学生本人选择本学期要跟踪的课程（可以多门），并确认资料范围：“完整资料同步”会下载所选课程的资料，“只同步课程信息”不下载。学生明确选择后再调用 study_setup_select_courses。',
-    courses: payload.courses,
-    modes: payload.modes,
-    scope: payload.scope,
-    selected: payload.courses.filter((course) => course.selected).map((course) => course.id),
+  } catch (error) {
+    return remoteFailure(error)
   }
 }
 
-export function selectCoursesHandler(args) {
+export async function selectCoursesHandler(args, context = {}) {
   const settings = readSettings()
-  if (!settings?.dataDir) return { error: 'LOCATION_REQUIRED', message: '请先完成资料位置设置。' }
+  const local = localCapabilities(settings)
+  if (!local.dataDir) return { error: 'LOCATION_REQUIRED', message: '请先完成资料位置设置。' }
   const pending = readPending()
   if (!pending) {
     return { error: 'COURSE_LIST_REQUIRED', message: '请先调用 study_setup_courses 列出课程。' }
   }
   const unknown = args.course_ids.filter((id) => !pending.course_ids.includes(id))
   if (unknown.length) {
-    return {
-      error: 'UNKNOWN_COURSE',
-      message: '选择的课程不在刚才的列表中，请重新列出课程让学生确认。',
-      unknown,
-    }
+    return { error: 'UNKNOWN_COURSE', message: '选择的课程不在刚才的列表中，请重新列出课程让学生确认。', unknown }
   }
-  const file = join(supportDir(), 'pending', 'course-selection.json')
-  writeFileSync(
-    file,
-    JSON.stringify(
-      {
-        version: 1,
-        course_ids: [...new Set(args.course_ids)],
-        mode: args.mode,
-        account_scope: pending.account_scope,
-        state_fingerprint: pending.state_fingerprint,
-      },
-      null,
-      2,
-    ),
-    'utf8',
-  )
-  const result = runSync(engineNode(['courses', '--select-file', file], settings))
-  const payload = result.ok ? lastJsonLine(result.stdout) : null
-  if (!payload || payload.status !== 'saved') {
-    return {
-      error: 'COURSE_SELECT_FAILED',
-      message: '课程选择保存失败；如果提示学习状态已变化，请重新列出课程再让学生确认。',
-      detail: payload ?? readableError(result),
-    }
+  const gateway = gatewayOf(context)
+  // The state writer spawns Python through the shared state bridge, which
+  // resolves STUDY_PYTHON or a venv next to the data dir. The runtime may have
+  // been installed after this MCP server started, so refresh the env here.
+  const runtimePath = venvPython()
+  if (runtimePath) process.env.STUDY_PYTHON = runtimePath
+  const selection = {
+    version: 1,
+    course_ids: [...new Set(args.course_ids)],
+    mode: args.mode,
+    account_scope: pending.account_scope,
+    state_fingerprint: pending.state_fingerprint,
   }
-  writeSettings({
-    stage: 'courses_selected',
-    courses: { mode: args.mode, ids: payload.course_ids, savedAt: new Date().toISOString() },
-  })
-  return {
-    ok: true,
-    mode: payload.mode,
-    course_ids: payload.course_ids,
-    message:
-      args.mode === 'full'
-        ? '课程与完整资料授权已保存。下一步同步学校信息和资料（首次可能较慢）。'
-        : '课程与“只同步课程信息”授权已保存，不会下载资料。下一步同步学校信息。',
-    next_step: 'sync',
+  try {
+    await gateway.connect()
+    const payload = await selectCoursesInChat({
+      client: gateway,
+      readState: () => readState(settings.dataDir),
+      writeState: (expected, state) => saveState(settings.dataDir, 'replace', { expected, state }),
+      root: settings.dataDir,
+      selection,
+    })
+    writeSettings({
+      stage: 'courses_selected',
+      courses: { mode: args.mode, ids: payload.course_ids, savedAt: new Date().toISOString() },
+      syncEpoch: null,
+    })
+    return {
+      ok: true,
+      mode: payload.mode,
+      course_ids: payload.course_ids,
+      message:
+        args.mode === 'full'
+          ? '课程与完整资料授权已保存。下一步同步学校信息和资料（首次可能较慢，中断后可重跑增量补齐）。'
+          : '课程与“只同步课程信息”授权已保存，不会下载资料。下一步同步学校信息。',
+      next_step: 'sync',
+    }
+  } catch (error) {
+    return remoteFailure(error)
   }
 }
 
-export function syncHandler(args) {
+export async function syncHandler(args, context = {}) {
   const settings = readSettings()
   if (!settings?.dataDir) return { error: 'LOCATION_REQUIRED', message: '请先完成资料位置设置。' }
   if (!existsSync(tokenPath(settings.dataDir))) {
@@ -546,56 +696,150 @@ export function syncHandler(args) {
   if (!/^(session-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(chatId)) {
     return {
       error: 'CHAT_ID_REQUIRED',
-      message: '需要当前聊天标识才能开始首次同步：请先调用 moodle_study_chat，把它返回的 chat_id 原样传入。',
+      message: '需要当前聊天标识才能开始同步：请先调用 moodle_study_chat，把它返回的 chat_id 原样传入。',
     }
   }
   const running = runningJob('setup-sync')
   if (running) return { ok: true, job: jobSummary(running), message: '同步已在进行中，请继续用 study_job_status 查看进度。' }
+  // Sync needs the school, but the recovery advice differs from a plain setup
+  // step: network failures keep local study available and never ask for login.
+  try {
+    await gatewayOf(context).connect({ force: false })
+  } catch (error) {
+    return remoteFailure(error)
+  }
   const steps = [nodeStep('采集学校信息', 'tools/moodle/run.mjs', ['refresh', '--chat', chatId], settings)]
   const job = startJob({
     name: 'setup-sync',
     steps,
     logPath: join(supportDir(), 'logs', 'setup-sync.log'),
-    onSuccess: () => writeSettings({ stage: 'synced', syncedAt: new Date().toISOString() }),
+    onSuccess: () => writeSettings({ stage: 'synced', lastError: null }),
     onFailure: (message) => writeSettings({ lastError: message }),
   })
   return {
     ok: true,
     job: jobSummary(job),
     message:
-      '正在采集学校信息并同步资料（完整授权时会下载、归档并建立索引，可能几分钟到十几分钟）。请用 study_job_status 查看进度；资料下载成功不等于已核读。',
+      '正在采集学校信息并同步资料（完整授权时会下载、归档并建立索引，可能几分钟）。中断或部分失败后重跑会增量补齐，不会重复下载已成功内容；请用 study_job_status 查看进度。下载成功不等于已核读。',
   }
 }
 
-export async function finishHandler() {
+export async function reconnectHandler(args, context = {}) {
   const settings = readSettings()
-  if (!settings?.dataDir) return { error: 'LOCATION_REQUIRED', message: '请先完成资料位置设置。' }
-  const readiness = studyReadiness(settings)
-  if (!readiness.ready) {
+  const local = localCapabilities(settings)
+  if (!local.dataDir) {
+    return { error: 'LOCATION_REQUIRED', kind: 'setup', message: '还没有选择资料保存位置。', next_step: 'study_setup_location', requires_login: false }
+  }
+  if (!local.configPresent) {
+    return { error: 'CONFIG_REQUIRED', kind: 'setup', message: '资料目录还没有学校连接配置。', next_step: 'study_setup_location', requires_login: false }
+  }
+  if (!local.tokenPresent) {
     return {
-      error: 'SETUP_INCOMPLETE',
-      message: '设置尚未完成，请按 next_steps 继续。',
-      reason: readiness.reason,
+      error: 'TOKEN_REQUIRED',
+      kind: 'auth',
+      message: '还没有可重试的学校登录：请让学生本人先连接学校（study_connect_school）；本地资料仍可学习。',
+      next_step: 'study_connect_school',
+      requires_login: true,
     }
   }
-  const state = stateSummary(settings)
-  if (!state.courses.length) {
-    return { error: 'COURSES_REQUIRED', message: '还没有保存课程选择与资料授权。' }
+  const gateway = gatewayOf(context)
+  gateway.invalidate()
+  const snapshot = await gateway.probe({ force: true })
+  if (snapshot.state === 'connected') {
+    return {
+      ok: true,
+      connected: true,
+      siteName: snapshot.siteName,
+      userId: snapshot.userId,
+      message: '学校连接已恢复；联网工具可以继续使用，本地资料与教学记录不受影响。',
+    }
   }
+  const failure = remoteFailure(
+    new RemoteError(snapshot.lastError?.code ?? 'STUDY_NETWORK', snapshot.message ?? '学校暂时连接不上。', {
+      kind: snapshot.requiresLogin ? 'auth' : 'network',
+      next_step: snapshot.next_step,
+      retryable: snapshot.retryable,
+      requiresLogin: snapshot.requiresLogin,
+    }),
+  )
+  return {
+    ok: false,
+    connected: false,
+    ...failure,
+    message: snapshot.requiresLogin
+      ? '学校登录失效，需要学生本人重新连接学校；本地资料仍可学习。'
+      : '学校暂时连接不上；恢复网络后再次调用 study_reconnect，不需要重新登录。本地资料仍可学习。',
+  }
+}
+
+export async function finishHandler(args, context = {}) {
+  const settings = readSettings()
+  if (!settings?.dataDir) return { error: 'LOCATION_REQUIRED', message: '请先完成资料位置设置。' }
   const job = runningJob()
   if (job) {
     return { error: 'JOB_RUNNING', message: `还有设置任务在运行（${job.name}），请等待完成后再结束设置。` }
   }
+  const status = await collectStatus({ remote: gatewayOf(context), verifySchool: true })
+  const capabilities = status.capabilities
+  if (!capabilities.locationSet) {
+    return { error: 'LOCATION_REQUIRED', reason: 'location_missing', message: '还没有选择资料保存位置。', next_steps: status.next_steps }
+  }
+  if (!capabilities.configReady) {
+    return { error: 'SETUP_INCOMPLETE', reason: 'config_missing', message: '资料目录还没有学校连接配置。', next_steps: status.next_steps }
+  }
+  if (!capabilities.runtimeReady) {
+    return { error: 'SETUP_INCOMPLETE', reason: 'runtime_missing', message: '运行依赖尚未安装或不完整。', next_steps: status.next_steps }
+  }
+  if (!capabilities.tokenPresent) {
+    return { error: 'SETUP_INCOMPLETE', reason: 'school_not_connected', message: '还没有连接学校账号。', next_steps: status.next_steps }
+  }
+  if (!capabilities.coursesSelected) {
+    return { error: 'SETUP_INCOMPLETE', reason: 'courses_missing', message: '还没有保存课程选择与资料授权。', next_steps: status.next_steps }
+  }
+  if (!capabilities.syncReady) {
+    return {
+      error: 'SETUP_INCOMPLETE',
+      reason: 'sync_incomplete',
+      message: `首次同步尚未完成或证据不匹配，不能标记为设置完成。${syncSummaryText(status.sync)}`,
+      sync: status.sync
+        ? {
+            ready: status.sync.ready,
+            summary: status.sync.summary,
+            courses: status.sync.courses,
+            blockers: status.sync.blockers,
+          }
+        : null,
+      next_steps: status.next_steps,
+    }
+  }
+  if (capabilities.schoolAuthRequired) {
+    return {
+      error: 'SETUP_INCOMPLETE',
+      reason: 'school_auth_required',
+      message: '本地同步资料已就绪，但学校登录已失效。请学生本人重新连接学校后再完成设置。',
+      next_steps: status.next_steps,
+    }
+  }
   writeSettings({ stage: 'ready', onboardedAt: new Date().toISOString() })
-  setTimeout(() => process.exit(0), 1500)
+  const warning = capabilities.schoolConnected
+    ? null
+    : '学校当前连接不上；本地资料仍可继续学习，需要最新学校信息时用 study_reconnect 重试。'
   return {
     ok: true,
     ready: true,
     dataDir: settings.dataDir,
-    message:
-      '设置完成。Moodle 工具正在重新连接（约几秒），连接后就可以开始在聊天里学习。学生资料保存在选择的文件夹，插件升级或卸载不会删除它。',
-    next_step: 'restart_reconnect',
+    sync: status.sync
+      ? {
+          mode: status.sync.mode,
+          summary: status.sync.summary,
+          text: status.sync.text,
+        }
+      : null,
+    warning,
+    message: warning
+      ? `设置完成（本地资料与授权已核对）。${warning}`
+      : '设置完成。可以开始在聊天里学习；学校信息会按当前授权增量同步。',
   }
 }
 
-export { nextSteps }
+export { syncSummaryText }

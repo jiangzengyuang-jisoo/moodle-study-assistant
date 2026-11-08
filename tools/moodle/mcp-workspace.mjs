@@ -41,9 +41,12 @@ export function createMcpChapterContext({root, loadState, client, config, creden
       beforeCheck();
       // Revalidate identity only when the chapter engine needs the network;
       // cached checks do not invoke this or spawn another decryption process.
-      await client.connect();
+      // Return the connected client object itself: the chapter engine needs
+      // its transport/token to read authorized file bytes, while a lazy
+      // gateway may return the underlying connected client here.
+      const connected = await client.connect();
       beforeCheck();
-      return client;
+      return connected ?? client;
     },
   };
 }

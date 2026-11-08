@@ -3,15 +3,16 @@
 // These wrap the existing read-only local engine commands so ordinary teaching
 // needs no shell command, no approval prompt and no manual path handling. They
 // never write to the school and never change completion state.
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { extname, join } from 'node:path'
 
 import { z } from 'zod'
 
 import { jobSummary, runningJob, startJob } from './jobs.mjs'
+import { remoteFailure } from './onboarding-tools.mjs'
 import { engineEnv, pythonStep, venvPython } from './python-runtime.mjs'
-import { programDir, readSettings, supportDir } from './settings.mjs'
+import { programDir, readSettings, statePath, supportDir } from './settings.mjs'
 
 const MAX_BUFFER = 64 * 1024 * 1024
 
@@ -46,6 +47,17 @@ function runEngine(script, args, { stdin = null, timeoutMs = 240000 } = {}) {
   const python = venvPython()
   if (!python) {
     return { ok: false, failure: { error: 'RUNTIME_NOT_READY', message: '运行依赖尚未安装，请先调用 study_setup_status。' } }
+  }
+  if (!settings?.dataDir || !existsSync(statePath(settings.dataDir))) {
+    return {
+      ok: false,
+      failure: {
+        error: 'LOCAL_STATE_MISSING',
+        message:
+          '本地学习档案还没有初始化（尚未选课或初始化中断）。已下载的资料不会被删除；请调用 study_setup_status 查看下一步并继续设置。',
+        next_step: 'study_setup_status',
+      },
+    }
   }
   const result = spawnSync(python, [join(programDir(), 'tools', 'study', script), ...args], {
     cwd: programDir(),
@@ -108,7 +120,7 @@ function renderBlocks(result) {
   return { content: blocks }
 }
 
-export function registerStudyTools(server) {
+export function registerStudyTools(server, context = {}) {
   server.registerTool(
     'study_local_context',
     {
@@ -274,6 +286,16 @@ export function registerStudyTools(server) {
       const settings = readSettings()
       const running = runningJob('study-refresh') ?? runningJob('setup-sync')
       if (running) return output({ ok: true, job: jobSummary(running), message: '同步已在进行中。' })
+      // Refresh needs the school; distinguish a temporary network failure
+      // (retry with study_reconnect, keep studying locally) from an invalid
+      // sign-in (the student must log in again).
+      if (context.remote) {
+        try {
+          await context.remote.connect()
+        } catch (error) {
+          return output(remoteFailure(error), true)
+        }
+      }
       const command = args.full ? 'refresh' : 'continue'
       const job = startJob({
         name: 'study-refresh',

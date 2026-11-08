@@ -49,8 +49,8 @@
         "zh": "Moodle 学习助手"
       },
       "description": {
-        "en": "Connect your school Moodle account and study course chapters from materials saved on your own computer, inside the chat.",
-        "zh": "连接学校 Moodle 账号，在聊天里按章节学习保存在本机的课程资料。"
+        "en": "Connect your school Moodle account and study course chapters from materials saved on your own computer, inside the chat. Local study keeps working during a temporary school outage.",
+        "zh": "连接学校 Moodle 账号，在聊天里按章节学习保存在本机的课程资料；学校暂时连不上时仍可继续学习本地资料。"
       },
       "author": "REPLACE_WITH_AUTHOR",
       "homepage": "https://github.com/jiangzengyuang-jisoo/moodle-study-assistant",
@@ -73,8 +73,8 @@
       },
       "versions": [
         {
-          "version": "0.6.0-trial.1",
-          "publishTimestamp": 1794096000,
+          "version": "0.6.0-trial.2",
+          "publishTimestamp": 1794182400,
           "source": {
             "type": "npm"
           },

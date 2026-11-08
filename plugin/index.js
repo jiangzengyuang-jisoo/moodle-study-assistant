@@ -54,6 +54,14 @@ function readSettingsFile(supportDir) {
   }
 }
 
+function readRuntimeFile(supportDir) {
+  try {
+    return JSON.parse(readFileSync(join(supportDir, 'runtime.json'), 'utf8'))
+  } catch {
+    return {}
+  }
+}
+
 function parseSkillFile(path) {
   const raw = readFileSync(path, 'utf8')
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(raw)
@@ -145,13 +153,15 @@ export function apply(ctx, config) {
   ctx.effect(() => ctx.tools.register({
     name: 'moodle_study_status',
     description:
-      'Read Moodle Study Assistant setup status from the local plugin (data directory, school connection, runtime dependencies, recent setup errors) and return the concrete recovery step. Use this when Moodle tools are missing, fail to start, or the student asks how to finish setting up.',
+      'Read Moodle Study Assistant setup status from the local plugin (data directory, Python runtime marker, school sign-in files, recent setup errors) and return the concrete recovery step. Works even when the MCP server tools are missing or fail to start, and does not need the school to be reachable.',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
     output: {
       schema: { type: 'object' },
       render: (_args, value) => [{ type: 'text', text: JSON.stringify(value, null, 2) }],
     },
     async execute() {
+      const runtime = readRuntimeFile(supportDir)
+      const pythonPresent = existsSync(join(supportDir, 'venv', 'Scripts', 'python.exe'))
       const result = {
         pluginVersion: version,
         supportDir,
@@ -160,7 +170,8 @@ export function apply(ctx, config) {
         settings: readSettingsFile(supportDir),
         dataDir: null,
         dataDirExists: null,
-        runtimeReady: existsSync(join(supportDir, 'venv', 'Scripts', 'python.exe')),
+        pythonPresent,
+        runtimeReady: pythonPresent && Boolean(runtime.core?.installed),
         tokenPresent: null,
         nextStep: null,
         recovery: [],
@@ -168,7 +179,7 @@ export function apply(ctx, config) {
       const settings = result.settings
       if (!settings?.dataDir) {
         result.nextStep = 'call_study_setup'
-        result.recovery.push('还没有选择资料保存位置；调用 study_setup_status 并按提示完成首次设置。')
+        result.recovery.push('还没有选择资料保存位置；调用 MCP 工具 study_setup_status 并按提示完成首次设置。')
         return result
       }
       result.dataDir = settings.dataDir
@@ -180,17 +191,22 @@ export function apply(ctx, config) {
       result.tokenPresent = existsSync(join(settings.dataDir, '.private', 'moodle-token.dpapi'))
       if (!result.runtimeReady) {
         result.nextStep = 'install_runtime'
-        result.recovery.push('运行依赖尚未安装；调用 study_setup_runtime（或 study_setup_status 查看下一步）。')
+        result.recovery.push('运行依赖尚未安装或安装中断；调用 MCP 工具 study_setup_runtime 可继续安装，已完成的步骤会跳过。')
       } else if (!result.tokenPresent) {
         result.nextStep = 'connect_school'
-        result.recovery.push('还没有连接学校账号；调用 study_connect_school，并在弹出的学校网页由本人完成登录。')
+        result.recovery.push('还没有连接学校账号；调用 study_connect_school，并在弹出的学校网页由本人完成登录。已下载的本地资料仍可学习。')
       } else {
         result.nextStep = 'call_study_setup_status'
-        result.recovery.push('调用 MCP 工具 study_setup_status 查看当前学习设置状态。')
+        result.recovery.push('调用 MCP 工具 study_setup_status 查看当前设置、同步证据和下一步。')
+        result.recovery.push('学校暂时连不上时本地学习工具仍可用；联网失败用 study_reconnect 重试，不需要重新登录。')
       }
       if (!result.programPresent) {
         result.recovery.push('插件程序文件缺失，请卸载后重新安装本插件（个人学习资料会保留）。')
       }
+      if (!result.dataDirExists) {
+        result.recovery.push('选择的资料文件夹当前不可用；重新连接该文件夹或选择其他位置。')
+      }
+      result.recovery.push('如果 MCP 相关工具一直不出现，请完全退出并重新打开 DeepSeek Harness；不要删除资料目录。')
       return result
     },
   }))

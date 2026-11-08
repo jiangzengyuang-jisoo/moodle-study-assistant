@@ -1,6 +1,6 @@
-﻿// Offline verification of the study-mode tool set that is registered by the
-// plugin's MCP server. It mounts the real tool registrations on an in-memory
-// MCP transport, so no school connection and no student data are involved.
+// Offline verification of the study-mode tool set registered by the plugin's
+// MCP server. It mounts the real tool registrations on an in-memory MCP
+// transport, so no school connection and no student data are involved.
 import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
@@ -18,7 +18,11 @@ process.env.MOODLE_STUDY_SUPPORT_DIR = supportDir
 process.env.MOODLE_STUDY_PROGRAM_DIR = programDir
 process.env.STUDY_DATA_ROOT = dataDir
 
-const settings = JSON.parse(readFileSync(join(supportDir, 'settings.json'), 'utf8'))
+const settingsFile = join(supportDir, 'settings.json')
+if (!existsSync(settingsFile)) {
+  console.error('verify-study-tools: run verify-plugin.mjs first (support/settings.json is missing)')
+  process.exit(1)
+}
 const venvPython = join(supportDir, 'venv', 'Scripts', 'python.exe')
 if (!existsSync(venvPython)) {
   console.error('verify-study-tools: run verify-plugin.mjs first (Python runtime is missing)')
@@ -31,7 +35,16 @@ process.env.ELECTRON_RUN_AS_NODE = '1'
 const results = []
 const record = (name, ok, detail = null) => {
   results.push({ name, ok, detail })
-  console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` 鈥?${JSON.stringify(detail)}` : ''}`)
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` - ${JSON.stringify(detail)}` : ''}`)
+}
+
+function parseTool(result) {
+  const text = result?.content?.find((item) => item.type === 'text')?.text ?? '{}'
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
 }
 
 async function main() {
@@ -51,9 +64,18 @@ async function main() {
   const { registerStudyTools } = await import(moduleUrl('tools/moodle/plugin/study-tools.mjs'))
   const { registerChapterCheckTool } = await import(moduleUrl('tools/moodle/chapter-check-tool.mjs'))
 
+  const remoteStub = {
+    connect: async () => {
+      throw new Error('offline in registration test')
+    },
+    probe: async () => ({ state: 'network', connected: false }),
+    status: () => ({ state: 'network', connected: false }),
+    invalidate() {},
+  }
+
   const server = new McpServer({ name: 'study-tools-verify', version: '0.0.0' })
-  registerSetupTools(server, { mode: 'study' })
-  registerStudyTools(server)
+  registerSetupTools(server, { remote: remoteStub })
+  registerStudyTools(server, { remote: remoteStub })
   registerChapterCheckTool(server, {
     root: dataDir,
     loadState: () => JSON.parse(readFileSync(join(dataDir, 'Study', '_System', 'state.json'), 'utf8')),
@@ -74,26 +96,34 @@ async function main() {
     'study_teaching_event',
     'study_local_status',
     'study_refresh',
+  ]
+  const recoveryTools = [
+    'study_setup_status',
+    'study_setup_location',
+    'study_setup_runtime',
+    'study_setup_courses',
+    'study_setup_select_courses',
+    'study_connect_school',
+    'study_reconnect',
+    'study_setup_sync',
+    'study_setup_finish',
     'study_job_status',
   ]
-  const recoveryTools = ['study_setup_status', 'study_setup_finish', 'study_setup_sync', 'study_connect_school']
-  record('study mode registers the local study tool set', studyTools.every((name) => names.includes(name)), names.filter((name) => name.startsWith('study_')))
-  record('study mode keeps the recovery entry points', recoveryTools.every((name) => names.includes(name)))
-  record('study mode registers the strict chapter check tool', names.includes('study_check_chapter'))
-  record('full first-use wizard is not duplicated in study mode', !names.includes('study_setup_location'))
+  record('local study tools are registered', studyTools.every((name) => names.includes(name)), names.filter((name) => name.startsWith('study_')))
+  record(
+    'every setup/recovery tool stays available after setup (course change, location change, repair)',
+    recoveryTools.every((name) => names.includes(name)),
+    recoveryTools.filter((name) => !names.includes(name)),
+  )
+  record('strict chapter check tool is registered', names.includes('study_check_chapter'))
+  record('no duplicated tool registration', new Set(names).size === names.length)
 
   const contextResult = await client.callTool({ name: 'study_local_context', arguments: {} })
-  const contextText = contextResult.content.find((item) => item.type === 'text')?.text ?? ''
-  let contextPayload = null
-  try {
-    contextPayload = JSON.parse(contextText)
-  } catch {
-    contextPayload = null
-  }
+  const contextPayload = parseTool(contextResult)
   record(
     'local context tool runs the real engine offline',
     contextResult.isError !== true && contextPayload !== null,
-    contextPayload ? Object.keys(contextPayload).slice(0, 8) : contextText.slice(0, 300),
+    contextPayload ? Object.keys(contextPayload).slice(0, 8) : null,
   )
 
   const teaching = await client.callTool({
@@ -106,7 +136,7 @@ async function main() {
   record(
     'teaching event tool returns a structured engine result',
     typeof teaching.content?.[0]?.text === 'string' && teaching.content[0].text.length > 0,
-    teaching.content?.[0]?.text?.slice(0, 200),
+    teaching.content?.[0]?.text?.slice(0, 160),
   )
 
   await client.close()

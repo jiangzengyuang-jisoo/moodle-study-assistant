@@ -32,7 +32,7 @@
 
 ### 2.1 发布插件包（不需市场）
 
-产物来自构建脚本 `tools/release/build-plugin.mjs`，输出 `dist/moodle-study-assistant/`（当前约 9.8 MB、2042 个文件，零 npm 安装依赖；随包内置 6 个 Node 运行时包）。
+产物来自构建脚本 `tools/release/build-plugin.mjs`，输出 `dist/moodle-study-assistant/`（当前约 9.9 MB、2044 个文件，零 npm 安装依赖；随包内置 6 个 Node 运行时包）。
 
 | 渠道 | 需要做的事 | 学生怎么装 | 升级方式 |
 | --- | --- | --- | --- |
@@ -75,12 +75,14 @@
 | --- | --- | --- |
 | `plugins[0].author` | `REPLACE_WITH_AUTHOR` | 换成真实维护者名称（必填占位） |
 | `plugins[0].homepage` | 项目 README 中的仓库地址 | 确认它可公开访问；如不是公开主页则替换 |
-| `versions[0].version` | `0.6.0-trial.1` | 与实际发布的包版本一致 |
-| `versions[0].publishTimestamp` | `1794096000`（= 2026-11-08T00:00:00Z 的占位值） | 换成真实发布时间（Unix 秒整数） |
+| `versions[0].version` | `0.6.0-trial.2` | 与实际发布的包版本一致 |
+| `versions[0].publishTimestamp` | `1794182400`（= 2026-11-09T00:00:00Z 的占位值） | 换成真实发布时间（Unix 秒整数） |
 | `versions[0].source` | `{"type":"npm"}` 占位 | 走 npm 时保持（可加 `registry`）；走 Git 时替换为 `{"type":"git","url":"https://…","commit":"<40 位小写 SHA>","path":"<子目录，可选>"}`，Git URL 必须是无凭据、无查询/片段的规范 https 地址 |
 | `versions[0].engines.dsh` | `^0.2.2-rc.1` | 与实际测试的 DSH 版本范围一致，并与包 `package.json` 的 `engines.dsh` 保持一致 |
 | 根 `metadata` 与插件 `metadata` | 示例分类 `study`、标签 `windows`/`read-only`、排序键 `featured` | 按需增删；**引用未声明的分类/标签会校验失败**，删除引用后对应的声明也可删除 |
 | 可选 `icon` | 模板未包含 | 需要条目图标时加：内嵌 `data:` SVG/PNG/JPEG/WebP（解码后 ≤32 KiB），或相对索引 URL／同源 https 的图片 URL |
+
+> `0.6.0-trial.2` 对模板的改动是：版本号改为 `0.6.0-trial.2`、`publishTimestamp` 占位值改为 2026-11-09、插件描述补充“学校暂时连不上时仍可学习本地资料”；字段结构未变，发布前仍需按上表替换字段并重新校验。
 
 本仓库已经用 DSH 自带的 `@deepseek-ai/dsh-plugin-market-index` 校验器对当前模板做过一次结构校验（使用一个 https 测试索引 URL），结果通过；替换字段后应重新校验：
 
@@ -111,6 +113,7 @@
 
 ## 7. 未验证与限制
 
+- 本轮 `0.6.0-trial.2` 修复已在隔离 fixture 下完成独立模拟学校验收：8 项要求场景全部 PASS（101/101 项检查），附加回归 4/4 通过；覆盖设置中断续做、断网本地学习、同步完成判定与章节核对等。未模拟：真实学校 SSO/MFA 登录与浏览器登录组件、真实学校数据与权限受限内容、桌面 UI 点击安装、真实客户端自动重连、换 Windows 账户的凭据解密。
 - **未验证**：market 索引从 `Add index source` 到 `Discover` 浏览、安装的完整链路（本机 desktop profile 未启用实验性索引功能，也没有添加索引源）；DSH 桌面 UI 点击安装的完整走查与截图；npm 发布；索引站托管；官方收录。
 - **未验证**：真实学校账号登录后首次同步的完整体验（需学生本人完成 SSO/MFA），以及不同 Windows 电脑/账户、不同学校 Moodle 的安装表现。
 - DSH 为 0.2.2-rc.1，插件安装/市场机制可能随版本变化；发布前应以当前随包 README 与校验器重新核对。

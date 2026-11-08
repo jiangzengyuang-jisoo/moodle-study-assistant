@@ -181,17 +181,39 @@ export function logPath(name) {
   return join(supportDir(), 'logs', `${name}.log`)
 }
 
-// Ready for the full study tool set: data location chosen, Python runtime
-// installed and the school account connected.
-export function studyReadiness(settings = readSettings()) {
-  if (!settings?.dataDir) return { ready: false, reason: 'location_missing' }
+// Local capability snapshot used by setup/recovery tools and the MCP entry.
+// This intentionally says nothing about the school connection: local study
+// tools stay usable when the school is unreachable, and remote tools are
+// checked lazily by the remote gateway.
+export function localCapabilities(settings = readSettings()) {
+  const dataDir = settings?.dataDir ? resolve(settings.dataDir) : null
+  let dataDirExists = false
   try {
-    if (!statSync(settings.dataDir).isDirectory()) return { ready: false, reason: 'data_dir_missing' }
+    dataDirExists = Boolean(dataDir) && statSync(dataDir).isDirectory()
   } catch {
-    return { ready: false, reason: 'data_dir_missing' }
+    dataDirExists = false
   }
-  if (!readConfig(settings.dataDir)) return { ready: false, reason: 'config_missing' }
-  if (!runtimePython()) return { ready: false, reason: 'runtime_missing' }
-  if (!existsSync(tokenPath(settings.dataDir))) return { ready: false, reason: 'token_missing' }
-  return { ready: true, reason: null }
+  const config = dataDirExists ? readConfig(dataDir) : null
+  const state = dataDirExists ? readState(dataDir) : null
+  const pythonPresent = Boolean(runtimePython())
+  const runtime = readRuntime()
+  const coreInstalled = Boolean(runtime.core?.installed)
+  const tokenPresent = Boolean(dataDirExists && existsSync(tokenPath(dataDir)))
+  return {
+    dataDir,
+    dataDirExists,
+    dataDirDefault: defaultDataDir(),
+    configPresent: Boolean(config?.moodle_url),
+    schoolUrl: config?.moodle_url ?? null,
+    pythonPresent,
+    coreInstalled,
+    runtimeReady: pythonPresent && coreInstalled,
+    loginRuntimeReady: Boolean(runtime.login?.installed),
+    tokenPresent,
+    stateInitialized: Boolean(state),
+    // Local study tools only need the data directory and a working runtime.
+    studyToolsUsable: Boolean(dataDirExists && pythonPresent && coreInstalled),
+    // Everything needed before the first school connection can be attempted.
+    setupPrerequisitesReady: Boolean(dataDirExists && pythonPresent && coreInstalled && config?.moodle_url),
+  }
 }

@@ -21,9 +21,20 @@ No Node, Python, pnpm or configuration-file edits are required; the plugin uses 
 2. **Install the local runtime** (about 20 MB, one-time download).
 3. **Connect the school account**: the school page opens in the installed browser and the student completes SSO/MFA personally. The plugin never reads passwords or browser cookies.
 4. **Choose courses and material scope**: full sync downloads and indexes the selected courses; information-only sync does not download materials.
-5. **First sync**: collect current school information and sync authorized materials, then start studying.
+5. **First sync and finish**: collect current school information and sync authorized materials; setup completes only when real sync evidence matches the current account and course authorization, and studying can start right away.
 
-Each step reports its status in chat. A failed or interrupted step can be retried from the settings tools without deleting existing records.
+Each step reports its status in chat. After a successful sign-in or a data-location change the tools reconnect automatically (a few seconds; tool names stay the same). Setup progress, materials and sign-in state are kept locally: **if any step is interrupted, reopening the chat continues from the current step** without starting over and without deleting existing records.
+
+**Completion is based on real sync evidence**: setup is marked complete only when the school collection snapshot and material-sync report exist and match the current account, courses and material scope. An empty data folder, a sync that never started, failed, was interrupted, is partial or is stale is never reported as complete; instead the assistant explains the available range and remaining issues per course, and a re-run sync fills the gaps incrementally without re-downloading successful content.
+
+## Settings maintenance and recovery
+
+- **Change courses or material scope**: say what to adjust in chat; the assistant lists the courses again and saves the new selection after you confirm. Previously confirmed materials are kept.
+- **Change the data location**: switch to another folder; the old folder is left untouched. The old folder's sign-in credential is not copied to the new location, so if the new folder has no sign-in of its own you reconnect the school there once.
+- **Repair the runtime**: if an install was interrupted or the environment is damaged, the assistant can re-run dependency installation; completed steps are skipped and no plugin reinstall is needed.
+- **Keep studying offline**: while the school is temporarily unreachable, the assistant can still read local materials, teach chapter by chapter and continue the teaching record. When you need current assignments, announcements or exam arrangements, it says the result is not the latest online information instead of claiming a completed sync or fresh verification.
+- **Connection state vs. signing in again**: a temporary network/API failure only needs a reconnect retry, not a new sign-in; a new sign-in is needed only when the saved sign-in has expired or cannot be decrypted.
+- **Incremental sync**: after an interruption or partial failure, re-running the sync fills in what is missing without re-downloading content that already succeeded.
 
 ## Teaching behaviour
 
@@ -46,8 +57,11 @@ Each step reports its status in chat. A failed or interrupted step can be retrie
 - The first setup needs network access to download Python dependencies; failures are reported with a retry path.
 - The school must enable the Moodle Mobile Web Service; permissions are controlled by the school.
 - DOCX/PPTX files have no page images, so only extracted text is available; verify formulas against PDF originals.
+- **Local storage does not mean offline inference**: during an outage only local material access and the local teaching record are guaranteed; model calls still depend on the model service Harness currently uses.
 - The plugin exposes no programming or arbitrary command tool and never downloads content outside the authorized scope.
+- This is a trial version: real school sign-in and installation on other computers or Windows accounts have not all been verified. If a problem occurs, follow the recovery entry points and keep the data folder.
 
 ## Uninstall and recover
 
-Uninstall from **Plugins**. Your data folder and the Harness support folder are kept. Reinstall the plugin, choose the same data folder and reconnect the school account if the saved sign-in has expired.
+Uninstall from **Plugins**. Your data folder and the Harness support folder are kept. Reinstall the plugin, choose the same data folder and reconnect the school account if the saved sign-in has expired. Upgrading in the middle of setup does not lose progress either: reopening the chat continues from the current step.
+

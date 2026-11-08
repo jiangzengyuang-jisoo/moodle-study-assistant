@@ -29,6 +29,19 @@ def timestamp(value=None):
     return result.astimezone(timezone.utc)
 
 
+def _package_version(name):
+    """Probe an optional package without failing initialization when absent.
+
+    The plugin's minimal runtime installs fsrs and the document readers; the
+    mathematical verification package (sympy) is optional and only needed by
+    math_check.py, so a missing one must not block review initialization.
+    """
+    try:
+        return version(name)
+    except Exception:
+        return None
+
+
 @study_time.state_timezone
 def scheduler(state):
     config = state["settings"]["spaced_repetition"]["scheduler"]
@@ -46,7 +59,8 @@ def initialize(state):
             "mastery_is_not_inferred_from_schedule": True,
         }
     state.setdefault("integrations", {}).setdefault("study_tools", {}).update({
-        "status": "configured", "fsrs_version": version("fsrs"), "sympy_version": version("sympy"),
+        "status": "configured", "fsrs_version": _package_version("fsrs"),
+        "sympy_version": _package_version("sympy"),
         "review_entry": "tools/study/review.py",
         "math_entry": "tools/study/math_check.py",
         "instructions": "docs/TOOLS.md", "local_only": True,
