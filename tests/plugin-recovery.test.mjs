@@ -5,7 +5,7 @@
 // environment overrides, and sync evidence is produced from real-shaped
 // artifact files (collection snapshot, material-library report).
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
@@ -89,8 +89,8 @@ function course(id, moodleId) {
   return { id, name: `Course ${id}`, shortname: id, moodle_course_ids: [moodleId] }
 }
 
-function writeSnapshot(dataDir, { complete = true, courses = [101], finishedAt = '2026-11-03T00:00:00.000Z' } = {}) {
-  writeJson(join(dataDir, 'Study', '_System', 'refresh-latest.json'), {
+function writeSnapshot(dataDir, { complete = true, courses = [101], finishedAt = '2026-11-03T00:00:00.000Z', file = 'refresh-latest.json' } = {}) {
+  writeJson(join(dataDir, 'Study', '_System', file), {
     started_at: '2026-11-02T23:50:00.000Z',
     finished_at: finishedAt,
     collection_complete: complete,
@@ -99,19 +99,22 @@ function writeSnapshot(dataDir, { complete = true, courses = [101], finishedAt =
     threads: [],
     assignments: { courses: [] },
     quizzes: { quizzes: [] },
-    errors: complete ? [] : [{ scope: 'course:101', error: 'timeout' }],
+    errors: complete ? [] : [{ scope: 'assignment_catalog', error: 'timeout' }],
     collection_binding: { protocol: 1, run_id: 'a'.repeat(32), request_sha256: 'b'.repeat(64) },
   })
 }
 
-function writeReport(dataDir, { courses = [], totals = {}, errors = [], finishedAt = '2026-11-03T00:10:00.000Z' } = {}) {
+function writeReport(
+  dataDir,
+  { courses = [], totals = {}, errors = [], finishedAt = '2026-11-03T00:10:00.000Z', textSource = { source: 'snapshot' } } = {},
+) {
   writeJson(join(dataDir, 'Study', '_System', 'LibrarySync', 'latest.json'), {
     schema: 1,
     run_id: 'c'.repeat(32),
     started_at: '2026-11-03T00:00:00.000Z',
     finished_at: finishedAt,
     authorization: { scope_version: 1, mode: 'full' },
-    text_source: { source: 'snapshot' },
+    text_source: textSource,
     courses,
     totals: { failed: 0, blocked_courses: 0, ...totals },
     errors,
@@ -217,6 +220,96 @@ test('incomplete collection snapshot is not ready', () => {
   const evidence = evaluateSyncEvidence({ dataDir, state })
   assert.equal(evidence.ready, false)
   assert.equal(evidence.courses[0].status, 'partial')
+  rmSync(dataDir, { recursive: true, force: true })
+})
+
+test('full sync with downloaded files but an incomplete collection is not complete', async () => {
+  const c = course('moodle-101', 101)
+  const { dataDir, state } = makeDataDir({ courses: [c], grants: { 'moodle-101': fullGrant(c) }, stage: 'synced' })
+  // Downloads succeeded ...
+  writeReport(dataDir, { courses: [readyRow('moodle-101', 101)] })
+  const materialDir = join(dataDir, 'Study', 'moodle-101')
+  mkdirSync(materialDir, { recursive: true })
+  const material = join(materialDir, 'lesson.pdf')
+  writeFileSync(material, 'downloaded-bytes', 'utf8')
+  // ... but the school collection clearly failed (e.g. assignment query timeout).
+  writeSnapshot(dataDir, { complete: false })
+
+  const evidence = evaluateSyncEvidence({ dataDir, state })
+  assert.equal(evidence.ready, false)
+  assert.equal(evidence.courses[0].status, 'partial')
+  assert.ok(evidence.courses[0].issues.some((issue) => issue.code === 'collection_incomplete'))
+  assert.ok(evidence.blockers.some((item) => item.code === 'collection_incomplete'))
+  // The downloaded material scope is still reported as available.
+  assert.equal(evidence.courses[0].available.textUnits, 2)
+
+  const school = {
+    state: 'connected',
+    connected: true,
+    baseUrl: ACCOUNT.site,
+    userId: ACCOUNT.user_id,
+    siteName: 'School',
+    requiresLogin: false,
+    retryable: false,
+  }
+  const refused = await finishHandler({}, { remote: stubGateway(school) })
+  assert.equal(refused.error, 'SETUP_INCOMPLETE')
+  assert.equal(refused.reason, 'sync_incomplete')
+  assert.notEqual(readSettings().stage, 'ready')
+  // Downloads and the material report are preserved; nothing is deleted.
+  assert.equal(readFileSync(material, 'utf8'), 'downloaded-bytes')
+  assert.ok(existsSync(join(dataDir, 'Study', '_System', 'LibrarySync', 'latest.json')))
+
+  // A later complete collection (with the incremental material report) allows
+  // setup completion without re-downloading anything.
+  writeSnapshot(dataDir, { complete: true })
+  const repaired = await finishHandler({}, { remote: stubGateway(school) })
+  assert.equal(repaired.ok, true)
+  assert.equal(repaired.ready, true)
+  assert.equal(readFileSync(material, 'utf8'), 'downloaded-bytes')
+  rmSync(dataDir, { recursive: true, force: true })
+})
+
+test('full sync report without any collection snapshot is not complete', () => {
+  const c = course('moodle-101', 101)
+  const { dataDir, state } = makeDataDir({ courses: [c], grants: { 'moodle-101': fullGrant(c) } })
+  writeReport(dataDir, { courses: [readyRow('moodle-101', 101)] })
+  const evidence = evaluateSyncEvidence({ dataDir, state })
+  assert.equal(evidence.ready, false)
+  assert.ok(evidence.blockers.some((item) => item.code === 'collection_incomplete'))
+  rmSync(dataDir, { recursive: true, force: true })
+})
+
+test('existing report with a complete recorded collection snapshot stays reusable', () => {
+  const c = course('moodle-101', 101)
+  const { dataDir, state } = makeDataDir({ courses: [c], grants: { 'moodle-101': fullGrant(c) }, stage: 'ready' })
+  const runId = 'd'.repeat(32)
+  const snapshotPath = `Study/_System/Runtime/runs/${runId}/snapshot.json`
+  writeJson(join(dataDir, snapshotPath), {
+    started_at: '2026-11-02T23:50:00.000Z',
+    finished_at: '2026-11-03T00:00:00.000Z',
+    collection_complete: true,
+    account_scope: ACCOUNT,
+    pages: [{ course_id: 'moodle-101', courseid: 101, sections: [] }],
+    threads: [],
+    assignments: { courses: [] },
+    quizzes: { quizzes: [] },
+    errors: [],
+    collection_binding: { protocol: 1, run_id: runId, request_sha256: 'b'.repeat(64) },
+  })
+  writeReport(dataDir, {
+    courses: [readyRow('moodle-101', 101)],
+    textSource: {
+      source: 'snapshot',
+      captured_at: '2026-11-03T00:00:00.000Z',
+      snapshot_run_id: runId,
+      snapshot: { path: snapshotPath, run_id: runId, checked_at: '2026-11-03T00:00:00.000Z', collection_complete: true },
+    },
+  })
+  // No refresh-latest.json / refresh-last-complete.json pointer exists.
+  const evidence = evaluateSyncEvidence({ dataDir, state })
+  assert.equal(evidence.ready, true)
+  assert.equal(evidence.courses[0].status, 'ready')
   rmSync(dataDir, { recursive: true, force: true })
 })
 

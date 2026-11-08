@@ -1,10 +1,22 @@
 # Moodle 学习助手插件试用版发布说明
 
-- 发布对象：DeepSeek Harness 插件包 **`dsh-moodle-study@0.6.0-trial.2`**（前一版 `0.6.0-trial.1`）
+- 发布对象：DeepSeek Harness 插件包 **`dsh-moodle-study@0.6.0-trial.3`**（前一版 `0.6.0-trial.2`）
 - 日期：2026-11-09（香港时间）；`0.6.0-trial.1` 为 2026-11-08
 - 状态：**试用版**。尚未发布到 npm，也未进入任何市场索引；本说明描述的是仓库内的可安装产物与已验证范围，不表示已经公开发布或上架。
-- 验证结论：本次修复在隔离 fixture 下完成独立模拟学校验收，**8 项要求场景全部 PASS（101/101 项检查）**，另附加回归 4/4 通过；真实学校登录、真实课程数据与桌面 UI 点击安装仍未验证（见 §1.3）。
+- 验证结论：`0.6.0-trial.3` 在全量离线回归与隔离 fixture 验收下通过；`0.6.0-trial.2` 的独立模拟学校验收为 **8 项要求场景全部 PASS（101/101 项检查）**，另附加回归 4/4 通过；真实学校登录、真实课程数据与桌面 UI 点击安装仍未验证（见 §1.3 与 §0）。
 - 配套文档：[插件试用说明](PLUGIN_TRIAL_GUIDE.md) · [市场提交材料](market/README.md)
+
+## 0. `0.6.0-trial.3`：完整资料同步也要求学校信息采集完整（2026-11-09）
+
+本轮补上一个完成判定漏判；不改变程序/数据分离布局、安装方式与既有行为。
+
+- **问题**：选择“完整资料同步”时，若课件下载成功但学校信息采集失败（例如作业/公告查询超时，采集记录明确 `collection_complete: false`），旧判定只检查资料同步报告，`study_setup_finish` 仍可能返回 `ready: true`。
+- **修复**：`tools/moodle/plugin/sync-evidence.mjs` 的完整同步分支现在同时检查学校信息采集完整性——要求与当前账号、课程选择、授权范围匹配且完整的采集记录；最新采集记录不完整即判为 `partial`（不清除已下载资料），无采集记录、采集过期或账号不匹配也不会完成。
+- **资料保留与增量恢复**：已下载的课件与资料同步报告保留不动；`study_setup_status` 逐门给出可用范围与 `collection_incomplete` 等剩余问题；重跑 `study_setup_sync` 增量补齐采集与资料（不重复下载已成功内容），之后 `study_setup_finish` 才返回 `ready`。
+- **兼容已有记录**：资料同步报告中记录为完整采集的快照，在缺少刷新指针时仍作为采集证据复用，升级不会强迫已有用户全部重新同步。
+- **回归测试**：`tests/plugin-recovery.test.mjs` 新增 3 项——“完整同步 + 采集不完整不完成且保留已下载资料”“完整同步报告无采集记录不完成”“已有完整采集记录可复用”；恢复测试 **19/19** 通过，全量离线回归 **node 196 + Python 105 + 学习工具 638**。
+- **独立模拟学校聚焦复验 34/34 PASS**（隔离 fixture + 真实 MCP 工具调用；采集失败由 mock 让 `mod_quiz_get_quizzes_by_courses` 返回 500，走真实引擎采集路径）：先完成 full 同步（2 门课/17 份资料），再让采集失败后，`study_setup_status` 逐门返回 `partial` + `collection_incomplete`，`study_setup_finish` 返回 `SETUP_INCOMPLETE(sync_incomplete)`；已下载的 10 个资料文件路径与内容 SHA-256 与失败前完全一致（未删除/改写）；恢复采集后重跑同步 `already_current=10 / failed=0 / downloaded_bytes=0`（未重复下载），之后 `finish` 才返回 `ready`；`info_only` 行为无回归。
+- 本次未使用真实学校账号；未验证项与限制沿用 §1.3 及下文。
 
 ## 1. 0.6.0-trial.2：设置恢复、断网学习与同步完成判定
 
@@ -36,15 +48,15 @@
 
 - MCP 首用验证 **31/31** 项通过（`tools/release/verify-plugin.mjs`，隔离 support/data 目录，覆盖工具注册、资料位置、运行依赖真实安装、错误路径、自动重连与包内个人数据审计）。
 - study 模式工具验证 **8/8** 项通过（`tools/release/verify-study-tools.mjs`，含真实本地引擎调用与工具注册一致性）。
-- 恢复/完成判定单测 **15/15** 通过（`tests/plugin-recovery.test.mjs`：空目录不算完成、部分同步、过期证据、账号不匹配、`info_only`、工具注册与 `next_steps` 一致、`finish` 拒绝与完成、切换位置保留旧目录、网络与登录错误指引不同）。
-- 插件包已按 `0.6.0-trial.2` 重建（当前 2044 个文件、约 9.9 MB）；全量离线回归 **node 193 + Python 105 + 学习工具 638** 项通过（含既有 177/103/638 项与本次新增的 16 项插件恢复测试、2 项运行时可选依赖测试）。
+- 恢复/完成判定单测 **19/19** 通过（`tests/plugin-recovery.test.mjs`：空目录不算完成、部分同步、过期证据、账号不匹配、`info_only`、完整同步但采集不完整、无采集记录、已有完整采集记录复用、工具注册与 `next_steps` 一致、`finish` 拒绝与完成、切换位置保留旧目录、网络与登录错误指引不同）。
+- 插件包已按 `0.6.0-trial.3` 重建（当前 2044 个文件、约 9.9 MB）；全量离线回归 **node 196 + Python 105 + 学习工具 638** 项通过（含既有 177/103/638 项与本次新增的 19 项插件恢复测试、2 项运行时可选依赖测试）。
 - 验证使用隔离的 support/data 目录，不读取真实 `Study/`、`.private/` 或学校凭据。
 - 独立模拟学校验收（隔离 fixture 驱动真实 MCP 入口与真实本地引擎；修复前基线三缺陷均先复现）：最终一轮 **8 项要求场景全部 PASS（101/101 项检查）**，附加回归 D **4/4** 通过。关键结果：重启后 33 个工具全部注册且 `next_steps` 引用的工具真实可调用；依赖安装中断后 status 指回 `study_setup_runtime`，重跑跳过已完成的 venv 创建、只补装依赖后 `runtimeReady=true`；切换资料位置时旧目录 91 个文件 / 592,227 字节完全不变，新目录没有旧 token/state、联网工具返回结构化未连接、`finish` 不 ready，未初始化时本地工具返回结构化 `LOCAL_STATE_MISSING`；断网时工具集合 33=33 不变，本地学习工具全部可用（含真实本地 PDF 渲染 1 张图）、联网工具结构化失败、`study_reconnect` 可重试且不要求登录，本地回执复用 `reused:true/network_started:false`、`force` 重查返回 `STUDY_DNS` 不伪造成功；空 Library 时 `finish` 返回 `SETUP_INCOMPLETE(sync_incomplete)`，`http500` 返回结构化 `STUDY_HTTP`，部分失败逐门 `partial`、重跑后 `already_current=6/failed=0` 未重复下载、`finish` 才 ready；full 同步 17 份资料 / 17 个文本单元后 `finish` ready，info_only 0 下载、`_Inbox` 为空、无 `LibrarySync` 报告也可 `finish` ready；章节核对首次严格核 files=2/unchanged=2/error=0，同聊天复用、其他聊天不复用，授权不足与账号不匹配被拒绝，断网复用不联网。
 
 **仅代码/静态检查（未在真实界面或线上环境运行）**
 
 - 修复涉及的工具注册、`next_steps` 与实际工具名一致性、同步证据判定、位置切换后的重连调度与凭据不复制逻辑，由代码阅读与上述单测/验收覆盖；未在真实 Harness 插件页逐项点击验证。
-- 文档中的工具名与行为按当前工作区源码核对；`plugin/package.json` 与 `dist/` 的版本为 `0.6.0-trial.2`。
+- 文档中的工具名与行为按当前工作区源码核对；`plugin/package.json` 与 `dist/` 的版本为 `0.6.0-trial.3`。
 
 **未验证（需要本人操作或本阶段未执行）**
 
@@ -58,7 +70,7 @@
 
 ### 1.4 升级方式与数据保留
 
-- 在 `Plugins` 页卸载 `0.6.0-trial.1`，再安装 `0.6.0-trial.2` 试用包；本地路径/tarball 来源没有 `Versions`/`Update`，同包名直接重装会被拒绝。
+- 在 `Plugins` 页卸载旧试用包（`0.6.0-trial.2` 或更早），再安装 `0.6.0-trial.3` 试用包；本地路径/tarball 来源没有 `Versions`/`Update`，同包名直接重装会被拒绝。
 - 个人资料目录与运行支持目录默认保留，数据布局不变（`Study/`、`config.local.json`、`.private/`），无需迁移；已安装的运行依赖会被识别，通常不需要重装。
 - 旧版设置做到一半时升级，重新打开聊天后会从当前进度继续；升级后如工具没有出现，重启一次 DeepSeek Harness 或让助手检查状态。
 - 回滚：卸载新版、重新安装旧试用包；个人资料目录不变。
@@ -161,3 +173,5 @@
 - 版本：`0.6.0-trial.1` 时插件包使用独立版本号，仓库根 `package.json` 的公开版本仍为 `0.5.0`，只新增 `build:plugin` 脚本。
 
 `0.6.0-trial.2` 在本节基础上新增或修改：`tools/moodle/plugin/remote.mjs`、`tools/moodle/plugin/sync-evidence.mjs`、`tests/plugin-recovery.test.mjs`，以及 `tools/moodle/mcp-entry.mjs`、`tools/moodle/plugin/{setup-tools,onboarding-tools,study-tools,settings}.mjs`、`plugin/index.js`、`tools/study/review.py`、`tools/release/verify-plugin.mjs`、`tools/release/verify-study-tools.mjs`。
+
+`0.6.0-trial.3` 在本节基础上补漏：修改 `tools/moodle/plugin/sync-evidence.mjs`（完整同步的采集完整性检查）、`tests/plugin-recovery.test.mjs`（3 项回归测试）、`plugin/resources/skills/moodle-study.md` 与相关文档版本号；未改动安装方式、程序/数据布局与既有工具行为。

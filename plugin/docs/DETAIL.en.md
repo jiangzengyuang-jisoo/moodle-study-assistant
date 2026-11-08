@@ -25,7 +25,7 @@ No Node, Python, pnpm or configuration-file edits are required; the plugin uses 
 
 Each step reports its status in chat. After a successful sign-in or a data-location change the tools reconnect automatically (a few seconds; tool names stay the same). Setup progress, materials and sign-in state are kept locally: **if any step is interrupted, reopening the chat continues from the current step** without starting over and without deleting existing records.
 
-**Completion is based on real sync evidence**: setup is marked complete only when the school collection snapshot and material-sync report exist and match the current account, courses and material scope. An empty data folder, a sync that never started, failed, was interrupted, is partial or is stale is never reported as complete; instead the assistant explains the available range and remaining issues per course, and a re-run sync fills the gaps incrementally without re-downloading successful content.
+**Completion is based on real sync evidence**: setup is marked complete only when the school collection snapshot and material-sync report exist and match the current account, courses and material scope. With full material sync the school collection itself must also be complete (for example an assignment/announcement query must not have failed); downloaded files are kept but setup is not marked complete when collection failed. An empty data folder, a sync that never started, failed, was interrupted, is partial, has an incomplete collection or is stale is never reported as complete; instead the assistant explains the available range and remaining issues per course, and a re-run sync fills the gaps incrementally without re-downloading successful content.
 
 ## Settings maintenance and recovery
 

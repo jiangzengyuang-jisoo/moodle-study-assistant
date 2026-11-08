@@ -75,18 +75,26 @@ export function loadLibraryReport(dataDir) {
   const path = join(dataDir, REPORT_RELATIVE)
   const report = readJson(path)
   if (!report || typeof report !== 'object') return null
+  const provenance = report.text_source?.snapshot
   let snapshotAccount = null
-  let snapshotComplete = null
-  const snapshotPath = report.text_source?.snapshot?.path
+  let fileComplete = null
+  const snapshotPath = provenance?.path
   if (typeof snapshotPath === 'string' && snapshotPath) {
     const absolute = resolve(dataDir, snapshotPath)
     const rel = relative(dataDir, absolute)
     if (rel && !rel.startsWith('..') && !isAbsolute(rel)) {
       const snapshot = readJson(absolute)
       snapshotAccount = accountOfScope(snapshot?.account_scope)
-      snapshotComplete = snapshot?.collection_complete === true
+      fileComplete = snapshot?.collection_complete === true
     }
   }
+  // The report records the collection completeness observed when the material
+  // sync ran. A later failed collection is represented by the newest snapshot
+  // pointer and is checked separately, so this provenance only serves as a
+  // fallback when no snapshot pointer exists at all.
+  const provenanceComplete = provenance?.collection_complete === true
+  const snapshotComplete = provenanceComplete && fileComplete !== false
+  const snapshotCheckedAt = provenance?.checked_at ?? null
   const totals = report.totals ?? {}
   const errors = Array.isArray(report.errors) ? report.errors : []
   const complete = (totals.failed ?? 0) === 0 && (totals.blocked_courses ?? 0) === 0 && errors.length === 0
@@ -95,6 +103,8 @@ export function loadLibraryReport(dataDir) {
     report,
     account: snapshotAccount,
     snapshotComplete,
+    snapshotCheckedAt,
+    snapshotCheckedMs: parseTime(snapshotCheckedAt),
     finishedAt: report.finished_at ?? null,
     finishedMs: parseTime(report.finished_at),
     totals,
@@ -249,7 +259,7 @@ export function evaluateSyncEvidence({ dataDir, state, connectedAccount = null, 
       continue
     }
 
-    const evidence = evaluateFull(course, report)
+    const evidence = evaluateFull(course, report, snapshot)
     result.courses.push({ ...course, ...evidence })
   }
 
@@ -278,9 +288,6 @@ export function evaluateSyncEvidence({ dataDir, state, connectedAccount = null, 
   }
   if (!report && result.courses.some((course) => course.mode === 'full')) {
     result.blockers.push(courseIssue('sync_not_started', '还没有完成“完整资料同步”。'))
-  }
-  if (!snapshot) {
-    result.blockers.push(courseIssue('collection_not_started', '还没有完成学校信息采集。'))
   }
 
   result.ready = result.courses.length > 0 && result.courses.every((course) => course.status === 'ready') && result.blockers.length === 0
@@ -311,7 +318,36 @@ function evaluateInfoOnly(course, snapshot) {
   }
 }
 
-function evaluateFull(course, report) {
+// A full sync is only complete when the school collection it belongs to is
+// complete too. Downloads succeeding while, for example, an assignment query
+// timed out must not be reported as a finished first sync.
+function evaluateCollection(course, snapshot, report) {
+  const usingSnapshot = Boolean(snapshot)
+  const finishedAt = usingSnapshot ? snapshot.finishedAt : report?.snapshotCheckedAt ?? null
+  const finishedMs = usingSnapshot ? snapshot.finishedMs : report?.snapshotCheckedMs ?? null
+  const complete = usingSnapshot ? snapshot.collectionComplete : report?.snapshotComplete === true
+  const account = usingSnapshot ? snapshot.account : report?.account ?? null
+  if (!usingSnapshot && report && report.snapshotComplete == null) {
+    // The material report was produced from live sources without recording a
+    // collection snapshot; completeness cannot be proven from it.
+    return { status: 'missing', checkedAt: finishedAt, hint: '资料同步报告没有可核对的学校信息采集记录，需要重跑一次同步。' }
+  }
+  if (!complete) {
+    return { status: 'incomplete', checkedAt: finishedAt, hint: '学校信息采集不完整（例如作业/公告等来源查询失败）；已下载资料保留，但需要重跑同步补齐采集后才能完成设置。' }
+  }
+  if (account && course.account && !sameAccount(account, course.account)) {
+    return { status: 'account_mismatch', checkedAt: finishedAt, hint: '学校信息采集记录属于另一个学校账号。' }
+  }
+  if (course.authorizedMs && finishedMs && finishedMs < course.authorizedMs) {
+    return { status: 'stale', checkedAt: finishedAt, hint: '最近一次学校信息采集早于本次课程授权，需要重新同步。' }
+  }
+  if (usingSnapshot && !course.moodleCourseIds.every((id) => snapshot.moodleCourseIds.has(id))) {
+    return { status: 'missing', checkedAt: finishedAt, hint: '最近一次学校信息采集没有覆盖这门课程。' }
+  }
+  return { status: 'ready', checkedAt: finishedAt }
+}
+
+function evaluateFull(course, report, snapshot) {
   if (!report) {
     return { status: 'missing', issues: [courseIssue('sync_not_started', '还没有完成“完整资料同步”。')], available: null }
   }
@@ -340,11 +376,30 @@ function evaluateFull(course, report) {
       statusCounts: null,
     }
   const available = { ...counts, mode: 'full', modulesVisible: Number(row.modules_visible ?? 0) }
+  // Collection completeness is a separate requirement from material sync
+  // success: a timed-out assignment/announcement query leaves the downloaded
+  // files usable but the first sync incomplete.
+  const collection = evaluateCollection(course, snapshot, report)
+  const collectionIssue =
+    collection.status === 'ready'
+      ? null
+      : courseIssue(
+          collection.status === 'incomplete'
+            ? 'collection_incomplete'
+            : collection.status === 'stale'
+              ? 'collection_stale'
+              : collection.status === 'account_mismatch'
+                ? 'collection_account_mismatch'
+                : 'collection_not_started',
+          collection.hint,
+        )
+  const collectionStatus = { incomplete: 'partial', stale: 'stale', account_mismatch: 'account_mismatch', missing: 'missing' }[collection.status] ?? 'partial'
   if (blocked) {
     return {
       status: 'failed',
       issues: [
         courseIssue('course_blocked', '这门课程的资料同步未完成或未授权；请重新确认资料范围后重跑同步。'),
+        ...(collectionIssue ? [collectionIssue] : []),
       ],
       available,
       failures: failures.slice(0, 5),
@@ -360,10 +415,14 @@ function evaluateFull(course, report) {
             ? `上次资料同步有 ${failedItems} 份内容失败；重跑同步会增量补齐，不会重复下载已成功内容。`
             : `上次资料同步记录了 ${report.errors.length} 个来源错误，需要重跑同步补齐。`,
         ),
+        ...(collectionIssue ? [collectionIssue] : []),
       ],
       available,
       failures: failures.slice(0, 5),
     }
+  }
+  if (collectionIssue) {
+    return { status: collectionStatus, issues: [collectionIssue], available }
   }
   return { status: 'ready', issues: [], available }
 }
