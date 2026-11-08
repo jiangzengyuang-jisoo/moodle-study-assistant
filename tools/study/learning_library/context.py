@@ -325,7 +325,8 @@ def build_context(state: dict, course_id: str | None = None, detail: bool = Fals
             "“Not required for the exam”只表示考试要求，不能直接作为普通讲解跳过内容的理由。",
             "明确章节且本地已有资料时只读本章接续并做精准章节核对，不绕到完整采集、考试准备或学习计划流程。",
         ],
-        "chapter_explanation": "围绕本章问题、必要前置概念、概念之间的关系、公式与图表的含义、适用条件与例子组织；结合已记录的学习证据调整深度。",
+        "chapter_explanation": "围绕本章问题，结合学习证据分轮推进；每轮讲透一个核心概念：具体例子、逐步推理、LaTeX 公式与每个新符号的含义，再留一个相关问题等待回答。明确要求一次讲完整章/完整讲义/总结或不要互动时才整章交付；继续/跳过可直接推进，不推断掌握。",
+        "teaching_output": "普通讲解不查询或汇报无关公告、在线练习和旧章未答题，不附固定核验尾注/错误码。必要本章核对内部留证，失败不记成功、不声称最新版；只在影响当前解释或需要本人处理时提示，主动询问时如实回答。保存仅限实际已讲单元，不以读完整章代替已讲。",
         "background_fields": ["course.current_topic", "course.orientation", "tasks", "deadlines", "exam_profiles"],
         "exam_info_usage": "只在当前请求涉及备考、考点或考试安排，或该项信息确实影响当前解释时使用；保留原始考试信息与学习记录。",
     }

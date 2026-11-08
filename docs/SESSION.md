@@ -21,7 +21,7 @@
 - `status`：查看采集、待核读、中断、失败或已核读状态，不联网。
 - `chapter-check`：只核对某一章已有资料与学校文件是否一致（`strict` 比较内容哈希，`quick` 只看大小/修改时间），联网范围限于该课程目录和本章文件；先用本地资料索引与来源映射定位本章模块，匹配不唯一时返回候选和原因，不按数字相同选择整个区块。默认 `strict`；`--modules` 可直接指定模块，本人明确要求重查时加 `--force`。同一聊天、账号、课程、范围和本地文件内容哈希未变时复用最近一次严格回执，不重复联网；本地新增本章资料只核对新增部分，失败或部分完成不算全部核验成功，也不因普通追问自动重试。不读作业、公告、论坛或日历，不写学习状态、不建索引、不产生核读回执；已有本地资料时开始新一章用它，校务信息仍走 `continue`。判定和处理见 [WORKFLOW.md](WORKFLOW.md#单章资料核对不触发完整采集)。
 - `teaching-event`：只交本轮教学位置变化的小事件保存入口；程序读最新状态、合并、校验、原子保存并至多重建一次视图，成功后不必再跑 `daily.py run/check`。完整字段、禁止项与幂等语义见下文[教学位置事件](#教学位置事件teaching-event)。
-- 教或复习某一章的资料准备用 `tools/study/library.cmd chapter-prep --course 课程ID --section "Topic 6"`（或用 `--modules`）：一次只读返回本章材料/unit 清单、headings 目录、预算内整页正文与 `omitted` 补读命令、公式图表候选页（复用哈希渲染缓存）和本章接续，减少“读一页—再决策”的往返。它的 `strict_check.last_receipt` 只是上次严格回执背景，**不是本轮核验**；本章文件仍须 `chapter-check --mode strict` 核对，公式/图表仍看原页，整章覆盖仍要逐 unit 核对。详见 [LIBRARY.md](LIBRARY.md#一次准备一章) 与 [TOOLS.md](TOOLS.md#一次准备一章chapter-prep)。
+- 教或复习某一章的资料准备用 `tools/study/library.cmd chapter-prep --course 课程ID --section "Topic 6"`（或用 `--modules`）：一次只读返回本章材料/unit 清单、headings 目录、预算内整页正文与 `omitted` 补读命令、公式图表候选页（复用哈希渲染缓存）和本章接续，减少“读一页—再决策”的往返。它的 `strict_check.last_receipt` 只是上次严格回执背景，**不是本轮核验**；本章文件仍须 `chapter-check --mode strict` 核对，公式/图表仍看原页，整章覆盖仍要逐 unit 核对；批量准备整章不代表一轮讲完整章，保存只对应本轮实际讲解单元。详见 [LIBRARY.md](LIBRARY.md#一次准备一章) 与 [TOOLS.md](TOOLS.md#一次准备一章chapter-prep)。
 
 无关问答不调用以上入口，也不预读学习状态。只维修连接时使用 `diagnose.cmd`（已授权联网才加 `-Online -NoPause`）；确需了解接续时用 `status` 或 `tools/study/library.cmd context --read-only`，不调用会触发完整采集的 `continue/today/refresh`。这些只读查看和诊断不会占用首次采集机会，同一聊天以后开始学习仍正常采集。
 
@@ -83,14 +83,14 @@ $event = @'
   "course_id": "moodle-100000",
   "fields": {
     "chapter": "Topic 6: Aggregate Production",
-    "topic": "总量生产函数、TFP、企业最优化与增长来源",
+    "topic": "总量产出与人均产出的区别",
     "stage": "first_explanation_delivered_pending_check",
     "next_step": "等本人回答理解检查，再按错误补讲",
     "material_id": "moodle-100000-SOURCE-501-<哈希>",
     "pages": [1, 2, 3],
     "pending_check": {"id": "topic6-check-1", "prompt": "为什么人口增长能提高总产出却通常不能提高人均产出？", "status": "unanswered"},
     "user_request": "讲解 Topic 6",
-    "coverage_note": "已讲主内容；作业要求未核对"
+    "coverage_note": "本轮仅讲总量产出与人均产出的区别，其他单元尚未讲解"
   },
   "onboarding": "shown"
 }

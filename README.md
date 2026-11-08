@@ -172,7 +172,7 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
-| [2026-11-08](CHANGELOG.en.md#2026-11-08) | Publish audit fixes for remaining study capacity and bound-answer grading; make chapter checks locate the chapter precisely, reuse same-chat strict receipts and show stage progress; align request-type routing and exam-information timing; batch chapter preparation and small-event teaching-position saves |
+| [2026-11-08](CHANGELOG.en.md#2026-11-08) | Publish audit fixes for remaining study capacity and bound-answer grading; make chapter checks locate the chapter precisely, reuse same-chat strict receipts and show stage progress; align request-type routing and exam-information timing; batch chapter preparation and small-event teaching-position saves; interactive chapter teaching, rendered formulas with symbol explanations, and focused replies without unrelated check or old-question footers |
 | [2026-11-07](CHANGELOG.en.md#2026-11-07) | Same-question exposure, planning and exam-source checks; re-verify old papers/questions after courseware archiving; five on-demand read queries; archive no longer rewrites history evidence; review questions keep complete multiple-choice options; cross-school ID isolation; shared review remaining capacity and bound-answer grading saves |
 | [2026-11-06](CHANGELOG.en.md#2026-11-06) | Complete English changelog for Harness, bilingual navigation and English homepage links |
 
