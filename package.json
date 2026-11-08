@@ -16,6 +16,8 @@
     "mcp": "node tools/moodle/run.mjs mcp",
     "build:plugin": "node tools/release/build-plugin.mjs",
     "verify:plugin": "node tools/release/verify-plugin.mjs && node tools/release/verify-study-tools.mjs",
+    "pack:plugin": "node tools/release/pack-plugin.mjs",
+    "build:market-site": "node tools/release/build-market-site.mjs",
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {

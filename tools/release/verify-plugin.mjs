@@ -6,14 +6,16 @@
 // tools, the local study tools, the Python runtime bootstrap and the
 // structured school-unavailable behaviour of remote tools.
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
 const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
-const packageDir = join(repoRoot, 'dist', 'moodle-study-assistant')
+// Default target is the built package; pass an absolute package directory as
+// the first argument to verify an actually installed npm artifact instead.
+const packageDir = process.argv[2] ? resolve(process.argv[2]) : join(repoRoot, 'dist', 'moodle-study-assistant')
 const entry = join(packageDir, 'program', 'tools', 'moodle', 'mcp-entry.mjs')
 const workRoot = join(repoRoot, 'tmp', 'plugin-verify')
 const supportDir = join(workRoot, 'support')
@@ -233,10 +235,14 @@ async function main() {
         }
       }
     }
-    walk(join(packageDir, 'program'))
+    walk(packageDir)
     return total
   })()
-  record('program size is plausible for a self-contained package', programBytes > 5 * 1024 * 1024 && programBytes < 80 * 1024 * 1024, `${Math.round((programBytes / 1024 / 1024) * 10) / 10} MB`)
+  record(
+    'package size is plausible for a self-contained package',
+    programBytes > 5 * 1024 * 1024 && programBytes < 80 * 1024 * 1024,
+    `${Math.round((programBytes / 1024 / 1024) * 10) / 10} MB`,
+  )
 
   const failed = results.filter((item) => !item.ok)
   console.log(`\nverify-plugin: ${results.length - failed.length}/${results.length} checks passed`)

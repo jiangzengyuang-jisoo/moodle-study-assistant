@@ -1,9 +1,11 @@
-// Validate the community market index template with the DSH validator that
-// ships inside an installed Harness (asar). Run with Electron-as-Node and
-// point DSH_ASAR_ROOT at the installed runtime:
+// Validate a plugin index with the DSH validator that ships inside an
+// installed Harness (asar). Run with Electron-as-Node and point DSH_ASAR_ROOT
+// at the installed runtime:
 //   $env:DSH_ASAR_ROOT='<install>/resources/app.asar/dsh'
 //   $env:ELECTRON_RUN_AS_NODE='1'
-//   & '<install>/DeepSeek Harness.exe' tools/release/validate-market-index.mjs
+//   & '<install>/DeepSeek Harness.exe' tools/release/validate-market-index.mjs \
+//       --file docs/market/index.json \
+//       --url https://jiangzengyuang-jisoo.github.io/moodle-study-assistant/index.json
 import { readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
@@ -12,8 +14,14 @@ if (!asarRoot) {
   console.error('market-index validation: set DSH_ASAR_ROOT to the installed Harness app.asar/dsh directory')
   process.exit(1)
 }
+const argValue = (name) => {
+  const index = process.argv.indexOf(name)
+  return index >= 0 ? process.argv[index + 1] : undefined
+}
+const filePath = argValue('--file') ?? new URL('../../docs/market/index.json', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
+const indexUrl = argValue('--url') ?? 'https://jiangzengyuang-jisoo.github.io/moodle-study-assistant/index.json'
+const index = JSON.parse(readFileSync(filePath, 'utf8'))
 const asarModules = `${asarRoot.replace(/[\\/]+$/, '')}/node_modules/@deepseek-ai`
-const index = JSON.parse(readFileSync(new URL('../../docs/market/index.json', import.meta.url), 'utf8'))
 
 let parseMarketIndex = null
 const candidates = [
@@ -34,15 +42,24 @@ if (!parseMarketIndex) {
   process.exit(1)
 }
 try {
-  const parsed = parseMarketIndex(index, 'https://example.invalid/dsh/index.json')
+  const parsed = parseMarketIndex(index, indexUrl)
   const plugins = parsed.plugins ?? []
   console.log(JSON.stringify({
     ok: true,
+    file: filePath,
+    indexUrl,
     format: parsed.format,
     title: parsed.title,
     plugins: plugins.map((plugin) => ({
       name: plugin.name,
-      versions: (plugin.versions ?? []).map((version) => ({ version: version.version, engines: version.engines ?? null })),
+      icon: plugin.icon ?? null,
+      author: plugin.author ?? null,
+      repository: plugin.repository ?? null,
+      versions: (plugin.versions ?? []).map((version) => ({
+        version: version.version,
+        engines: version.engines ?? null,
+        source: version.source ?? null,
+      })),
     })),
   }, null, 2))
 } catch (error) {

@@ -1,6 +1,8 @@
 # 开源组件说明
 
-本项目组合现有开源库和本地工作流，不宣称重新实现 Moodle、FSRS 或符号计算引擎。依赖安装到本机，源码仓库不携带 node_modules、Python 环境或浏览器二进制；各依赖仍遵循其自身许可证。
+本项目组合现有开源库和本地工作流，不宣称重新实现 Moodle、FSRS 或符号计算引擎。源码仓库不携带 node_modules、Python 环境或浏览器二进制；各依赖仍遵循其自身许可证。
+
+发布到 npm 的插件包在 `node_modules/` 中内置 MCP 服务器所需的完整 Node 运行时依赖闭包（包括 `@modelcontextprotocol/sdk`、`moodle-mcp`、`Zod`、`ajv` 及其传递依赖，如 Express、Hono 等），安装后不需要再从 npm 获取这些 Node 依赖。每个内置包的 `LICENSE` 文件随包分发，其许可证与版权归相应上游作者；第三方包清单可在包内 `node_modules/` 查看。
 
 | 组件 | 用途 | 许可证/来源 |
 | --- | --- | --- |

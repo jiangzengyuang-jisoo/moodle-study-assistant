@@ -1,10 +1,28 @@
 {
   "name": "dsh-moodle-study",
   "version": "0.6.0-trial.3",
-  "description": "Moodle study assistant: connect your school Moodle account and study course chapters from downloaded materials inside DeepSeek Harness.",
+  "description": "Moodle study assistant for DeepSeek Harness: connect a school Moodle account and study course chapters from downloaded materials. Windows community trial.",
   "type": "module",
   "license": "MIT",
-  "private": true,
+  "author": "jiangzengyuang-jisoo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jiangzengyuang-jisoo/moodle-study-assistant.git",
+    "directory": "plugin"
+  },
+  "homepage": "https://github.com/jiangzengyuang-jisoo/moodle-study-assistant",
+  "bugs": {
+    "url": "https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "moodle",
+    "study",
+    "tutoring",
+    "education",
+    "windows"
+  ],
   "exports": {
     ".": "./index.js",
     "./locale/*.json": "./locale/*.json",
@@ -18,8 +36,30 @@
     "README.md",
     "docs",
     "resources",
-    "program"
+    "program",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
   ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.27.1",
+    "moodle-mcp": "0.2.0",
+    "zod": "3.25.76",
+    "zod-to-json-schema": "3.25.2",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  },
+  "bundleDependencies": [
+    "@modelcontextprotocol/sdk",
+    "moodle-mcp",
+    "zod",
+    "zod-to-json-schema",
+    "ajv",
+    "ajv-formats"
+  ],
+  "publishConfig": {
+    "tag": "trial",
+    "access": "public"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml",

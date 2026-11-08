@@ -4,6 +4,8 @@
 
 ## 安装（学生）
 
+发布到 npm 后，推荐在 DeepSeek Harness 的 **Plugins → Discover** 中添加社区插件目录，再安装 **Moodle 学习助手（Windows 试用版）**；也可以直接安装 npm 包 `dsh-moodle-study@0.6.0-trial.3`。如果使用离线试用包，按下面的本地方式安装：
+
 1. 打开 DeepSeek Harness 左侧 **Plugins** 页 → **Add plugin**。
 2. 粘贴试用包文件夹的绝对路径（或 `.tgz` 文件路径）→ 阅读第三方插件提示 → 点 **Install**。
 3. 安装完成后保持插件开关为 **On**；首次使用在聊天里说“帮我设置 Moodle 学习助手”，按引导完成。

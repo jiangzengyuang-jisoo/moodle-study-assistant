@@ -17,6 +17,7 @@
 - **回归测试**：`tests/plugin-recovery.test.mjs` 新增 3 项——“完整同步 + 采集不完整不完成且保留已下载资料”“完整同步报告无采集记录不完成”“已有完整采集记录可复用”；恢复测试 **19/19** 通过，全量离线回归 **node 196 + Python 105 + 学习工具 638**。
 - **独立模拟学校聚焦复验 34/34 PASS**（隔离 fixture + 真实 MCP 工具调用；采集失败由 mock 让 `mod_quiz_get_quizzes_by_courses` 返回 500，走真实引擎采集路径）：先完成 full 同步（2 门课/17 份资料），再让采集失败后，`study_setup_status` 逐门返回 `partial` + `collection_incomplete`，`study_setup_finish` 返回 `SETUP_INCOMPLETE(sync_incomplete)`；已下载的 10 个资料文件路径与内容 SHA-256 与失败前完全一致（未删除/改写）；恢复采集后重跑同步 `already_current=10 / failed=0 / downloaded_bytes=0`（未重复下载），之后 `finish` 才返回 `ready`；`info_only` 行为无回归。
 - 本次未使用真实学校账号；未验证项与限制沿用 §1.3 及下文。
+- **发布方式（准备中，尚未公开）**：计划由维护者确认后发布到 npm（包名 `dsh-moodle-study`，版本 `0.6.0-trial.3`，发布标签 `trial`，不设 latest），并用 GitHub Pages 托管社区插件目录；目录 URL 与 npm 页面尚未上线，学生暂时仍用本地试用包安装。
 
 ## 1. 0.6.0-trial.2：设置恢复、断网学习与同步完成判定
 
@@ -49,7 +50,7 @@
 - MCP 首用验证 **31/31** 项通过（`tools/release/verify-plugin.mjs`，隔离 support/data 目录，覆盖工具注册、资料位置、运行依赖真实安装、错误路径、自动重连与包内个人数据审计）。
 - study 模式工具验证 **8/8** 项通过（`tools/release/verify-study-tools.mjs`，含真实本地引擎调用与工具注册一致性）。
 - 恢复/完成判定单测 **19/19** 通过（`tests/plugin-recovery.test.mjs`：空目录不算完成、部分同步、过期证据、账号不匹配、`info_only`、完整同步但采集不完整、无采集记录、已有完整采集记录复用、工具注册与 `next_steps` 一致、`finish` 拒绝与完成、切换位置保留旧目录、网络与登录错误指引不同）。
-- 插件包已按 `0.6.0-trial.3` 重建（当前 2044 个文件、约 9.9 MB）；全量离线回归 **node 196 + Python 105 + 学习工具 638** 项通过（含既有 177/103/638 项与本次新增的 19 项插件恢复测试、2 项运行时可选依赖测试）。
+- 插件包已按 `0.6.0-trial.3` 重建：本地安装包 **3557 个文件、约 15 MB**（含 MCP 服务器所需的完整 Node 运行时依赖闭包），npm 压缩包约 **3.0 MB**（3556 个条目）；全量离线回归 **node 196 + Python 105 + 学习工具 638** 项通过（含既有 177/103/638 项与本次新增的 19 项插件恢复测试、2 项运行时可选依赖测试）。
 - 验证使用隔离的 support/data 目录，不读取真实 `Study/`、`.private/` 或学校凭据。
 - 独立模拟学校验收（隔离 fixture 驱动真实 MCP 入口与真实本地引擎；修复前基线三缺陷均先复现）：最终一轮 **8 项要求场景全部 PASS（101/101 项检查）**，附加回归 D **4/4** 通过。关键结果：重启后 33 个工具全部注册且 `next_steps` 引用的工具真实可调用；依赖安装中断后 status 指回 `study_setup_runtime`，重跑跳过已完成的 venv 创建、只补装依赖后 `runtimeReady=true`；切换资料位置时旧目录 91 个文件 / 592,227 字节完全不变，新目录没有旧 token/state、联网工具返回结构化未连接、`finish` 不 ready，未初始化时本地工具返回结构化 `LOCAL_STATE_MISSING`；断网时工具集合 33=33 不变，本地学习工具全部可用（含真实本地 PDF 渲染 1 张图）、联网工具结构化失败、`study_reconnect` 可重试且不要求登录，本地回执复用 `reused:true/network_started:false`、`force` 重查返回 `STUDY_DNS` 不伪造成功；空 Library 时 `finish` 返回 `SETUP_INCOMPLETE(sync_incomplete)`，`http500` 返回结构化 `STUDY_HTTP`，部分失败逐门 `partial`、重跑后 `already_current=6/failed=0` 未重复下载、`finish` 才 ready；full 同步 17 份资料 / 17 个文本单元后 `finish` ready，info_only 0 下载、`_Inbox` 为空、无 `LibrarySync` 报告也可 `finish` ready；章节核对首次严格核 files=2/unchanged=2/error=0，同聊天复用、其他聊天不复用，授权不足与账号不匹配被拒绝，断网复用不联网。
 

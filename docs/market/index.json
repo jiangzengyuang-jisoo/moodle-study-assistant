@@ -1,12 +1,12 @@
 {
   "format": 1,
   "title": {
-    "en": "Moodle Study Assistant plugin index",
-    "zh": "Moodle 学习助手插件索引"
+    "en": "Moodle Study Assistant community plugin index",
+    "zh": "Moodle 学习助手社区插件目录"
   },
   "description": {
-    "en": "Community plugin index template for the Moodle Study Assistant DeepSeek Harness bundle. Replace every placeholder field before publishing.",
-    "zh": "Moodle 学习助手 DeepSeek Harness 插件的社区索引模板；发布前必须替换所有占位字段。"
+    "en": "Community-maintained DeepSeek Harness plugin index for the Moodle Study Assistant Windows trial. Not an official DeepSeek index; add the index URL manually in Discover.",
+    "zh": "社区维护的 DeepSeek Harness 插件目录，收录 Moodle 学习助手 Windows 试用版；不是 DeepSeek 官方索引，需在 Discover 中手动添加目录地址。"
   },
   "metadata": {
     "categories": {
@@ -29,6 +29,12 @@
           "en": "Read-only school access",
           "zh": "学校只读访问"
         }
+      },
+      "community": {
+        "title": {
+          "en": "Community plugin",
+          "zh": "社区插件"
+        }
       }
     },
     "sortKeys": {
@@ -45,27 +51,34 @@
     {
       "name": "dsh-moodle-study",
       "title": {
-        "en": "Moodle Study Assistant",
-        "zh": "Moodle 学习助手"
+        "en": "Moodle Study Assistant (Windows trial)",
+        "zh": "Moodle 学习助手（Windows 试用版）"
       },
       "description": {
-        "en": "Connect your school Moodle account and study course chapters from materials saved on your own computer, inside the chat. Local study keeps working during a temporary school outage.",
-        "zh": "连接学校 Moodle 账号，在聊天里按章节学习保存在本机的课程资料；学校暂时连不上时仍可继续学习本地资料。"
+        "en": "Community Windows trial: connect your school Moodle account and study course chapters from materials saved on your own computer. School access is read-only; local study keeps working during a temporary school outage.",
+        "zh": "社区 Windows 试用版：连接学校 Moodle 账号，在聊天里按章节学习保存在本机的课程资料；学校暂时连不上时仍可继续学习本地资料，学校接口只读。"
       },
-      "author": "REPLACE_WITH_AUTHOR",
+      "author": "jiangzengyuang-jisoo",
       "homepage": "https://github.com/jiangzengyuang-jisoo/moodle-study-assistant",
+      "repository": {
+        "url": "https://github.com/jiangzengyuang-jisoo/moodle-study-assistant",
+        "directory": "plugin"
+      },
+      "icon": "icons/icon.svg",
       "metadata": {
         "category": "study",
         "labels": [
           "windows",
-          "read-only"
+          "read-only",
+          "community"
         ],
         "keywords": [
           "moodle",
           "study",
           "course",
           "tutoring",
-          "local materials"
+          "local materials",
+          "windows"
         ],
         "sortKeys": {
           "featured": 1
@@ -74,7 +87,7 @@
       "versions": [
         {
           "version": "0.6.0-trial.3",
-          "publishTimestamp": 1794182400,
+          "publishTimestamp": 1794161475,
           "source": {
             "type": "npm"
           },

@@ -9,6 +9,8 @@ Study your Moodle course chapters from materials saved on your own computer, ins
 
 ## Install
 
+After the npm release, the recommended way is **Plugins → Discover**: add the community plugin index, then install **Moodle Study Assistant (Windows trial)**. You can also install the npm package `dsh-moodle-study@0.6.0-trial.3` directly. For the offline trial package:
+
 1. Open **Plugins** in DeepSeek Harness and choose **Add plugin**.
 2. Paste the absolute path of the trial package folder (or its `.tgz` file), read the third-party notice and click **Install**.
 3. Keep the plugin switch **On**, open a new chat and say "help me set up the Moodle study assistant".

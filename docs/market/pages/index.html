@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moodle 学习助手 · 社区插件目录（Windows 试用版）</title>
+<meta name="description" content="DeepSeek Harness 社区插件目录说明页：Moodle 学习助手 Windows 试用版的添加目录、安装、首次设置、升级、限制与隐私边界。非 DeepSeek 官方收录。">
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #1f2933;
+    --muted: #55636f;
+    --line: #d9e0e6;
+    --bg: #f7f9fb;
+    --card: #ffffff;
+    --accent: #1a5fb4;
+    --accent-soft: #e8f0fb;
+    --warn-bg: #fff8e6;
+    --warn-line: #e5c46b;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    padding: 0 16px 48px;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    font-size: 16px;
+    line-height: 1.72;
+  }
+  .wrap { max-width: 820px; margin: 0 auto; }
+  header { padding: 40px 0 8px; }
+  .eyebrow {
+    margin: 0 0 6px;
+    color: var(--accent);
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+  h1 { margin: 0 0 6px; font-size: 2rem; line-height: 1.25; }
+  .lead { margin: 0 0 14px; color: var(--muted); font-size: 1.05rem; }
+  .badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; padding: 0; list-style: none; }
+  .badges li {
+    padding: 3px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--card);
+    color: var(--muted);
+    font-size: 0.82rem;
+  }
+  .notice {
+    margin: 0 0 8px;
+    padding: 14px 16px;
+    border: 1px solid var(--warn-line);
+    border-left: 4px solid var(--warn-line);
+    border-radius: 8px;
+    background: var(--warn-bg);
+  }
+  .status {
+    margin: 0 0 10px;
+    padding: 12px 16px;
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+    background: #f3f5f7;
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+  section {
+    margin: 22px 0 0;
+    padding: 22px 24px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--card);
+  }
+  h2 { margin: 0 0 12px; font-size: 1.22rem; line-height: 1.4; }
+  h3 { margin: 18px 0 8px; font-size: 1.02rem; }
+  p { margin: 0 0 12px; }
+  ul, ol { margin: 0 0 12px; padding-left: 1.4em; }
+  li { margin: 0 0 8px; }
+  code {
+    padding: 1px 5px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: #f4f6f8;
+    font-family: "Cascadia Mono", Consolas, "Courier New", monospace;
+    font-size: 0.88em;
+    word-break: break-all;
+  }
+  .url { display: inline-block; margin: 4px 0; padding: 6px 8px; }
+  .hint { color: var(--muted); font-size: 0.9rem; }
+  .quote {
+    margin: 6px 0 14px;
+    padding: 10px 14px;
+    border-left: 4px solid var(--accent);
+    border-radius: 6px;
+    background: var(--accent-soft);
+    font-weight: 600;
+  }
+  a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  a:hover { color: #123e73; }
+  footer {
+    margin-top: 26px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+  footer p { margin: 0 0 6px; }
+  @media (max-width: 560px) {
+    header { padding-top: 26px; }
+    h1 { font-size: 1.6rem; }
+    section { padding: 18px 16px; }
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+
+<header>
+  <p class="eyebrow">DEEPSEEK HARNESS 社区插件目录</p>
+  <h1>Moodle 学习助手</h1>
+  <p class="lead">在 DeepSeek Harness 的聊天里按章节学习保存在你自己电脑上的课程资料。</p>
+  <ul class="badges">
+    <li>社区插件目录</li>
+    <li>非 DeepSeek 官方收录</li>
+    <li>Windows 试用版</li>
+  </ul>
+  <p class="status">
+    <strong>发布状态：尚未上线（准备稿，截至 2026-11-09）。</strong>尚未执行 npm 发布，尚未启用 GitHub Pages；下面的目录地址和 npm 包页需要维护者完成发布后才可访问。本目录是<strong>社区插件目录，非 DeepSeek 官方收录</strong>。
+  </p>
+  <p class="notice">
+    当前目录条目版本为 <code>dsh-moodle-study@0.6.0-trial.3</code>。这是<strong>社区维护</strong>的插件目录，不是 DeepSeek 官方索引，也不表示任何官方审核、收录或推荐。插件为 <strong>Windows 试用版</strong>，<strong>尚未在真实学校账号上验证登录与课程同步</strong>；本页只说明如何试用，不构成效果承诺。
+  </p>
+</header>
+
+<section id="prepare">
+  <h2>1. 开始前准备</h2>
+  <ul>
+    <li>一台 <strong>Windows 10/11</strong> 电脑（当前只支持 Windows）。</li>
+    <li>已安装 <strong>DeepSeek Harness 桌面版</strong>；本试用版基于 <code>0.2.2-rc.1</code> 验证，包声明 <code>engines.dsh: ^0.2.2-rc.1</code>。</li>
+    <li>你的学校 <strong>Moodle 账号</strong>能在浏览器里正常登录，且学校启用了 Moodle Mobile Web Service（具体权限由学校控制）。</li>
+    <li>安装与首次设置需要<strong>联网</strong>；系统里有 Microsoft Edge 或 Google Chrome（连接学校时用来打开登录页）。</li>
+  </ul>
+</section>
+
+<section id="add-index">
+  <h2>2. 在 DeepSeek Harness 中添加社区目录并安装</h2>
+  <ol>
+    <li>打开 DeepSeek Harness，点击左侧 <strong>Plugins</strong>（插件）页。</li>
+    <li>进入 <strong>Experimental plugins</strong>，开启 <strong>Custom plugin indexes</strong>（自定义插件索引）。</li>
+    <li>打开 <strong>Discover</strong> 标签页，点 <strong>Add index source</strong>。</li>
+    <li>粘贴本目录的索引地址：<br><code class="url">https://jiangzengyuang-jisoo.github.io/moodle-study-assistant/index.json</code></li>
+    <li>在 Discover 中找到条目「<strong>Moodle 学习助手（Windows 试用版）</strong>」，核对版本 <code>0.6.0-trial.3</code>、作者 <code>jiangzengyuang-jisoo</code> 与来源（npm）后安装。安装前会显示第三方插件信任提示，请阅读并自行确认后点 <strong>Install</strong>；确认插件开关为 <strong>On</strong>。</li>
+  </ol>
+  <p class="hint">社区索引没有官方审核与签名。若条目显示的来源、版本或作者与上面不一致，请停止安装，回到本页或仓库核对。</p>
+  <p class="hint">该目录<strong>不会自动出现</strong>在所有人的 Discover 列表中，也不会自动更新：你需要自己开启实验性索引功能并手动添加地址。</p>
+</section>
+
+<section id="setup">
+  <h2>3. 首次设置（在聊天里完成）</h2>
+  <p>安装完成后，建议<strong>新开一个聊天</strong>，说：</p>
+  <p class="quote">“帮我设置 Moodle 学习助手”</p>
+  <p>助手会一步步引导，不需要一次记住全部：</p>
+  <ol>
+    <li><strong>选择资料位置</strong>：默认是「文档」文件夹下的 <code>MoodleStudy</code>，也可以选其他文件夹；以前用过本项目时可直接选原来的资料文件夹。</li>
+    <li><strong>安装运行依赖</strong>：插件用 Harness 自带的 Python 建立私有运行环境，首次需要联网下载约 20 MB，通常 1–3 分钟。</li>
+    <li><strong>连接学校账号</strong>：助手在这台电脑的浏览器里打开学校登录页，由<strong>你本人</strong>输入账号、密码和验证码；第一次连接还会安装登录组件（约 40 MB 下载）。</li>
+    <li><strong>选择课程</strong>：按课程名称选择要跟踪的课程，助手不会替你选。</li>
+    <li><strong>确认资料范围</strong>：完整资料同步，或只同步课程信息。</li>
+    <li><strong>首次同步并完成设置</strong>：只有同步证据与你的账号、课程、资料范围匹配时才标记完成；同步中断、失败或只完成一部分时会说明每门课程的可用范围和剩余问题，重跑同步是增量的。</li>
+  </ol>
+  <p>任何一步中断或失败，重新打开聊天说“继续设置”即可从当前进度继续，已有资料不会被删除。学校暂时连不上时，已保存在本机的资料、章节讲解和教学记录仍可使用。</p>
+</section>
+
+<section id="upgrade">
+  <h2>4. 升级与回滚</h2>
+  <ul>
+    <li><strong>升级</strong>：在 Plugins 页卸载旧版，再安装新版（当前为 <code>0.6.0-trial.3</code>）；个人资料目录和运行支持目录默认保留，学习记录与资料不需要迁移。</li>
+    <li>同一版本已经安装时直接重装会被拒绝，需要先卸载再安装。</li>
+    <li><strong>回滚</strong>：卸载新版、重新安装此前的试用包；个人资料目录保持不变。升级或回滚前建议先备份整个资料文件夹。</li>
+    <li>升级后如果聊天里看不到学习工具，按提示重启一次 DeepSeek Harness，或让助手检查设置状态；不要删除资料目录。</li>
+  </ul>
+</section>
+
+<section id="limits">
+  <h2>5. 关键限制</h2>
+  <ul>
+    <li>仅支持 <strong>Windows</strong>；学校登录依赖 Windows 凭据保护和系统 Edge/Chrome。</li>
+    <li>需要你自己的学校 Moodle 账号；学校需启用 Moodle Mobile Web Service，部分接口和资料可能因权限无法读取。</li>
+    <li>首次使用必须联网安装运行依赖（约 20 MB；连接学校时另有约 40 MB 登录组件）；网络受限时会失败，恢复网络后可重试。</li>
+    <li><strong>尚未验证真实学校登录与课程同步</strong>：真实 SSO/MFA、真实课程数据、不同学校和不同电脑的表现，都需要你本人在真实环境确认。</li>
+    <li>DOCX/PPTX 资料没有页图，只能读取抽取的文字；公式、图表和扫描件应以 PDF 原页为准，OCR 结果可能有误。</li>
+    <li>本地保存不等于离线推理：断网时只保证本机资料和本地教学记录可读，模型调用仍依赖 Harness 当前使用的模型服务。</li>
+    <li>这是社区插件，<strong>非 DeepSeek 官方收录</strong>；不承诺进入官方推荐、不承诺出现在所有人的 Discover 中，也不承诺兼容未来的 DeepSeek Harness 版本。</li>
+    <li>第三方插件没有官方审核与签名；安装即表示你信任并允许它以 Harness 的权限在本机运行。</li>
+  </ul>
+</section>
+
+<section id="privacy">
+  <h2>6. 隐私与只读边界</h2>
+  <ul>
+    <li>学校接口<strong>只读</strong>：不提交作业、不代替你作答学校测验、不发帖、不修改学校完成状态、不发邮件。</li>
+    <li>密码、验证码只在学校网页由你本人输入；插件不读取浏览器 Cookie，不把 Token 写进聊天、日志或插件配置。</li>
+    <li>登录结果用 Windows 自带的加密机制（DPAPI）保存在你选择的资料文件夹的 <code>.private</code> 目录，只对当前 Windows 用户可解密；不要打开或转发该目录。</li>
+    <li>学习资料、配置和学习记录保存在你选择的资料文件夹；插件包本身不含个人数据，卸载插件默认保留资料目录。</li>
+    <li>助手读取到的资料内容可能会发送给 DeepSeek Harness 当前使用的模型提供方用于生成回答；请遵守学校对课程资料的版权与使用要求。</li>
+  </ul>
+</section>
+
+<section id="recovery">
+  <h2>7. 出问题时的恢复入口</h2>
+  <ul>
+    <li><strong>工具缺失或调用失败</strong>：在聊天里说“<strong>检查 Moodle 学习助手状态</strong>”。该检查使用 Harness 的 Host 工具 <code>moodle_study_status</code>，不依赖 MCP 学习工具本身，会读出资料位置、运行依赖、学校连接和下一步恢复动作。</li>
+    <li><strong>设置或学习工具状态异常</strong>：让助手调用设置状态工具 <code>study_setup_status</code>，它会指出当前真正要做的下一步（继续选课、修复依赖或重跑同步等）。</li>
+    <li><strong>学校暂时连不上 / 断网</strong>：已保存在本机的资料、章节讲解和教学记录仍可使用；涉及最新作业、公告或考试信息时，助手会明确说明“当前不是最新线上结果”。网络恢复后重试连接即可，不需要重新登录；只有登录失效才需要你本人重新连接学校。</li>
+    <li><strong>不要删除资料目录</strong>来“修复”问题；先备份，再按助手提示操作。</li>
+    <li>反馈问题时请描述你做了什么、看到什么提示；<strong>不要</strong>粘贴密码、验证码、Token，也不要转发 <code>.private</code> 目录。</li>
+  </ul>
+</section>
+
+<section id="links">
+  <h2>8. 仓库与反馈</h2>
+  <ul>
+    <li><a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant">项目仓库主页（GitHub）</a>：项目说明、更新记录与问题入口。</li>
+    <li><a href="https://www.npmjs.com/package/dsh-moodle-study">npm 包页（发布完成后可访问）</a>：查看已发布版本与 tag；尚未发布时该页面不存在。</li>
+    <li><a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/issues">问题反馈（GitHub Issues）</a>：反馈时不要粘贴密码、验证码、Token 或课程私密内容。</li>
+  </ul>
+  <p class="hint">安装、升级、限制、隐私和故障恢复步骤都写在本页正文中，不需要另开文档；本页不依赖尚未推送的代码分支。仓库主页与 npm 包页需要联网访问。</p>
+</section>
+
+<footer>
+  <p>本页是社区维护的 GitHub Pages 目录说明页，不是 DeepSeek 官方页面。项目采用 MIT 许可证，与 OpenAI、HKU、Moodle 均无官方隶属关系。</p>
+  <p>内容整理日期：2026-11-09；版本与界面要求以仓库主页和 DeepSeek Harness 实际界面为准。</p>
+</footer>
+
+</main>
+</body>
+</html>

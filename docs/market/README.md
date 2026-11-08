@@ -1,16 +1,24 @@
-# 市场提交材料：发布事实与提交清单
+# 社区插件目录与发布材料（README）
 
-本目录给维护者用，面向 DeepSeek Harness（DSH）插件生态。学生试用说明见 [插件试用说明](../PLUGIN_TRIAL_GUIDE.md)，本次发布说明见 [插件发布说明](../PLUGIN_RELEASE_NOTES.md)。
+本目录给维护者用，面向 DeepSeek Harness（DSH）插件生态。学生试用说明见 [插件试用说明](../PLUGIN_TRIAL_GUIDE.md)，插件发布说明见 [插件发布说明](../PLUGIN_RELEASE_NOTES.md)，第二阶段发布执行清单见 [PUBLISH_PLAN.md](PUBLISH_PLAN.md)，目录说明页源码见 [pages/index.html](pages/index.html)。
+
+> **当前状态（截至 2026-11-09，第一阶段准备）：未发布。**
+> 没有执行 `npm publish`，没有创建 `gh-pages` 分支，没有启用 GitHub Pages，也没有对外分享任何目录 URL。文中“预计 URL”目前**不可访问**；不得把本目录写成已上线、已上架或已被官方收录。
 
 ## 结论先行
 
 1. **DSH 0.2.2-rc.1 没有官方插件市场索引。** 插件页的 `Discover` 标签页只在开启实验性插件索引功能（`Plugins → Experimental plugins → Custom plugin indexes`）后出现，并且只列出用户自己添加的索引源；随安装包编译的「官方 on-demand catalog」不是市场索引，profile 无法扩展它。
 2. **「发布插件包」和「被索引收录」是两件事。**
    - **发布插件包**：把一个声明 `dsh.bundle` 的包发到 npm，或托管 Git 仓库／`.tgz` 文件。用户打开 `Plugins → Add plugin` 粘贴 `包名@版本`（或 Git 地址、`.tgz`、本地目录绝对路径）→ 阅读第三方信任提示 → `Install`，即可安装，**不需要任何市场或索引**。
-   - **进入市场索引**：在「发布插件包」的基础上，另外生成并托管一个 format 1 的 `index.json`（本目录模板）。用户开启实验性索引功能并添加该索引 URL 后，才能在 `Discover` 浏览和安装。**没有中心登记、官方审核或签名**，索引可以被任何人复制或自行托管。
+   - **进入社区索引**：在「发布插件包」的基础上，另外生成并托管一个 format 1 的 `index.json`（本目录 [index.json](index.json) 为源文件）。用户开启实验性索引功能并添加该索引 URL 后，才能在 `Discover` 浏览和安装。**没有中心登记、官方审核或签名**。
 3. **官方收录**（进入 DSH 安装包内置的官方可选/按需列表）只能随 DSH 官方仓库发版，第三方无法从 profile 侧扩展。本项目当前不走这条路线。
-4. **本目录不是已发布状态。** 模板中的占位字段必须在发布前替换（见 [§4](#4-indexjson-发布前必须替换的字段)）；`npm publish`、索引站点托管和对外公开都需要维护者本人另行授权后执行。
-5. **桌面版 profile 由 Electron 独占管理，不能用 CLI 装插件。** 发布者自己验收也要在 DSH 桌面版的 `Plugins` 页操作，不要教学生使用命令行。
+4. **本项目的确定方案（尚未执行）**：
+   - **npm**：发布 `dsh-moodle-study@0.6.0-trial.3` 到 npm registry，**只打 `trial` tag**（不设 `latest`，不把试用版标成稳定版）；发布物由 `tools/release/pack-plugin.mjs` 打包并审计。
+   - **GitHub Pages**：在仓库 `https://github.com/jiangzengyuang-jisoo/moodle-study-assistant`（public，默认分支 `codex`）新建**独立 orphan 分支 `gh-pages`**，站点根目录恰好 3 个文件：`index.json`、`index.html`、`icons/icon.svg`；不覆盖 `codex`/`deepseek`/`main`，不创建 GitHub Release。
+   - **预计目录 URL**：`https://jiangzengyuang-jisoo.github.io/moodle-study-assistant/index.json`（**尚未上线**）
+   - **预计说明页 URL**：`https://jiangzengyuang-jisoo.github.io/moodle-study-assistant/`（**尚未上线**）
+   - 完整命令、验证、失败处理与回滚见 [PUBLISH_PLAN.md](PUBLISH_PLAN.md)；执行前需维护者本人明确授权。
+5. **桌面版 profile 由 Electron 独占管理，不能用 CLI 装插件。** 发布者自己验收也要在 DSH 桌面版 `Plugins` 页操作，不要教学生使用命令行。
 
 ## 1. 已核实的 DSH 侧事实（0.2.2-rc.1）
 
@@ -28,93 +36,124 @@
 
 > 本机调研档案（不随仓库发布、仅工作区留存）：`tmp/team/api-spec.md` §1（安装路径）、§6（市场事实）、§7（显示元数据）。上述事实以 DSH 随包文档与实测为准，DSH 升级后可能需要重新核对。
 
-## 2. 两条发布路线
+## 2. 发布产物与确定路线
 
-### 2.1 发布插件包（不需市场）
+### 2.1 构建与打包产物
 
-产物来自构建脚本 `tools/release/build-plugin.mjs`，输出 `dist/moodle-study-assistant/`（当前约 9.9 MB、2044 个文件，零 npm 安装依赖；随包内置 6 个 Node 运行时包）。
+- **插件包**：由 `tools/release/build-plugin.mjs` 构建到 `dist/moodle-study-assistant/`。构建脚本从 MCP 入口的 6 个直接运行时包出发，解析并内置**完整 Node 依赖闭包（当前 92 个包，无原生二进制）**，并扩写产物 `package.json` 的 `dependencies`/`bundleDependencies`，安装时不需要再下载 npm 依赖。准备阶段实测构建目录约 **3557 个文件、15.0 MB**（含随包依赖闭包；`dist` 内的 tarball 不计入）；构建脚本同时做个人数据、敏感路径与原生二进制审计。
+- **npm tarball**：由 `tools/release/pack-plugin.mjs`（`npm run pack:plugin`）在构建后执行 `npm pack` 并审计打包后的字节，复制到 `release/npm/`。准备阶段 tarball 为 `dsh-moodle-study-0.6.0-trial.3.tgz`：**3,163,254 字节（约 3.02 MB）、3556 个条目、92 个内置依赖包**，SHA-256 `6a1f6f57366fd84661d81b56db0fe9941558b5a918b98b2c0fff18b03e7b1016`。审计已升级为校验**完整依赖闭包**（不是硬编码 6 个包）：每个 vendored 包都必须在 `bundleDependencies` 中声明。最终复核后该 SHA-256 可能变化，以发布时 `pack-plugin` 输出为准。
+- **Pages 站点**：由 `tools/release/build-market-site.mjs`（`npm run build:market-site -- --published-at <Unix 秒>`）从 [index.json](index.json)、[pages/index.html](pages/index.html)、`plugin/icon.svg` 生成 `release/pages/`，恰好 3 个文件。`release/` 在 `.gitignore` 中，是本地产物，不提交到代码分支；部署走 `gh-pages`。
 
-| 渠道 | 需要做的事 | 学生怎么装 | 升级方式 |
-| --- | --- | --- | --- |
-| npm registry | 去掉产物 `package.json` 的 `"private": true`，`npm pack` 检查文件清单后发布；`engines.dsh` 与插件显示元数据已声明 | `Add plugin` 填 `dsh-moodle-study@<版本>`（可展开选择 registry） | `Installed plugins` 出现 `Versions`/`Update`，或卸载重装 |
-| Git 仓库 | 需要一个**可安装的包根**（内含 `package.json`、`cordis.patch.yml`、`locale/`、`icon`、`program/`）；仓库根必须指向该包（或索引里用 `path` 指向子目录），并记录 40 位 commit | `Add plugin` 填 Git 地址 | 卸载重装到新 commit |
-| `.tgz` / 本地目录 | 把产物打成 `.tgz` 或直接分发解压后的目录 | `Add plugin` 填 `.tgz` 绝对路径或目录绝对路径 | 卸载后重装；同包名直接重装会被 `already-installed` 拒绝 |
+### 2.2 npm registry（确定路线）
 
-注意：
+| 项目 | 内容 |
+| --- | --- |
+| 包名 / 版本 | `dsh-moodle-study` / `0.6.0-trial.3` |
+| npm tag | `trial`（`publishConfig.tag` 与发布命令都显式指定；**不加 `latest`**） |
+| 发布物 | `release/npm/dsh-moodle-study-0.6.0-trial.3.tgz`（`pack-plugin` 审计后：约 3.02 MB / 3556 条目 / 92 个内置依赖包） |
+| 发布命令 | `npm publish .\release\npm\dsh-moodle-study-0.6.0-trial.3.tgz --tag trial --access public`（见 [PUBLISH_PLAN.md](PUBLISH_PLAN.md) §2） |
+| 学生安装 | 通过社区目录 `Discover` 安装（本方案首选）；或 `Add plugin` 填 `dsh-moodle-study@0.6.0-trial.3` |
+| 升级方式 | 在 `Plugins` 页卸载旧版、安装新版；个人资料目录与运行支持目录默认保留。registry 来源若显示 `Versions`/`Update` 入口，以实际 UI 为准（本阶段未验证） |
+| 失败处理 | 已发布版本不删除、不覆盖；内容错误用 `npm deprecate` 标注后发布下一个 trial 版本，详见执行清单 §2.4 |
 
-- 本地目录安装是「链接/引用」形态，移动或删除源目录会让插件失效；`.tgz` 是自包含副本，适合分发给试用同学。
-- 上述三种来源都不需要索引、不需要市场、不需要 DSH 方审批；但插件是第三方代码，用户安装时看到的信任提示是唯一确认点。
-- 发布到 npm 或把包公开给其他人之前，先完成 [§4](#4-indexjson-发布前必须替换的字段) 的字段检查和 [§5](#5-发布前检查清单) 的清单，并确认没有把个人数据打进包（构建脚本已做个人数据与敏感路径审计）。
+其他分发方式（`Git` 仓库、`.tgz`/本地目录）仍可用于内部试用，但不属于本次公开发布方案；`.tgz`/本地目录为「链接/引用」或自包含副本，同包名直接重装会被 `already-installed` 拒绝。
 
-### 2.2 进入市场索引（自托管 format 1 索引）
+### 2.3 GitHub Pages 社区目录（确定路线）
 
-1. 先完成 2.1 的「发布插件包」，拿到真实可安装的包名、版本和来源。
-2. 复制本目录 [index.json](index.json) 模板，替换占位字段，并用 DSH 的校验器自检（见 §4）。
-3. 把 `index.json`（以及可选的图标文件）托管到任意 HTTPS 静态站点；不需要中心登记，也没有官方审核。
-4. 用户侧操作（写进用户文档，不要替用户做）：`Plugins → Experimental plugins` 打开 **Custom plugin indexes** → 在 `Discover` 页 `Add index source` 填索引 URL → 浏览条目 → 在条目确认框确认图标/标题/版本/作者/来源/信任说明 → 安装。
-5. 关闭实验性功能会隐藏 `Discover` 与 `plugin_market` 工具，但已保存的索引源会留在 profile。
+- **仓库与分支**：`https://github.com/jiangzengyuang-jisoo/moodle-study-assistant`。准备阶段核实：public，默认分支 `codex`，远端只有 `codex`/`deepseek` 两个分支、**没有 `gh-pages` 分支**；公开 API 查询 Pages 返回 404，与未启用 Pages 一致（发布前用 `gh api` 再复查）。部署时新建**独立 orphan 分支 `gh-pages`**，只推送 `index.json`、`index.html`、`icons/icon.svg` 三个文件；不动 `codex`/`deepseek`/`main`，不创建 GitHub Release。
+- **目录条目**：`dsh-moodle-study@0.6.0-trial.3`，`source.type=npm`，`engines.dsh=^0.2.2-rc.1`，`icon: icons/icon.svg`（相对索引 URL，站点上解析为 `.../icons/icon.svg`）。条目文案见 [LISTING.md](LISTING.md)。
+- **预计 URL（尚未上线）**：
+  - 索引：`https://jiangzengyuang-jisoo.github.io/moodle-study-assistant/index.json`
+  - 页面：`https://jiangzengyuang-jisoo.github.io/moodle-study-assistant/`
+- **学生侧操作（写进用户文档，不替用户做）**：`Plugins → Experimental plugins` 打开 **Custom plugin indexes** → `Discover` 页 `Add index source` 填索引 URL → 浏览条目 → 在条目确认框确认图标/标题/版本/作者/来源/信任说明 → 安装。目录**不会自动出现**在所有人的 `Discover` 中，也没有官方审核或签名。
+- 关闭实验性功能会隐藏 `Discover` 与 `plugin_market` 工具，但已保存的索引源会留在 profile。
 
-索引本身没有签名和背书；如果有人复制或改写这个索引，DSH 无法区分。市场条目的 `official` 类标记只是索引自称，不构成本项目或 DSH 官方的推荐。
+### 2.4 发布前账号与授权要求
 
-### 2.3 官方收录（本阶段不做）
+- **npm**：维护者本人 `npm login`（浏览器登录，2FA/OTP 本人输入）；账号需能发布 `dsh-moodle-study`。准备阶段 `npm view dsh-moodle-study` 返回 404（名称未被公开占用），发布前需复查。不记录、不导出 Token。
+- **GitHub**：维护者本人 `gh auth login`（repo 权限）并 `gh auth setup-git`；`gh auth status` 正常；确认仓库 public、默认分支 `codex`、条目作者名 `jiangzengyuang-jisoo` 可公开。
+- **发布范围**：npm 包与 Pages 站点均为公开内容；不创建 GitHub Release、不提交官方收录、不改版本号（版本变更需维护者决定）。
+- **页面自包含与外部链接**：目录说明页的安装、升级、限制、隐私与故障恢复说明都写在页面正文中，不依赖尚未推送的代码分支；页面只链接仓库主页、同一仓库的问题页与 npm 包页（npm 包页发布完成后才可访问）。第二阶段只计划推送 `gh-pages`，**不推送** `codex`/`deepseek` 代码分支。
+
+### 2.5 官方收录（本阶段不做）
 
 官方收录 = 包成为 DSH 应用的 runtime dependency，声明 bundle patch、图标与 `locale` 元数据，被加入 DSH 官方仓库的 `OPTIONAL_BUNDLES`/`ON_DEMAND_BUNDLES` 列表，并随 DSH 发版。**这需要 DSH 官方仓库合并与发版，第三方无法从 profile 扩展**；本项目当前不提交官方收录。
 
-## 3. 索引模板字段说明
+## 3. index.json 字段说明与当前取值
 
-`docs/market/index.json` 是 format 1 模板，根字段与插件条目的结构已按 DSH 校验器写全：
+`docs/market/index.json` 是社区目录的源文件（format 1），结构已按 DSH 校验器写全，并已更新为社区试用版定位：
 
-- 根：`format: 1`、`title`（含 `en`，可加 `zh`）、`description`、`metadata.categories`/`labels`/`sortKeys` 声明、`plugins`。
-- 插件条目：`name`（npm 合法包名，市场内唯一）、`title`/`description`（LocalizedText）、可选 `icon`、`author`、`homepage`、`repository`、`metadata.category`（必须引用根里声明的分类）、`metadata.labels`（必须引用根里声明的标签，不能重复）、`metadata.keywords`、`versions`。
-- 版本条目：`version`（精确 SemVer）、`publishTimestamp`（Unix 秒整数）、`source`（`{"type":"npm"}` 或 `{"type":"git","url","commit","path"?}`）、`engines.dsh`（SemVer range）。
-- 校验器会丢弃未定义字段、按版本降序排序、解析相对图标 URL；**不会**替你核对包内容。`engines.dsh` 缺失时校验器不报错（按格式说明视为不限，但市场格式说明要求发布时声明），非法的 range 会让该版本无法安装，因此发布前务必填写并自检。
+- 根：`format: 1`、`title`/`description`（含 `en`、`zh`；标明社区维护、非官方索引）、`metadata.categories`/`labels`/`sortKeys`、`plugins`。
+- 插件条目：`name`（`dsh-moodle-study`）、`title`、`description`、`icon`、`author`、`homepage`、`repository`（`url` + `directory: plugin`）、`metadata.category`、`metadata.labels`、`metadata.keywords`、`metadata.sortKeys`、`versions`。
+- 版本条目：`version`、`publishTimestamp`（Unix 秒整数）、`source`（`{"type":"npm"}`）、`engines.dsh`。
 
-## 4. index.json 发布前必须替换的字段
+当前关键取值：
 
-| 字段 | 模板当前值 | 发布前要做的事 |
+| 字段 | 当前值 | 发布前要做的事 |
 | --- | --- | --- |
-| `plugins[0].author` | `REPLACE_WITH_AUTHOR` | 换成真实维护者名称（必填占位） |
-| `plugins[0].homepage` | 项目 README 中的仓库地址 | 确认它可公开访问；如不是公开主页则替换 |
-| `versions[0].version` | `0.6.0-trial.3` | 与实际发布的包版本一致 |
-| `versions[0].publishTimestamp` | `1794182400`（= 2026-11-09T00:00:00Z 的占位值） | 换成真实发布时间（Unix 秒整数） |
-| `versions[0].source` | `{"type":"npm"}` 占位 | 走 npm 时保持（可加 `registry`）；走 Git 时替换为 `{"type":"git","url":"https://…","commit":"<40 位小写 SHA>","path":"<子目录，可选>"}`，Git URL 必须是无凭据、无查询/片段的规范 https 地址 |
-| `versions[0].engines.dsh` | `^0.2.2-rc.1` | 与实际测试的 DSH 版本范围一致，并与包 `package.json` 的 `engines.dsh` 保持一致 |
-| 根 `metadata` 与插件 `metadata` | 示例分类 `study`、标签 `windows`/`read-only`、排序键 `featured` | 按需增删；**引用未声明的分类/标签会校验失败**，删除引用后对应的声明也可删除 |
-| 可选 `icon` | 模板未包含 | 需要条目图标时加：内嵌 `data:` SVG/PNG/JPEG/WebP（解码后 ≤32 KiB），或相对索引 URL／同源 https 的图片 URL |
+| `plugins[0].author` | `jiangzengyuang-jisoo` | 维护者确认公开名后保留（已不是占位） |
+| `plugins[0].homepage` | 项目仓库地址 | 确认可公开访问；与 `repository` 保持一致 |
+| `plugins[0].repository` | `url` + `directory: plugin` | 与插件包 `package.json` 的 `repository` 语义一致 |
+| `plugins[0].icon` | `icons/icon.svg` | 相对索引 URL；`build-market-site.mjs` 会把 `plugin/icon.svg` 复制到站点 `icons/icon.svg` |
+| `versions[0].version` | `0.6.0-trial.3` | 与 npm 实际发布版本一致；发布后不可修改 |
+| `versions[0].publishTimestamp` | `1794161475`（2026-11-09 02:11 HKT 的准备阶段值） | **发布时必须替换**：`build-market-site.mjs --published-at <真实时刻>` 会写入 `release/pages/index.json`；源文件保留准备值即可 |
+| `versions[0].source` | `{"type":"npm"}` | 走 npm 时保持；若改 Git 需换成 40 位 commit 的规范 https 地址 |
+| `versions[0].engines.dsh` | `^0.2.2-rc.1` | 与插件包 `package.json` 的 `engines.dsh` 保持一致 |
+| 根与插件 `metadata` | 分类 `study`；标签 `windows`/`read-only`/`community`；排序键 `featured` | 引用未声明的分类/标签会校验失败；增删时两处同步 |
 
-> `0.6.0-trial.2` 对模板的改动是：版本号改为 `0.6.0-trial.2`、`publishTimestamp` 占位值改为 2026-11-09、插件描述补充“学校暂时连不上时仍可学习本地资料”；`0.6.0-trial.3` 只把版本号更新为 `0.6.0-trial.3`（补完整同步采集完整性修复），字段结构未变，发布前仍需按上表替换字段并重新校验。
+校验方式（DSH 自带校验器，准备阶段已实际运行通过）：
 
-本仓库已经用 DSH 自带的 `@deepseek-ai/dsh-plugin-market-index` 校验器对当前模板做过一次结构校验（使用一个 https 测试索引 URL），结果通过；替换字段后应重新校验：
+```powershell
+$dshInstall = '<DeepSeek Harness 安装目录>'   # 本机实际安装目录
+$env:DSH_ASAR_ROOT = "$dshInstall\resources\app.asar\dsh"
+$env:ELECTRON_RUN_AS_NODE = '1'
+& "$dshInstall\DeepSeek Harness.exe" tools/release/validate-market-index.mjs `
+  --file docs/market/index.json `
+  --url 'https://jiangzengyuang-jisoo.github.io/moodle-study-assistant/index.json'
+```
 
-- 方法：把 `index.json` 解析为 JSON，调用 `parseMarketIndex(value, indexUrl)`；抛 `MarketIndexError` 时按其 `path`/`reason` 修正。也可参考 DSH 仓库的 `apps/plugin-market-generator`（从包名/仓库列表生成 `index.json` 与图标目录）。
-- 托管后建议在开启 Custom plugin indexes 的 DSH 里实际添加该 URL，确认 `Discover` 能读取条目、版本与 source facts，再交给学生。
+准备阶段结果为 `"ok": true`；生成的 `release/pages/index.json` 也已用同一命令验证通过。发布时对**生成的站点文件**再验证一次，不能只验证源文件。
 
-## 5. 发布前检查清单
+> 校验器只做结构校验，**不会**核对 npm 上是否真有对应版本或包内容是否可信；发布后仍要在开启 Custom plugin indexes 的 DSH 中实际添加索引验证。
 
-- [ ] 插件包：`package.json` 含 `name`、`version`、`type: "module"`、`exports`、`files`、`dsh.bundle.patch`、`engines.dsh`；npm 发布前删掉 `"private": true`。
-- [ ] 插件包：`locale/en.json`（发现入口）与 `locale/zh.json` 的 `meta.title`/`meta.description` 正确，`meta.detail` 指向包内子目录 Markdown；图标为包内 SVG/PNG/JPEG/WebP 且 ≤256 KiB。
-- [ ] 构建产物：跑一次 `tools/release/build-plugin.mjs`，确认个人数据审计通过（无 `Study/`、`.private/`、`config.local.json`、开发机绝对路径、姓名或 Token）。
-- [ ] `npm pack --dry-run`（或实际 `npm pack`）确认文件列表包含 patch、`index.js`、`locale/*.json`、图标、`program/`、`docs/`，不包含开发用文件。
-- [ ] `index.json` 占位字段已替换；用 `parseMarketIndex` 校验通过；索引站点为 HTTPS 且能直接返回 2xx。
-- [ ] 在干净 profile 上实际走一遍：`Add plugin` 安装（本地/tarball 或 registry）→ 插件开关为 On → 首次设置能开始；若走索引，再验证 `Discover` 添加索引 → 条目 → 安装。
-- [ ] 学生文档（[插件试用说明](../PLUGIN_TRIAL_GUIDE.md)）与实际 UI 文案一致；未验证项已标注。
-- [ ] 对外发布相关动作已经维护者本人明确授权。
+## 4. 发布前检查清单
 
-## 6. 仍需维护者本人授权后才能执行的步骤
+- [ ] 维护者已授权本次公开范围（npm 公开包 + gh-pages 公开站点 + 分享目录 URL）。
+- [ ] `git status --short` 无意外改动；记录 `git rev-parse HEAD` 作为构建提交。
+- [ ] `npm run pack:plugin` 通过（含构建、完整依赖闭包校验、个人数据审计、SHA-256）；tarball 独立复核通过（第一阶段报告 `tmp/team/npm-pack-report.md`）；记录 `version/entries/size/sha256`。
+- [ ] `npm view dsh-moodle-study` 确认包名仍可用；`npm whoami` 为正确发布账号。
+- [ ] `npm publish .\release\npm\dsh-moodle-study-0.6.0-trial.3.tgz --tag trial --access public --dry-run` 预览无异常。
+- [ ] `npm run build-market-site -- --published-at <真实时刻>` 生成 `release/pages/`；核对恰好 3 个文件。
+- [ ] 用 DSH 校验器验证 `release/pages/index.json`；核对 version、publishTimestamp、source、icon。
+- [ ] 确认说明页自包含，外部链接仅为仓库主页/问题页与 npm 包页（npm 包页发布后可用，见 §2.4）。
+- [ ] 在任何公开动作执行前，文档中不出现“已发布 / 已上架 / 已启用 Pages / 官方收录”的表述。
+- [ ] 发布后按 [PUBLISH_PLAN.md](PUBLISH_PLAN.md) §2.3、§3.4、§4 验证，并填写其 §5 发布记录。
+
+## 5. 仍需维护者本人授权后才能执行的步骤
 
 以下步骤会对外产生影响，**本次交付没有执行，也不应自动执行**：
 
-1. **`npm publish`**：把第三方插件代码公开发布到 npm registry（需要 registry 账号、可能涉及 OTP/双因素）。
-2. **托管索引站点**：为 `index.json` 和图标准备 HTTPS 静态站（涉及域名/托管账号/成本），并把 URL 公开。
-3. **对外分发**：把包名、`.tgz`、Git 地址或索引 URL 发给其他学生或发布到社区（包括 GitHub Release 等公开动作）。
+1. **`npm publish`**：把第三方插件代码公开发布到 npm registry（需要 registry 账号，可能涉及 OTP/双因素）。
+2. **推送 `gh-pages` 并启用 GitHub Pages**：创建公开分支与公开站点 URL（本次方案见 [PUBLISH_PLAN.md](PUBLISH_PLAN.md)）。
+3. **对外分发**：把包名、`.tgz`、Git 地址或目录 URL 发给其他学生或发布到社区（包括任何公开公告）；npm 包页在发布成功后才会存在。
 4. **官方收录申请**（如未来决定走）：向 DSH 官方仓库提交包与列表变更，需随 DSH 发版。
 
 本仓库只负责生成可验证的产物与文档；上述任一步骤执行前，维护者应先确认发布范围、版本号、许可证与第三方组件声明（`THIRD_PARTY_NOTICES.md`）没有变化。
 
-## 7. 未验证与限制
+## 6. 未验证与限制
 
-- 本轮 `0.6.0-trial.2` 修复已在隔离 fixture 下完成独立模拟学校验收：8 项要求场景全部 PASS（101/101 项检查），附加回归 4/4 通过；覆盖设置中断续做、断网本地学习、同步完成判定与章节核对等。未模拟：真实学校 SSO/MFA 登录与浏览器登录组件、真实学校数据与权限受限内容、桌面 UI 点击安装、真实客户端自动重连、换 Windows 账户的凭据解密。
-- **未验证**：market 索引从 `Add index source` 到 `Discover` 浏览、安装的完整链路（本机 desktop profile 未启用实验性索引功能，也没有添加索引源）；DSH 桌面 UI 点击安装的完整走查与截图；npm 发布；索引站托管；官方收录。
-- **未验证**：真实学校账号登录后首次同步的完整体验（需学生本人完成 SSO/MFA），以及不同 Windows 电脑/账户、不同学校 Moodle 的安装表现。
+- **准备阶段已实际运行（本地，无公开影响）**：临时运行 `build-market-site.mjs` 成功生成 3 个站点文件，并用 Harness 自带校验器对源索引与生成的站点索引验证通过（验证后已清理临时 `release/pages`，正式发布时重新生成）；`git ls-remote` 确认远端无 `gh-pages` 分支；`npm view dsh-moodle-study` 返回 404（名称未被公开占用）。
+- **打包产物**：`release/npm/dsh-moodle-study-0.6.0-trial.3.tgz` 已生成（3,163,254 字节 / 3556 条目 / 92 个内置依赖包 / SHA-256 `6a1f6f57…`，完整值见 [PUBLISH_PLAN.md](PUBLISH_PLAN.md) §0）；发布前必须重新运行 `npm run pack:plugin` 并以独立复核报告的最终值为准。
+- **未验证**：npm 发布本身与 registry 下载安装；推送 `gh-pages`、启用 Pages、Pages 构建/HTTPS 生效；从 `Discover` 添加索引到安装的完整链路；DeepSeek Harness 桌面 UI 鼠标点击安装的走查与截图；真实学校 SSO/MFA 登录与真实课程同步；其他学校、其他电脑、其他 Windows 账户。
+- 预计目录/页面 URL **尚未上线**，任何文档都不得写成已可用；发布后需以线上实测结果更新本文档。
 - DSH 为 0.2.2-rc.1，插件安装/市场机制可能随版本变化；发布前应以当前随包 README 与校验器重新核对。
-- 市场条目的安全责任在索引维护者与安装用户：DSH 不验证索引声明的包内容，安装即信任。
+- 社区索引没有官方审核与签名，DSH 不验证索引声明的包内容；安装第三方插件即信任其代码，责任在索引维护者与安装用户。
+
+## 7. 相关文件
+
+- [index.json](index.json)：社区目录源文件（format 1）
+- [pages/index.html](pages/index.html)：目录说明页源码（内联样式、无外部资源）
+- [PUBLISH_PLAN.md](PUBLISH_PLAN.md)：第二阶段精确执行清单（npm publish + gh-pages + Pages 启用 + 验证 + 回滚）
+- [LISTING.md](LISTING.md)：条目标题、描述、关键词、图标与截图说明
+- 构建脚本：`tools/release/build-plugin.mjs`、`tools/release/pack-plugin.mjs`、`tools/release/build-market-site.mjs`、`tools/release/validate-market-index.mjs`
+- 学生与发布文档：[插件试用说明](../PLUGIN_TRIAL_GUIDE.md)、[插件发布说明](../PLUGIN_RELEASE_NOTES.md)
