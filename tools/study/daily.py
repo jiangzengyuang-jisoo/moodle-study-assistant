@@ -14,6 +14,7 @@ import planning
 import coverage
 import exam_prep
 import exam_sources
+import teaching_event
 
 
 def mock_paper_name(mock):
@@ -143,7 +144,8 @@ def execute(state_path, command, now, minutes=None, course=None, payload=None, s
         # silently acknowledge stale school evidence after a newer check.
         validate_current_snapshot(state_path, snapshot, state)
     if operation_id is None and payload:
-        operation_id = payload.get("attempt_id") or payload.get("feedback_id")
+        operation_id = (payload.get("attempt_id") or payload.get("feedback_id")
+                        or payload.get("event_id"))
     operation = None
     if operation_id:
         key = state_io.digest(str(operation_id))
@@ -158,10 +160,56 @@ def execute(state_path, command, now, minutes=None, course=None, payload=None, s
                             {"phase": "complete", "revision": state.get("revision")})
             return {**old["result"], "duplicate": True, "views_updated": files}
     with study_time.using_state(state):
-        return _execute_loaded(state, state_path, original, command, now, minutes, course, payload, snapshot, operation)
+        return _execute_loaded(state, state_path, original, command, now, minutes, course, payload,
+                               snapshot, operation, operation_id)
 
 
-def _execute_loaded(state, state_path, original, command, now, minutes, course, payload, snapshot, operation=None):
+def _execute_teaching_event(state, state_path, original, now, payload, operation=None, operation_id=None):
+    """One small teaching event: read latest -> merge -> one atomic save -> one view rebuild.
+
+    The event only supplies this turn's change. Plan metadata is refreshed inside
+    the same transaction, so a cross-day save and a teaching change are committed
+    together. A merged state identical to the latest one is a real no-op: no save
+    and no view rebuild. Retries are handled by ``execute`` receipts + the
+    ``operations/<key>.json`` two-phase marker, exactly like other events.
+    """
+    if payload is None:
+        raise ValueError("teaching-event 需要标准输入 JSON 事件")
+    meta = teaching_event.merge(state, payload, now, operation_id=operation_id)
+    merged = meta['state']
+    plan_before = json.dumps(merged.get("planning"), sort_keys=True, ensure_ascii=False)
+    planning.refresh_plan_state(merged, now)
+    if json.dumps(merged.get("planning"), sort_keys=True, ensure_ascii=False) != plan_before:
+        meta['changed_fields'] = list(meta['changed_fields']) + ["planning"]
+    if state_io.same_json(state, merged):
+        return teaching_event.describe_result(meta, status="unchanged",
+                                              revision=state.get("revision"),
+                                              state_written=False, views_updated=[])
+    # review.save does not validate drafts; the full guard set runs here first.
+    state_io.validate_draft(state, merged)
+    revision = state.get("revision", 0) + 1
+    if operation:
+        key, request = operation
+        receipt = teaching_event.describe_result(meta, status="recorded", revision=revision,
+                                                 state_written=True, views_updated=[])
+        merged.setdefault("operation_receipts", {})[key] = {
+            "request_sha256": request, "result": receipt, "committed_at": now.isoformat()}
+    review.save(state_path, merged, original)
+    marker = None
+    if operation:
+        marker = state_path.parent / "Runtime" / "operations" / (operation[0] + ".json")
+        state_io.atomic(marker, {"phase": "views_pending", "revision": merged.get("revision")})
+    with state_io.timed(state_path, "view_generation"):
+        files = write_views(merged, state_path, now)
+    if marker:
+        state_io.atomic(marker, {"phase": "complete", "revision": merged.get("revision")})
+    return teaching_event.describe_result(meta, status="recorded",
+                                          revision=merged.get("revision"),
+                                          state_written=True, views_updated=files)
+
+
+def _execute_loaded(state, state_path, original, command, now, minutes, course, payload, snapshot,
+                    operation=None, operation_id=None):
     if command == "check":
         expected = view_contents(state, now)
         views = {name: view_path(state_path, name).read_text(encoding="utf-8")
@@ -180,6 +228,8 @@ def _execute_loaded(state, state_path, original, command, now, minutes, course, 
             raise ValueError("考试说明核读需要本轮 Moodle snapshot")
         return {"collection_complete": snapshot.get("collection_complete"),
                 "candidates": exam_sources.candidates(snapshot, state)}
+    if command == "teaching-event":
+        return _execute_teaching_event(state, state_path, original, now, payload, operation, operation_id)
     before = json.dumps(state, sort_keys=True, ensure_ascii=False)
     # Upgrade old or minimal archives gently; no learner evidence is invented.
     review.initialize(state)
@@ -246,14 +296,16 @@ def main():
     parser.add_argument("--state", type=Path, default=review.DEFAULT_STATE)
     parser.add_argument("--at", help="带时区的核对时间；日常运行省略")
     parser.add_argument("command", choices=["run", "attempt", "feedback", "answer-shown", "render", "check",
-        "exam-intake", "exam-sync", "exam-profile", "mock-register", "mock-attempt", "mock-answers", "mock-answer-shown"])
+        "exam-intake", "exam-sync", "exam-profile", "mock-register", "mock-attempt", "mock-answers",
+        "mock-answer-shown", "teaching-event"])
     parser.add_argument("--minutes", type=int, help="当日首次预算或明确减量；省略则沿用当天已确认预算")
     parser.add_argument("--course")
     parser.add_argument("--operation-id", help="同一事件重试必须沿用编号")
     parser.add_argument("--snapshot", type=Path, help="本轮 Moodle 只读采集文件；核对来源变化")
     args = parser.parse_args()
     payload = json.load(sys.stdin) if args.command in {"attempt", "feedback", "answer-shown", "exam-profile",
-                                                     "mock-register", "mock-attempt", "mock-answers", "mock-answer-shown"} else None
+                                                     "mock-register", "mock-attempt", "mock-answers",
+                                                     "mock-answer-shown", "teaching-event"} else None
     snapshot = json.loads(args.snapshot.read_text(encoding="utf-8-sig")) if args.snapshot else None
     result = execute(args.state, args.command, review.timestamp(args.at), args.minutes, args.course, payload, snapshot, args.operation_id)
     print(json.dumps(result, ensure_ascii=False))

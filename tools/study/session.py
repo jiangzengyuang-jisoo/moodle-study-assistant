@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import threading
 import uuid
 
 from chat_identity import ChatIdentityError, resolve_chat_id
@@ -45,12 +46,57 @@ def stamp():
     return datetime.now(timezone.utc).isoformat()
 
 
+def stream_command(command, cwd, timeout, output=None):
+    """Run one child process, forwarding its progress lines while it runs.
+
+    A chapter check is network-bound: Node reports each stage on stderr, and the
+    user should see that progress immediately instead of only when the command
+    ends. stdout is the structured channel and is collected verbatim; it is
+    never mixed with progress text. Both pipes are drained by threads so a chatty
+    or hung child cannot defeat the timeout.
+    """
+    if output is None:
+        output = sys.stderr
+    process = subprocess.Popen(command, cwd=str(cwd), stdin=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout_chunks = []
+    stderr_chunks = []
+
+    def read_stderr():
+        for raw in iter(process.stderr.readline, b''):
+            text = raw.decode('utf-8', 'replace')
+            stderr_chunks.append(text)
+            output.write(text)
+            output.flush()
+
+    def read_stdout():
+        stdout_chunks.append(process.stdout.read())
+
+    stderr_reader = threading.Thread(target=read_stderr, name='chapter-check-stderr', daemon=True)
+    stdout_reader = threading.Thread(target=read_stdout, name='chapter-check-stdout', daemon=True)
+    stderr_reader.start()
+    stdout_reader.start()
+    try:
+        returncode = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+        raise ValueError('章节核对超时；本地资料保留，可稍后明确重查') from None
+    finally:
+        stderr_reader.join(timeout=5)
+        stdout_reader.join(timeout=5)
+        for stream in (process.stdout, process.stderr):
+            if stream:
+                stream.close()
+    return returncode, b''.join(stdout_chunks), ''.join(stderr_chunks)
+
 
 class Session:
     def __init__(self, root, chat):
         if not chat or not chat.strip():
             raise ValueError('请明确提供原始用户聊天 ID；不自动使用子任务 ID 或随机 ID')
         self.root = Path(root).resolve()
+        self.chat = chat
         self.state = self.root / 'Study/_System/state.json'
         self.runtime = self.state.parent / 'Runtime'
         self.key = digest(chat)
@@ -387,13 +433,50 @@ class Session:
         import review
         daily.execute(self.state, 'render', review.timestamp())
 
+    def teaching_event(self, payload, operation_id=None):
+        """Merge one small teaching-position event through the shared save path.
+
+        The caller supplies only this turn's change; ``daily.execute`` reads the
+        latest state under the shared workspace lock, merges, validates the full
+        draft, saves atomically once and rebuilds views at most once. A payload
+        chat ID must match this chat, because the chat identity belongs to the
+        entry point, not to the model. Without an explicit operation ID the same
+        content derives the same ID, so a retry is a duplicate instead of a
+        second event.
+        """
+        if not isinstance(payload, dict):
+            raise ValueError('teaching-event 需要标准输入 JSON 事件对象')
+        provided = payload.get('chat_id')
+        if provided is not None and provided != self.chat:
+            raise ValueError('事件里的聊天 ID 与入口身份不一致；请由当前聊天直接提交，不要手填聊天 ID')
+        body = dict(payload)
+        body['chat_id'] = self.chat
+        content = {key: value for key, value in body.items() if key != 'event_id'}
+        effective = operation_id or ('teach-' + digest({'chat': self.chat, 'payload': content}))
+        import daily
+        import review
+        with self.timing('teaching_event'):
+            result = daily.execute(self.state, 'teaching-event', review.timestamp(),
+                                   payload=body, operation_id=effective)
+        if result.get('duplicate'):
+            # The stored receipt describes the original recorded save; expose a
+            # single retry status so the caller can tell "already saved" apart.
+            result['status'] = 'duplicate'
+        return result
+
     def maintain(self):
         with self.timing('archive_maintenance'):
             from learning_library.versions import cleanup
             return cleanup(self.state)
 
-    def chapter_check(self, course, section=None, mode='quick', modules=None):
-        """Narrow, read-only verification of one chapter's already local files."""
+    def chapter_check(self, course, section=None, mode='strict', modules=None, force=False):
+        """Narrow, read-only verification of one chapter's already local files.
+
+        The receipt is bound to the original chat key so the same chat reuses a
+        recent check without touching the network, and ``force`` asks for a real
+        re-check after the user explicitly requested one. A chapter check never
+        writes learning state: strict still compares file content hashes.
+        """
         if not course:
             raise ValueError('请提供课程 ID；章节核对只查这一门课')
         if not section and not modules:
@@ -404,22 +487,27 @@ class Session:
         if not node:
             raise ValueError('未找到 Node；请先运行 setup.cmd')
         command = [node, str(self.root / 'tools/moodle/run.mjs'), 'chapter-check',
-                   '--course', str(course), '--mode', mode]
+                   '--course', str(course), '--mode', mode,
+                   '--chat-key', self.key]
         if section:
             command += ['--section', str(section)]
         if modules:
             command += ['--module', str(modules)]
+        if force:
+            command.append('--force')
+        print('正在核对本章资料范围；同聊天且本地文件未变时复用回执，不联网…',
+              file=sys.stderr, flush=True)
         with self.timing('chapter_check'):
-            result = subprocess.run(command, cwd=self.root, capture_output=True, timeout=900)
-        if result.returncode != 0 or not result.stdout.strip():
+            returncode, stdout, stderr_text = stream_command(command, self.root, timeout=900)
+        if returncode != 0 or not stdout.strip():
             from connection_errors import safe_connection_error
-            detail = safe_connection_error(result.stderr)
+            detail = safe_connection_error(stderr_text)
             if detail:
                 raise ValueError(f'{detail[0]}: {detail[1]} {detail[2]} 本地资料保留')
-            lines = [line for line in result.stderr.decode('utf-8-sig', 'replace').splitlines() if line.strip()]
-            raise ValueError(lines[-1] if lines else '章节核对失败；本地资料保留，可改用快速核对')
+            lines = [line for line in stderr_text.splitlines() if line.strip()]
+            raise ValueError(lines[-1] if lines else '章节核对失败；本地资料保留')
         try:
-            receipt = json.loads(result.stdout.decode('utf-8-sig').strip())
+            receipt = json.loads(stdout.decode('utf-8-sig').strip())
         except (ValueError, UnicodeError):
             raise ValueError('章节核对未返回有效结果') from None
         # A chapter check never touches learning state; it only writes its receipt.
@@ -433,12 +521,16 @@ def main():
     parser.add_argument('--chat', help='原始用户聊天 ID；缺省时按稳定会话标识解析（见 docs/SESSION.md）')
     parser.add_argument('--subtask', action='store_true')
     parser.add_argument('command', choices=['continue', 'today', 'refresh', 'status', 'review', 'maintain',
-                                            'chapter-check', 'operation-id', 'chat-id'])
+                                            'chapter-check', 'teaching-event', 'operation-id', 'chat-id'])
     parser.add_argument('--course')
     parser.add_argument('--section')
     parser.add_argument('--mode', choices=['quick', 'strict'])
+    parser.add_argument('--force', action='store_true',
+                        help='chapter-check 明确重查；忽略同聊天回执缓存')
     parser.add_argument('--modules')
     parser.add_argument('--snapshot-hash')
+    parser.add_argument('--operation-id',
+                        help='teaching-event 等学习事件重试时沿用原编号；省略则按事件内容派生')
     args = parser.parse_args()
     try:
         chat, chat_source = resolve_chat_id(args.chat)
@@ -466,8 +558,17 @@ def main():
         output = session.maintain()
     elif args.command == 'review':
         output = session.acknowledge(args.snapshot_hash, json.load(sys.stdin))
+    elif args.command == 'teaching-event':
+        # One small learning event: only this turn's change, merged and saved by
+        # the shared pipeline (workspace lock, byte-CAS, receipts, one view build).
+        try:
+            payload = json.load(sys.stdin)
+        except ValueError:
+            raise ValueError('teaching-event 需要标准输入的有效 JSON 事件') from None
+        output = session.teaching_event(payload, args.operation_id)
     elif args.command == 'chapter-check':
-        output = session.chapter_check(args.course, args.section, args.mode or 'quick', args.modules)
+        output = session.chapter_check(args.course, args.section, args.mode or 'strict',
+                                       args.modules, force=args.force)
     else:
         # Emit local context before waiting on school networking. No school claim yet.
         output = session.context(args.course)

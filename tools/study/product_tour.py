@@ -38,6 +38,31 @@ def tour_status(state=None):
             'replay': '用户随时说“再教我怎么用”，即使 pending=false 也重新讲解。'}
 
 
+def record_event(state, outcome, chat, at=None):
+    """Append one orientation event to ``state`` in memory.
+
+    Returns ``True`` when the event was new (and state changed) and ``False``
+    when the same version/chat/outcome was already recorded. This pure helper is
+    shared with the teaching-event merge so one transaction can record the
+    first-chat orientation without a second save or view rebuild. Malformed
+    historical records are refused, never reset.
+    """
+    if outcome not in ('shown', 'skipped') or not isinstance(chat, str) or not chat.strip():
+        raise ValueError('需要实际展示或本人明确跳过，并传入原始聊天 ID')
+    tour_status(state)  # Refuse malformed old records, never reset them.
+    stamped = at or datetime.now(timezone.utc)
+    if not isinstance(stamped, datetime) or stamped.tzinfo is None or stamped.utcoffset() is None:
+        raise ValueError('登记时间必须包含时区')
+    policy = state.setdefault('settings', {}).setdefault('product_onboarding', {})
+    events = policy.setdefault('events', [])
+    event_id = digest({'version': VERSION, 'chat': chat, 'outcome': outcome})
+    if any(isinstance(event, dict) and event.get('id') == event_id for event in events):
+        return False
+    events.append({'id': event_id, 'version': VERSION, 'outcome': outcome,
+                   'at': stamped.isoformat()})
+    return True
+
+
 def record_tour(path, outcome, chat):
     if outcome not in ('shown', 'skipped') or not isinstance(chat, str) or not chat.strip():
         raise ValueError('需要实际展示或本人明确跳过，并传入原始聊天 ID')
@@ -45,15 +70,9 @@ def record_tour(path, outcome, chat):
     with workspace_lock(path):
         prepare_state(path)
         original = read(path)
-        tour_status(original)  # Refuse malformed old records, never reset them.
         state = copy.deepcopy(original)
-        policy = state.setdefault('settings', {}).setdefault('product_onboarding', {})
-        events = policy.setdefault('events', [])
-        event_id = digest({'version': VERSION, 'chat': chat, 'outcome': outcome})
-        if any(event.get('id') == event_id for event in events if isinstance(event, dict)):
+        if not record_event(state, outcome, chat):
             return {'status': 'already_recorded', **tour_status(original)}
-        events.append({'id': event_id, 'version': VERSION, 'outcome': outcome,
-                       'at': datetime.now(timezone.utc).isoformat()})
         bridge(path, 'replace', {'expected': original, 'state': state})
         return {'status': 'recorded', **tour_status(state)}
 

@@ -9,18 +9,44 @@ node tools/moodle/run.mjs init
 node tools/moodle/run.mjs check
 node tools/moodle/run.mjs courses
 node tools/moodle/run.mjs library-sync
-node tools/moodle/run.mjs chapter-check --course 课程ID --section "第8章" --mode strict
+node tools/moodle/run.mjs chapter-check --course 课程ID --section "Topic 5" --mode strict [--force]
 node tools/moodle/run.mjs refresh
 node tools/moodle/run.mjs mcp
 ```
 
-`init` 只创建缺失的配置/空白状态，不覆盖已有资料。`courses` 交互选择跟踪页面，并确认课程级资料授权（完整初始化或只同步课程信息），保留未选页面的既有历史；完整初始化、非交互入口和授权保存位置见 [课程级资料授权与自动同步](COURSE_LIBRARY.md)。`library-sync` 对已保存完整授权的课程页面增量枚举、下载、归档、登记并建立索引；学校接口仍只用只读调用，不开始测验尝试、不提交作业、不发帖、不修改学校状态。`chapter-check` 只枚举一门课并比对某一章已有文件（`--mode quick|strict`），不写状态、不装文件、不建索引，回执在 `Study/_System/ChapterChecks/`，回执同时记录本次学校/账号归属；判定见 [单章资料核对](WORKFLOW.md#单章资料核对不触发完整采集)。`refresh` 采集到 `Study/_System/Runtime/runs/<run_id>/snapshot.json`，完整成功另存 `refresh-last-complete.json`；不直接更新个人掌握、作业完成或 AI 核读状态。退出码2表示部分采集失败。一个 `Study/` 档案只对应一所学校和账号：选课、旧 CLI 授权、资料同步、采集、下载、刷新预检、章节核对和登录会先核对档案已记录的学校/账号，不一致时停止且不写入；换学校请复制/新建独立项目目录并使用独立档案，见 [课程级资料授权](COURSE_LIBRARY.md#一档一校一账号)。
+`init` 只创建缺失的配置/空白状态，不覆盖已有资料。`courses` 交互选择跟踪页面，并确认课程级资料授权（完整初始化或只同步课程信息），保留未选页面的既有历史；完整初始化、非交互入口和授权保存位置见 [课程级资料授权与自动同步](COURSE_LIBRARY.md)。`library-sync` 对已保存完整授权的课程页面增量枚举、下载、归档、登记并建立索引；学校接口仍只用只读调用，不开始测验尝试、不提交作业、不发帖、不修改学校状态。`chapter-check` 先用本地资料索引与来源映射定位本章模块，再只比对本章文件（默认 `--mode strict` 内容哈希，`quick` 只看元数据）；Moodle 区块位置、日期和 Tutorial 编号不会仅因数字相同被选中，匹配不唯一时返回候选和原因，不写状态、不装文件、不建索引，回执在 `Study/_System/ChapterChecks/`，记录学校/账号归属、已定位模块和本地文件内容哈希；同聊天同范围严格回执可按聊天摘要复用、本地新增资料只核对新增部分，`--force` 强制重查。判定见 [单章资料核对](WORKFLOW.md#单章资料核对不触发完整采集)。`refresh` 采集到 `Study/_System/Runtime/runs/<run_id>/snapshot.json`，完整成功另存 `refresh-last-complete.json`；不直接更新个人掌握、作业完成或 AI 核读状态。退出码2表示部分采集失败。一个 `Study/` 档案只对应一所学校和账号：选课、旧 CLI 授权、资料同步、采集、下载、刷新预检、章节核对和登录会先核对档案已记录的学校/账号，不一致时停止且不写入；换学校请复制/新建独立项目目录并使用独立档案，见 [课程级资料授权](COURSE_LIBRARY.md#一档一校一账号)。
 
-AI 在需要校务信息或用户明确要求时调用 `continue/refresh`，不会每条追问重复执行；单章教学用 `chapter-check`，不会触发完整采集。命令本身始终进行真实采集。采集器全局最多同时执行4个 API 请求，每个论坛的分页仍按顺序读取，完整正文、回复和权限核对保留。不要把没有重新联网的缓存复用记为新的检查。
+AI 在需要校务信息或用户明确要求时调用 `continue/refresh`，不会每条追问重复执行；单章教学优先用 MCP `study_check_chapter`（`chapter-check` 为异常 CLI 后备），不会触发完整采集。命令本身始终进行真实采集。采集器全局最多同时执行4个 API 请求，每个论坛的分页仍按顺序读取，完整正文、回复和权限核对保留。同聊天复用返回的是上次严格回执（标记 `reused: true`、`network_started: false`），不是新的联网检查；本人明确要求重新核对时，工具用 `force: true`（CLI 后备用 `--force`）；不为获取新结果而更换聊天 ID 或扩大成完整刷新。CLI 后备 `chapter-check` 的阶段进度在 stderr，最终结构化结果只在 stdout；慢速首次核对可由助手用 Harness 后台任务跟进同一任务，不用 `Select-Object -Last 40` 截断进度。不要把没有重新联网的缓存复用记为新的检查。
 
-MCP 暴露课程、作业、测验、论坛、日历、成绩、通知、资源目录和站点信息只读查询（合计 15 个读取工具）；全论坛分页用 `study_all_discussions`，回复用 `study_discussion_posts`。上游 recent discussions 只有最近20条，不能替代完整采集。不注册学校写操作；普通 MCP 查询不下载文件。正常刷新在采集后为有课程级完整授权的范围自动下载、归档和索引；没有授权的范围只同步信息。选课授权、结果和重试入口见 [COURSE_CONTENT.md](COURSE_CONTENT.md)。
+MCP 暴露原有 15 个课程、作业、测验、论坛、日历、成绩、通知、资源目录和站点信息读取工具，并新增 `study_check_chapter`（项目服务合计 16 个工具）；全论坛分页用 `study_all_discussions`，回复用 `study_discussion_posts`。上游 recent discussions 只有最近20条，不能替代完整采集。不注册学校写操作；普通查询不下载文件，章节核对只读取授权文件字节作哈希比对并保存本地回执，不安装资料。正常刷新在采集后为有课程级完整授权的范围自动下载、归档和索引；没有授权的范围只同步信息。选课授权、结果和重试入口见 [COURSE_CONTENT.md](COURSE_CONTENT.md)。
 
 `moodle_get_calendar_events` 支持课程、时间范围和分页限制，先看 `complete` 再判断是否覆盖所选事件；分页不前进或到页数上限返回 `complete:false`，应缩小时间范围继续查，不能把部分结果当成全部。`moodle_get_notifications` 用 `limit/offset`、`has_more`/`next_offset` 续读，不把通知标为已读。成绩只查当前账号；资源目录只列可见 resource/folder/url 模块元数据，不下载、不扩大授权；站点信息只返回必要身份与能力字段并脱敏凭据。接口未启用时返回 `api_not_enabled`，不等于没有数据。完整性只描述所选接口和时间范围，不等于所有类型的学校事件，也不等于 AI 已核读。升级后需重启本项目 MCP 连接。范围与限制见[更新报告](UPDATE_REPORT_2026-11-07-deepseek.md#按需只读学校查询)。
+
+### 章节核对工具（study_check_chapter）
+
+正常章节教学在本地 `context --read-only` / `chapter-prep` 后，调用已连接 Moodle 服务的 `study_check_chapter`；不用先运行 shell，也不在工具成功后再运行 `strict_check.command`。
+
+```json
+{"course_id":"COURSE101","section":"Topic 5","chat_id":"原始用户聊天ID"}
+```
+
+| 参数 | 含义 |
+| --- | --- |
+| `course_id` | 本地课程 ID；必须对应当前所选、已授权课程范围 |
+| `section` | 明确章节名或编号，如 `Topic 5`；按本地资料索引与来源映射解析 |
+| `module_ids` | 可选，来自本章已确认来源的模块编号数组；不能猜 ID 或借此扩大课程范围 |
+| `chat_id` | 必填的原始主聊天 ID；与现有学习接续一致，不用内部子会话 ID、服务 ID、随机值或全局固定值 |
+| `force` | 可选，默认 false；仅本人明确要求重新核对时为 true |
+
+`section` 或 `module_ids` 至少一项；常规只选其一，同时传时按明确模块核对，章节名只作标签。严格核对固定为 SHA-256 内容比对，不提供 quick 模式。上述 JSON 是结构示例，实际参数须取本轮真实课程与主聊天 ID，不能直接传占位文字。工作目录、状态读取、学校连接和回执位置由服务端固定，调用者不能传命令、文件路径、学校 URL 或凭据。工具会读取已授权学校文件字节并保存本地 `Study/_System/ChapterChecks/` 回执；不安装/替换资料、不改学习状态、不提交作业或修改学校数据。核对不等于核读或掌握。
+
+返回 `STUDY_MCP_RESTART_REQUIRED` 时先重新加载 Moodle 服务，不申请 shell 提权；学校/账号/授权/范围等固定错误按其原因处理，不能把缓存失败或普通错误当作核对成功。
+
+回执沿用现有 `verdict`、`verified.complete`、`scope`、`reused`、`network_started` 等含义。相同原聊天、学校账号、课程/资料范围及本地内容未变时可复用严格回执；新增范围只补核对新增资料，错误和未完成不能冒充成功。MCP 服务不保证继承主聊天身份，所以每次明确提供 `chat_id`；只在本地保存其摘要。
+
+工具缺失/未加载或服务启动、传输故障才退回同范围 `study.cmd --chat "原始用户聊天ID" chapter-check --course COURSE101 --section "Topic 5" --mode strict`；不因学校拒绝、账号/课程授权不符、参数错误或客户端审批拒绝而换路径。不并发运行或在两条路径间循环；仅后备 CLI 遇到受限执行解密错误才申请一次单次授权，详见 [DSH 恢复流程](DSH.md#章节核对默认使用-moodle-工具)。用户自定义审批策略仍然生效，不修改全局权限。
+
+更新后重连本项目 MCP 服务（无单独入口则重启 Harness）加载新工具；已有配置和学习资料不迁移，助手不擅自重启用户客户端。`chapter-prep` 输出的 `strict_check.command` 仅用于上述后备流程，不能据其存在强制正常教学走 shell。
 
 ### 课程级授权与资料初始化
 
@@ -55,9 +81,35 @@ node tools/moodle/run.mjs download 123 --authorized
 
 下载先落到 `Study/_Inbox/`，保留官方文件名，按内容哈希去重，同名不同内容保留为不同文件。成功下载不代表已经核读或掌握。AI 随后检查实际文件、课程归属和页数，按用户目录约定归档并更新 `materials`；下载器本身不替 AI 作语义判断。账号、权限或站点限制导致失败时如实说明，不绕过限制。
 
+## 一次准备一章（chapter-prep）
+
+```powershell
+& 'tools/study/library.cmd' chapter-prep --course COURSE101 --section "Topic 6" [--modules 501,502] [--chat "原始用户聊天ID"] [--text auto|full|outline|none] [--text-budget 60000] [--render auto|none|always] [--render-limit 8] [--dpi 130] [--include-solutions] [--include-archived] [--read-only]
+```
+
+`chapter-prep` 只读，一次返回教或复习一章所需材料，代替“搜索一页—读一页—再决定”的逐页往返：
+
+- **章节定位**：`resolution`（status/basis/intent/module_ids/candidates/reason）。先用本地资料索引与来源映射定位本章模块；匹配不唯一或没有本地资料时 `status` 为 `ambiguous` / `no_materials`，返回候选、原因和本地章节提示，不按数字相同扩大范围；`--modules` 直接按模块编号定位。
+- **材料清单**：`materials` 给出 material id、标题、相对路径、`unit_kind`、`units`、`text_units`、`unit_range`、模块/班级区块和源哈希；`strict_scope` 说明 strict 核对会覆盖的模块与文件（文件夹模块可能比按文件匹配范围更宽）。
+- **目录**：`outline.materials[].headings/page_map`；heading 是抽取导航，不是已核读证明，空 heading 不代表无内容。
+- **整页正文**：`text.materials[].pages`（每页 `page/heading/text/flags`）。默认 `--text auto` 在 `--text-budget` 内按整页返回（默认 60000 字符，上限 400000）；超出部分进入 `text.omitted`，附 `library.cmd read <material_id> --start … --end …` 补读命令。`--text outline` 只给目录，`--text none` 不返回正文，`--text full` 上限 400000 字符。
+- **公式图表候选页**：`visuals.candidates`（`unit/why/priority/verified:false`）与 `visuals.rendered`（`path/cached/verified:false`）。`--render auto` 只渲染优先级最高的 `--render-limit` 页（默认 8，最多 64），`--render none` 不渲染，`--render always` 渲染全部候选；PDF 页按源哈希复用 `Study/_System/Library/renders/` 缓存，`cache.render_reused/render_created` 区分复用与新建。把 `rendered[].path` 交给 `read_image` 查看原页；PPTX/DOCX 会返回 `rendered:false` 与 `instruction`，不会伪装成已视觉验证的页图。
+- **本章接续**：`continuity` 给当前教学位置、本章待答题题干（隐藏答案/评分）和本科本章相关待复习项；不返回作业、考试或其他任务集合（省略原因写在 `continuity.omitted`）。
+- **上次 strict 回执**：`strict_check.last_receipt` 只是**上一次**严格核对的摘要（`found/verified_complete/chat_key_matches/note`），**不是本轮核验**；`strict_check.required` 恒为 true，`strict_check.preferred` 为 `mcp`，`strict_check.tool` 给出 `study_check_chapter` 的名称与已知参数；若 `missing_arguments` 含 `chat_id`，先补本轮真实主聊天 ID，不传占位符。`strict_check.command_role` 为 `fallback_only`，`strict_check.command` 仅给出异常 CLI 后备的 `chapter-check` 命令，成功后不执行第二次核对。传入 `--chat` 只影响回执的聊天键匹配，不会联网或改写回执。
+- **覆盖与只读边界**：`coverage`（`units_total/units_text/units_solutions_hidden/visual_review_required/verified:false`）是待核对清单，不是覆盖结论；`limits` 的 `network/state_written/maintenance/sync/ocr` 均为 false，`--read-only` 为兼容标志。命令不写学习状态、不写核读回执、不联网、不建索引；只可能新建 `Library/renders/` 下的派生页图。与其它 library 命令一样，它会写一行不含题目/答案/聊天 ID 的本地耗时日志。源文件或缓存不新鲜时标 `needs_sync`，不返回旧文本，先按 `cache.sync_command` 同步/重建再准备。
+- **仍要做的核对**：公式、图表、表格、题号必须看原页；`coverage.verified` 恒为 false，整章覆盖仍需逐 unit 核对文字或原页。准备资料不等于核读或掌握。
+
+## 批量渲染（render --units）
+
+```powershell
+& 'tools/study/library.cmd' render COURSE101-LECTURE1 --units 34,35,36 [--dpi 130]
+```
+
+一次校验来源后批量渲染/复用多个 unit，输出 `{material_id, verified:false, renders:[{unit, path, cached, …}]}`；`--unit` 单页用法继续兼容。`render` 只写 `Study/_System/Library/renders/` 下的派生页图，不写学习状态。`chapter-prep --render auto` 已按候选页批量渲染，通常不必再手动逐页 render。
+
 ## 复习、复测、反馈和当前计划
 
-资料初始化和快速读取另见 [LIBRARY.md](LIBRARY.md)：`tools/study/library.cmd context` 直接读取最新状态，`sync` 构建或更新资料缓存，`search/read/render/outline` 定位并核对完整原页。课程资料的自动初始化、增量同步与缺口见 [COURSE_LIBRARY.md](COURSE_LIBRARY.md)。这些命令不写学习进度、作答或 FSRS。
+资料初始化和快速读取另见 [LIBRARY.md](LIBRARY.md)：`tools/study/library.cmd context` 直接读取最新状态，`sync` 构建或更新资料缓存，`chapter-prep` 一次准备一章，`search/read/render/outline` 用于定向补读与核对原页。课程资料的自动初始化、增量同步与缺口见 [COURSE_LIBRARY.md](COURSE_LIBRARY.md)。这些命令不写学习进度、作答或 FSRS。
 
 ```powershell
 & '.venv/Scripts/python.exe' 'tools/study/daily.py' run
@@ -100,6 +152,67 @@ node tools/moodle/run.mjs download 123 --authorized
 当天有明确总预算和可靠用时反馈时，主计划、正式复习题包（`daily.py` 的 `run/attempt/feedback/answer-shown/mock-attempt` 准备）和 `review.py due` 只读预览共用剩余容量：`planning.remaining_study_minutes` 按档案学习时区，用当天已知总预算（容量折算的学习预算，以及计划中直接记录的总时长；课程范围预算不当作当天总容量）减去可靠用时反馈；反馈按最近一次 `cumulative` 或明确互不重叠且编号唯一的 `session` 合计，逐题复习用时已计入累计反馈时不再重复扣除。容量耗尽后停止新增题，未开始题标为 `deferred` 且 `budget_exempt`，保留已作答、已曝光和 FSRS 历史，不记失败；重复运行或切换课程只沿用当天额度，不增加；未知用时范围或未知总容量返回空值，不猜测。
 
 所有写入均以最新状态为基础，保留上一版本、验证临时 JSON、检查并发冲突后保存。状态写入必须顺序执行，不能并行提交多个命令。
+
+## 保存教学位置（teaching-event）
+
+讲完一章、推进或切换教学位置后，通过标准输入提交一个小事件；程序读最新状态合并、校验、原子保存并至多重建一次视图，成功后不必再跑 `daily.py run/check`：
+
+```powershell
+Get-Content -Raw -Encoding UTF8 'tmp/teaching-event.json' | .\study.cmd --chat "原始用户聊天ID" teaching-event [--operation-id 编号]
+```
+
+事件结构示例（值必须来自本轮实际教学，不能照抄）：
+
+```json
+{
+  "course_id": "moodle-100000",
+  "fields": {
+    "chapter": "Topic 6: Aggregate Production",
+    "topic": "总量生产函数与增长来源",
+    "stage": "first_explanation_delivered_pending_check",
+    "next_step": "等本人回答理解检查",
+    "material_id": "moodle-100000-SOURCE-501-<哈希>",
+    "pages": [1, 2, 3],
+    "pending_check": {"id": "topic6-check-1", "prompt": "为什么人口增长能提高总产出却通常不能提高人均产出？", "status": "unanswered"},
+    "coverage_note": "已讲主内容；作业要求未核对"
+  },
+  "onboarding": "shown"
+}
+```
+
+事件只描述本轮变化（完整说明见 [SESSION.md](SESSION.md#教学位置事件teaching-event)）：
+
+| 顶层键 | 必填 | 内容 |
+| --- | --- | --- |
+| `course_id` | 是 | state 中已登记的课程 ID |
+| `chat_id` | 否 | 由入口注入；显式提供时必须与当前聊天一致，否则拒绝 |
+| `event_id` | 否 | 事件自带编号（可选）；需要固定重试编号时用 `--operation-id`，不要依赖手填编号 |
+| `fields` | 否* | 教学位置与描述性记录，见下表 |
+| `checks_append` | 否* | 追加已完成记录，最多 5 条；只追加，相同记录自动去重 |
+| `review_backlog_append` | 否* | 追加旧章待复习项，最多 3 条；键 id/topic/chapter/status/next_step，status 目前只接受 pending |
+| `archive_pending` | 否 | true 时必须同时提供 `fields.pending_check` |
+| `onboarding` | 否* | `shown` 或 `skipped`，仅在已实际展示后登记 |
+
+\* 至少要提供 `fields / checks_append / review_backlog_append / onboarding` 之一，否则报“没有可应用的变化”。
+
+`fields` 允许的键：
+
+| 键 | 内容 |
+| --- | --- |
+| `chapter` / `topic` | 当前章节与主题；与旧值不同即视为换章，程序自动把旧位置快照追加到 `history`（只追加一次，不递归复制 checks/history） |
+| `stage` / `next_step` | 教学阶段与下一步 |
+| `material_id` / `pages` | 本章资料 ID（须已在 state.materials 登记且属于本课程）与已讲页码（正整数数组；`null` 表示清空） |
+| `pending_check` | 待答题；`null` 表示清空。不能携带实际作答或评分；旧题已有实际作答时必须先用 `checks_append` 带上该完整记录，或传 `archive_pending: true` |
+| `source` | 来源证据。同章内只能追加新键，已有值不能改写；换章时可整体替换（旧来源随旧位置存入 `history`） |
+| `user_request` / `lesson_scope` / `worked_example` / `coverage_note` | 描述性课程记录，可创建或更新；不是掌握证据 |
+
+输出为一行 JSON：`status`（`recorded` / `unchanged` / `duplicate`）、`course_id`、`operation_id`、`revision`、`state_written`、`views_updated`、`changed_fields`、`pending_check_id`、`history_appended`、`onboarding_status`、`created_cursor`、`pending_archived`、`mastery_updated: false`。
+
+- 无变化：合并后与最新状态相同 → `unchanged`，不写盘、不重建视图。
+- 重试：省略 `--operation-id` 时编号由“聊天 + 事件内容”派生，同内容重试得到同编号 → `duplicate`，只补视图；需要固定编号时先用 `study.cmd --chat "ID" operation-id` 分配，再用 `--operation-id` 提交，重试沿用原编号和内容；同编号不同内容报冲突。
+- 视图生成崩溃：学习状态已提交时重试只补视图，不重复保存事件。
+- 保存成功后可选用 `daily.py check` 只读确认页面；教学位置之外的状态（任务、错题、复习队列、计划、考试、跨日呈现等）仍走各自命令并 `daily.py run/check`。
+- 禁止：掌握度/评级、改写既有 `checks/history`、证据集合（`topic_evidence`/`evidence_bindings` 等）、考试与作业记录、其他课程、未知键、超长超大事件。内部任务（`--subtask`）不能写教学事件；事件里的聊天 ID 必须来自当前入口，不手填。
 
 ## 考前覆盖与模拟卷
 
@@ -150,7 +263,7 @@ npm test
 & '.venv/Scripts/python.exe' -m unittest discover -s tools/study -p 'test_*.py'
 ```
 
-测试使用虚构课程和临时状态，不连接学校，不读取个人 Token。课程级授权与资料同步的新增回归为 `tests/course-library.test.mjs`（Node）和 `tools/study/test_course_library.py`（Python）；按章核对的新增回归为 `tests/chapter-check.test.mjs`（Node）和 `tools/study/test_session.py` 的 `ChapterCheckTests`（Python），都随上面的命令执行。本轮的按需查询回归为 `tests/read-queries.test.mjs`（Node），学习处理回归为 `tools/study/test_question_exposure.py`、`test_material_learning_integration.py`，原答绑定归档回归为 `tools/study/test_evidence_archive_binding.py`，跨校数字 ID 回归分布在 `tests/chat-course-selection.test.mjs`、`tests/course-selection.test.mjs`、`tests/chapter-check.test.mjs`、`tools/study/test_course_library.py` 和 `tests/test_auth.py`。可选 `tests/browser_smoke.py` 只访问本机模拟服务，使用无界面 Edge，不验证学校真实 SSO；真实连接需本人登录后运行 `node tools/moodle/run.mjs check`。
+测试使用虚构课程和临时状态，不连接学校，不读取个人 Token。课程级授权与资料同步的新增回归为 `tests/course-library.test.mjs`（Node）和 `tools/study/test_course_library.py`（Python）；专用工具回归为 `tests/chapter-check-mcp.test.mjs`（真实 MCP 协议配合虚构档案，核对严格比较、复用、输入与授权边界、错误脱敏）；按章核对回归为 `tests/chapter-check.test.mjs`（Node）和 `tools/study/test_session.py` 的 `ChapterCheckTests`（Python），本轮覆盖：Topic 5 不误选其他 Topic、日期或 Tutorial 区块；区块序号不被当章节号；匹配不唯一返回候选且不联网；同聊天第二次不联网；新增本章资料增量核对；本地文件改变/新聊天/账号变化/`--force` 使回执失效；失败或缺基线不误报成功且不自动重试；stderr 阶段进度实时可见且 stdout 仍是可解析 JSON。本轮的按需查询回归为 `tests/read-queries.test.mjs`（Node），学习处理回归为 `tools/study/test_question_exposure.py`、`test_material_learning_integration.py`，原答绑定归档回归为 `tools/study/test_evidence_archive_binding.py`，跨校数字 ID 回归分布在 `tests/chat-course-selection.test.mjs`、`tests/course-selection.test.mjs`、`tests/chapter-check.test.mjs`、`tools/study/test_course_library.py` 和 `tests/test_auth.py`。可选 `tests/browser_smoke.py` 只访问本机模拟服务，使用无界面 Edge，不验证学校真实 SSO；真实连接需本人登录后运行 `node tools/moodle/run.mjs check`。
 
 发布前从通用源码文件清单建立提交，检查 `git status`。不得加入 `Study/`、`.private/`、本地配置、依赖环境、个人附件、真实题库或状态备份，不用 `git add -f` 绕过忽略规则。Node 依赖锁在 package-lock.json；Python 固定版本见 requirements.txt。
 

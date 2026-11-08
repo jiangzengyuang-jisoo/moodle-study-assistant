@@ -1,4 +1,5 @@
 import {decryptWindowsToken} from './windows-token.mjs';
+import {createMcpChapterContext} from './mcp-workspace.mjs';
 import {connectionDiagnostic} from './connection-errors.mjs';
 import {loadCollectionRequest, bindCollection} from './collection-request.mjs';
 import {resolveChatId} from './chat-identity.mjs';
@@ -275,6 +276,37 @@ async function runLibrarySync(client, options) {
   if (!report.ok) process.exitCode = 2;
 }
 
+async function runChapterCheckMode() {
+  const {runChapterCheck} = await import('./chapter-check.mjs');
+  const args = process.argv.slice(3);
+  const option = flag => {
+    const index = args.indexOf(flag);
+    return index >= 0 ? args[index + 1] : null;
+  };
+  const moduleArg = option('--module');
+  const modules = moduleArg
+    ? moduleArg.split(',').map(value => Number(value.trim())).filter(Number.isInteger)
+    : null;
+  const result = await runChapterCheck({
+    root, loadState,
+    course: option('--course'),
+    section: option('--section'),
+    modules,
+    // Strict content hashes are the verification contract; quick remains opt-in.
+    mode: option('--mode') ?? 'strict',
+    chatKey: option('--chat-key') || null,
+    force: args.includes('--force'),
+    persist: !args.includes('--no-persist'),
+    progress: message => process.stderr.write(`[chapter-check] ${message}\n`),
+    connect: async () => {
+      const config = json(join(root, 'config.local.json'));
+      process.env.TZ = config.timezone;
+      return new ReadOnlyClient(config.moodle_url, tokenFromWindows()).connect();
+    },
+  });
+  console.log(JSON.stringify(result, null, 2));
+}
+
 async function main() {
   const mode = process.argv[2] ?? 'check';
   if (mode === 'init') { initialize(root); console.log('空白档案和本地 MCP 配置已准备好；已有档案保留。'); return; }
@@ -325,8 +357,25 @@ async function main() {
     const requestPath = requestIndex >= 0 ? process.argv[requestIndex + 1] : null;
     bundle = loadCollectionRequest(root, requestPath, output);
   }
+  if (mode === 'chapter-check') {
+    // Local scope resolution and same-chat receipt reuse happen before any
+    // network connection is opened; only a real recheck connects (and never
+    // starts a full collection or writes school state).
+    await runChapterCheckMode();
+    return;
+  }
   const config = bundle?.config ?? json(join(root, 'config.local.json'));
   process.env.TZ = config.timezone;
+  if (mode === 'mcp') {
+    // Capture the same authorization generation used to establish this service.
+    const credential = readFileSync(join(root, '.private/moodle-token.dpapi'));
+    const client = await new ReadOnlyClient(config.moodle_url, tokenFromWindows(credential)).connect();
+    const context = createMcpChapterContext({root, loadState, client, config, credential});
+    context.beforeCheck();
+    const {serve} = await import('./server.mjs');
+    await serve(client, undefined, context);
+    return;
+  }
   const client = await new ReadOnlyClient(config.moodle_url, tokenFromWindows(bundle?.credential)).connect();
   if (mode === 'check') { console.log('Moodle API 已连接。'); return; }
   if (mode === 'courses') {
@@ -354,26 +403,6 @@ async function main() {
   }
   if (mode === 'library-sync') {
     await runLibrarySync(client);
-    return;
-  }
-  if (mode === 'chapter-check') {
-    // Narrow verification: one course, one chapter. It never installs files or
-    // promotes a review receipt, so it cannot stand in for a full collection.
-    const {checkChapter} = await import('./chapter-check.mjs');
-    const args = process.argv.slice(3);
-    const option = flag => {
-      const index = args.indexOf(flag);
-      return index >= 0 ? args[index + 1] : null;
-    };
-    const moduleArg = option('--module');
-    const receipt = await checkChapter({
-      client, root, state: loadState(),
-      course: option('--course'), section: option('--section'),
-      modules: moduleArg ? moduleArg.split(',').map(value => Number(value.trim())) : null,
-      mode: option('--mode') ?? 'quick',
-      persist: !args.includes('--no-persist'),
-    });
-    console.log(JSON.stringify(receipt, null, 2));
     return;
   }
   if (mode === 'collect') {
@@ -441,8 +470,7 @@ async function main() {
     if (result.errors.length) process.exitCode = 2;
     return;
   }
-  if (mode === 'mcp') { const { serve } = await import('./server.mjs'); await serve(client); return; }
-  throw new Error('用法：run.mjs init | check | courses [--select IDS --mode full|info_only --yes] | library-sync [--course ID] [--snapshot PATH] [--dry-run] | chapter-check --course ID --section 章节 [--mode quick|strict] [--module IDS] [--no-persist] | content-sync --snapshot PATH | refresh | mcp | download <module-id> [...] --authorized');
+  throw new Error('用法：run.mjs init | check | courses [--select IDS --mode full|info_only --yes] | library-sync [--course ID] [--snapshot PATH] [--dry-run] | chapter-check --course ID --section 章节 [--mode quick|strict] [--module IDS] [--chat-key KEY] [--force] [--no-persist] | content-sync --snapshot PATH | refresh | mcp | download <module-id> [...] --authorized');
 }
 main().catch(error => {
   // Stable, allowlisted code for diagnostics; never expose arbitrary properties.

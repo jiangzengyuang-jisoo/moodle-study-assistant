@@ -314,6 +314,22 @@ def build_context(state: dict, course_id: str | None = None, detail: bool = Fals
         return result
     project = _Projection()
     sections = result["sections"]
+    # The current request decides what this turn is.  Course continuity, tasks,
+    # deadlines and exam profiles are background, not a preparation agenda.
+    sections["request_policy"] = {
+        "decides": "当前用户请求决定本轮任务类型；以下课程接续、作业、截止日期和考试信息只是背景。",
+        "do_not": [
+            "保存了考试信息或长期目标包含考试表现，不代表本轮是备考。",
+            "普通章节讲解不以考试范围开头。",
+            "普通讲解不默认插入考试日期、考试范围、题型或占比，也不为此额外查询考试资料或完整刷新。",
+            "“Not required for the exam”只表示考试要求，不能直接作为普通讲解跳过内容的理由。",
+            "明确章节且本地已有资料时只读本章接续并做精准章节核对，不绕到完整采集、考试准备或学习计划流程。",
+        ],
+        "chapter_explanation": "围绕本章问题，结合学习证据分轮推进；每轮讲透一个核心概念：具体例子、逐步推理、LaTeX 公式与每个新符号的含义，再留一个相关问题等待回答。明确要求一次讲完整章/完整讲义/总结或不要互动时才整章交付；继续/跳过可直接推进，不推断掌握。",
+        "teaching_output": "普通讲解不查询或汇报无关公告、在线练习和旧章未答题，不附固定核验尾注/错误码。必要本章核对内部留证，失败不记成功、不声称最新版；只在影响当前解释或需要本人处理时提示，主动询问时如实回答。保存仅限实际已讲单元，不以读完整章代替已讲。",
+        "background_fields": ["course.current_topic", "course.orientation", "tasks", "deadlines", "exam_profiles"],
+        "exam_info_usage": "只在当前请求涉及备考、考点或考试安排，或该项信息确实影响当前解释时使用；保留原始考试信息与学习记录。",
+    }
     from learning_library.memory import correction_context
     sections['memory_review'] = correction_context(course, base)
     sections['memory_review']['query_usage'] = 'memory --course ' + course_id + ' --query TOPIC'
@@ -324,6 +340,7 @@ def build_context(state: dict, course_id: str | None = None, detail: bool = Fals
         'missing_evidence': '未查到记录不等于未学过；判断缺口前查跨章节记录及其原文。',
         'coverage_and_mastery': '覆盖核对和学习表现分开；用户自报讲过不证明独立掌握。',
         'material_upload': '先按用户当前意图核对材料，不因上传作业自动重讲或出检查题。',
+        'course_focus': 'orientation/current_topic 是长期课程安排与作业/考试背景，不是本轮任务；讲解章节时不得用它替代本章教学主线或作开头。',
     }
     for field, keys in (
         ('topic_evidence', ('id', 'topic', 'chapter', 'level', 'at', 'passed', 'conditions', 'corrects')),

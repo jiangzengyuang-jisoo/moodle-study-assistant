@@ -1,17 +1,21 @@
 """Synthetic conversation, crash and concurrency acceptance tests (no school API)."""
 import copy
+from contextlib import redirect_stderr, redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
 import daily
 import review
-from session import ProfileAccountGuard, Session
+from session import ProfileAccountGuard, Session, stream_command
 from session_test_fixtures import write_snapshot
 from state_io import atomic, digest, read, workspace_lock
 
@@ -218,46 +222,154 @@ class ChapterCheckTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix='章节 test ', dir=HERE)
         self.addCleanup(self.tmp.cleanup)
         self.session = Session(Path(self.tmp.name), 'user-chat')
+        env = patch.dict(os.environ, {'STUDY_NODE': 'node'})
+        env.start()
+        self.addCleanup(env.stop)
+
+    def result(self, payload=None, returncode=0, stderr=''):
+        """What stream_command returns; no child process is started here."""
+        stdout = b'' if payload is None else json.dumps(payload, ensure_ascii=False).encode('utf-8')
+        return returncode, stdout, stderr
+
+    def receipt(self):
+        return {'verdict': 'unchanged', 'summary': {'files': 1, 'unchanged': 1},
+                'receipt_path': 'Study/_System/ChapterChecks/moodle-1/8.json'}
+
+    def run_check(self, *args, result=None, **kwargs):
+        captured = io.StringIO()
+        with redirect_stderr(captured), patch('session.stream_command', return_value=result) as stream:
+            value = self.session.chapter_check(*args, **kwargs)
+        self.captured_stderr = captured.getvalue()
+        return value, stream.call_args[0][0]
 
     def test_arguments_are_checked_before_any_network_call(self):
-        with patch('session.subprocess.run') as run:
+        with patch('session.stream_command') as stream:
             with self.assertRaisesRegex(ValueError, '请提供课程'):
                 self.session.chapter_check(None)
             with self.assertRaisesRegex(ValueError, '章节名称'):
                 self.session.chapter_check('moodle-1')
             with self.assertRaisesRegex(ValueError, 'quick 或 strict'):
                 self.session.chapter_check('moodle-1', '8', 'slow')
-            run.assert_not_called()
+            stream.assert_not_called()
 
     def test_receipt_is_returned_and_state_is_not_written(self):
         atomic(self.session.state, {'revision': 1, 'courses': []})
         before = self.session.state.read_bytes()
-        payload = {'verdict': 'unchanged', 'summary': {'files': 1, 'unchanged': 1},
-                   'receipt_path': 'Study/_System/ChapterChecks/moodle-1/8.json'}
-        completed = subprocess.CompletedProcess(args=[], returncode=0,
-                                                stdout=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
-                                                stderr=b'')
-        with patch('session.subprocess.run', return_value=completed) as run, \
-                patch.dict(os.environ, {'STUDY_NODE': 'node'}):
-            result = self.session.chapter_check('moodle-1', '8', 'strict')
+        result, command = self.run_check('moodle-1', '8', 'strict',
+                                         result=self.result(self.receipt()))
         self.assertTrue(result['learning_state_unchanged'])
         self.assertEqual(result['verdict'], 'unchanged')
-        command = run.call_args[0][0]
         self.assertIn('chapter-check', command)
+        self.assertEqual(command[command.index('--course') + 1], 'moodle-1')
         self.assertEqual(command[command.index('--section') + 1], '8')
         self.assertEqual(command[command.index('--mode') + 1], 'strict')
+        # The receipt is bound to the original chat; another chat never reuses it.
+        self.assertEqual(command[command.index('--chat-key') + 1], digest('user-chat'))
+        self.assertNotIn('--force', command)
         self.assertEqual(before, self.session.state.read_bytes())
 
     def test_node_failure_surfaces_without_touching_state(self):
         atomic(self.session.state, {'revision': 1, 'courses': []})
         before = self.session.state.read_bytes()
-        completed = subprocess.CompletedProcess(args=[], returncode=1, stdout=b'',
-                                                stderr='没有匹配到章节“99”'.encode('utf-8'))
-        with patch('session.subprocess.run', return_value=completed), \
-                patch.dict(os.environ, {'STUDY_NODE': 'node'}):
-            with self.assertRaisesRegex(ValueError, '没有匹配到章节'):
-                self.session.chapter_check('moodle-1', '99')
+        with self.assertRaisesRegex(ValueError, '没有匹配到章节'):
+            self.run_check('moodle-1', '99',
+                           result=self.result(returncode=1, stderr='没有匹配到章节“99”\n'))
         self.assertEqual(before, self.session.state.read_bytes())
+
+    def test_connection_error_and_generic_fallback_stay_readable(self):
+        connection = json.dumps({'connection_error': 'STUDY_TIMEOUT'}) + '\n'
+        with self.assertRaisesRegex(ValueError, '学校请求超时'):
+            self.run_check('moodle-1', '8', result=self.result(returncode=1, stderr=connection))
+        with self.assertRaisesRegex(ValueError, '章节核对失败；本地资料保留'):
+            self.run_check('moodle-1', '8', result=self.result(returncode=1, stderr='\n  \n'))
+
+    def test_default_mode_is_strict_and_force_is_explicit(self):
+        _, command = self.run_check('moodle-1', '8', result=self.result(self.receipt()))
+        self.assertEqual(command[command.index('--mode') + 1], 'strict')
+        self.assertNotIn('--force', command)
+        _, explicit = self.run_check('moodle-1', '8', 'strict', result=self.result(self.receipt()))
+        self.assertEqual(explicit[explicit.index('--mode') + 1], 'strict')
+        _, forced = self.run_check('moodle-1', '8', force=True, result=self.result(self.receipt()))
+        self.assertIn('--force', forced)
+        # --force only asks for a real re-check; strict hash comparison is unchanged.
+        self.assertEqual(forced[forced.index('--mode') + 1], 'strict')
+        self.assertEqual(forced[forced.index('--chat-key') + 1], digest('user-chat'))
+        _, quick = self.run_check('moodle-1', '8', 'quick', result=self.result(self.receipt()))
+        self.assertEqual(quick[quick.index('--mode') + 1], 'quick')
+
+    def test_progress_line_goes_to_stderr_not_stdout(self):
+        structured = io.StringIO()
+        with redirect_stdout(structured):
+            result, _ = self.run_check('moodle-1', '8', result=self.result(self.receipt()))
+        self.assertIn('正在核对本章资料范围', self.captured_stderr)
+        self.assertIn('不联网', self.captured_stderr)
+        self.assertEqual(structured.getvalue(), '')
+        self.assertEqual(result['verdict'], 'unchanged')
+
+    def test_ambiguous_receipt_is_returned_without_structure_validation(self):
+        payload = {'verdict': 'ambiguous', 'candidates': [{'section': '第8章'}],
+                   'reused': False, 'network_started': False, 'verified': False}
+        result, _ = self.run_check('moodle-1', '第8章', result=self.result(payload))
+        self.assertEqual(result['verdict'], 'ambiguous')
+        self.assertEqual(result['candidates'], payload['candidates'])
+        self.assertTrue(result['learning_state_unchanged'])
+
+    def test_stream_command_forwards_stderr_lines_and_collects_stdout(self):
+        script = ("import json, sys\n"
+                  "print(json.dumps({'verdict': 'unchanged'}), flush=True)\n"
+                  "print('[chapter-check] 正在读取本章文件', file=sys.stderr, flush=True)\n"
+                  "print('[chapter-check] 核对完成', file=sys.stderr, flush=True)\n")
+        forwarded = io.StringIO()
+        returncode, stdout, stderr_text = stream_command(
+            [sys.executable, '-X', 'utf8', '-c', script], cwd=HERE, timeout=60, output=forwarded)
+        self.assertEqual(returncode, 0)
+        self.assertEqual(json.loads(stdout.decode('utf-8'))['verdict'], 'unchanged')
+        self.assertIn('[chapter-check] 正在读取本章文件', forwarded.getvalue())
+        self.assertIn('[chapter-check] 核对完成', forwarded.getvalue())
+        self.assertEqual(stderr_text, forwarded.getvalue())
+
+    def test_stream_command_shows_progress_before_the_child_exits(self):
+        """The root cause: stage lines must be visible while the check is running."""
+        marker = Path(self.tmp.name) / 'let-child-finish'
+        script = ("import os, sys, time\n"
+                  "print('[chapter-check] 正在读取本章文件', file=sys.stderr, flush=True)\n"
+                  "for _ in range(500):\n"
+                  "    if os.path.exists(sys.argv[1]):\n"
+                  "        break\n"
+                  "    time.sleep(0.01)\n"
+                  "else:\n"
+                  "    raise SystemExit(3)\n"
+                  "print('{\"verdict\": \"unchanged\"}')\n")
+        forwarded = io.StringIO()
+        outcome = {}
+
+        def run():
+            outcome['value'] = stream_command(
+                [sys.executable, '-X', 'utf8', '-c', script, str(marker)],
+                cwd=HERE, timeout=60, output=forwarded)
+
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        deadline = time.monotonic() + 10
+        while '正在读取本章文件' not in forwarded.getvalue() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        # A line arriving only after the child exits (capture-at-end behaviour)
+        # would fail here: the child is still waiting for our marker file.
+        self.assertIn('正在读取本章文件', forwarded.getvalue())
+        self.assertTrue(worker.is_alive())
+        marker.write_text('go', encoding='utf-8')
+        worker.join(timeout=30)
+        self.assertFalse(worker.is_alive())
+        returncode, stdout, _ = outcome['value']
+        self.assertEqual(returncode, 0)
+        self.assertEqual(json.loads(stdout.decode('utf-8'))['verdict'], 'unchanged')
+
+    def test_stream_command_timeout_kills_the_child(self):
+        started = time.monotonic()
+        with self.assertRaisesRegex(ValueError, '章节核对超时'):
+            stream_command([sys.executable, '-c', 'import time; time.sleep(60)'],
+                           cwd=HERE, timeout=1, output=io.StringIO())
+        self.assertLess(time.monotonic() - started, 30)
 
 
 class ProfileAccountGuardTests(unittest.TestCase):

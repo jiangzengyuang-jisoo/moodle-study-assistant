@@ -99,12 +99,14 @@ node tools/moodle/run.mjs library-sync [--course 课程ID ...] [--snapshot 路�
 ## 只核对某一章（不建索引）
 
 ```powershell
-node tools/moodle/run.mjs chapter-check --course 课程ID --section "第8章" [--mode quick|strict] [--module 501,502] [--no-persist]
+node tools/moodle/run.mjs chapter-check --course 课程ID --section "Topic 5" [--mode quick|strict] [--modules 501,502] [--chat-key 聊天摘要] [--force] [--no-persist]
 ```
 
-- 只枚举这一门课的目录，比对本章已有文件：`quick` 比较服务器记录的大小与修改时间，`strict` 重新获取本章文件并比较内容哈希。工具只读，不写 `state.json` 或 ledger，不下载到 `_Inbox`，不重建 catalog；回执写在 `Study/_System/ChapterChecks/<课程>/<章节>.json`，并记录本次学校/账号归属（跨校时会被“一档一校一账号”检查拦下）。
+- 只处理这一门课：先用本地资料索引与来源映射定位本章模块，再只获取并比对本章文件；本地索引无法确定时才退回课程目录中明确的章节名/模块名匹配。Moodle 区块位置、日期和 Tutorial 编号不会被当成章节编号；匹配不唯一时返回候选和原因，不选择整个区块。
+- 默认 `strict`，重新获取本章文件并比较内容哈希；`quick` 只比较服务器记录的大小与修改时间，不建立可复用的严格回执。工具只读，不写 `state.json` 或 ledger，不下载到 `_Inbox`，不重建 catalog；回执写在 `Study/_System/ChapterChecks/<课程>/<章节>.json`，记录本次学校/账号归属、已定位模块、本地文件内容哈希和聊天摘要（跨校时会被“一档一校一账号”检查拦下）。
 - 不需要新的课程级授权：`quick` 只读课程元数据；`strict` 只允许已保存 `full` 授权的页面，`info_only` 或未授权页面会被明确拒绝，而不是静默下载。
-- 适合“开始教第8章前确认课件没变”；它不安装新文件、不补新增章节，也不读公告、作业、讨论或日历。发现变化后仍要按上面的增量同步或完整刷新处理，判定见 [WORKFLOW.md](WORKFLOW.md#单章资料核对不触发完整采集)。
+- `--chat-key` 由统一入口 `study.cmd` 自动传入；同一聊天、账号、课程、资料范围和核对强度且本地文件未变时复用严格回执，不联网；本地新增本章资料只核对新增部分。新聊天、换账号、本地文件变化或 `--force` 会重新核对。失败、缺基线或部分完成不算全部核验成功，也不自动重试。
+- 适合“开始教某一章前确认课件没变”；它不安装新文件、不补新增章节，也不读公告、作业、讨论或日历。发现变化后仍要按上面的增量同步或完整刷新处理，判定见 [WORKFLOW.md](WORKFLOW.md#单章资料核对不触发完整采集)。
 
 ## 下载范围与缺口
 

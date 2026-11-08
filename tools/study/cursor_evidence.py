@@ -123,6 +123,15 @@ def validate_cursor_transition(previous, following):
         raise ValueError('当前题的作答或题源将丢失；请先完整追加到同课程 teaching_cursor.checks 再换题')
 
 
+def has_attempt(record):
+    """Public read-only check: does this record contain a real learner attempt?
+
+    Shared decision used when replacing a pending question and when validating
+    small teaching events; presence of 0/False/blank observations still counts.
+    """
+    return _has_attempt(record)
+
+
 def active_snapshot(cursor):
     """Archive routing once, without recursively copying durable histories."""
     return {key: value for key, value in cursor.items() if key not in {'checks', 'history'}}
