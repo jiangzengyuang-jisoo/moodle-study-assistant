@@ -581,8 +581,9 @@ class Library:
                        'render_errors':[],
                        'view_hint':'把 path 交给 read_image；PPTX/DOCX 无页图时此处给原文件入口与说明。'},
             'continuity':None,
-            'strict_check':{'required':True,'command':None,'last_receipt':None,
-                            'note':'chapter-prep 不替代 strict 章节核对；本章文件哈希核验仍由 chapter-check --mode strict 完成，上次回执只是背景信息。'},
+            'strict_check':{'required':True,'preferred':'mcp','tool':None,
+                            'command':None,'command_role':'fallback_only','last_receipt':None,
+                            'note':'chapter-prep 不替代 strict 章节核对；优先调用 study_check_chapter，command 仅为工具不可用时的 chapter-check --mode strict 备用入口，不要双跑。上次回执只是背景信息；chat_id 必须使用当前原始主聊天 ID，不能填写占位符。'},
             'coverage':{'units_total':0,'units_text':0,'units_solutions_hidden':0,
                         'visual_review_required':[],'verified':False,
                         'policy':'整章覆盖必须逐 unit 核读文字或原页；未核实项要写明；准备资料不等于核读或掌握。'},
@@ -604,6 +605,15 @@ class Library:
             command=('.\\study.cmd --chat "'+chat_hint+'" chapter-check --course '+str(subject)
                      +' --section "'+str(section)+'" --mode strict')
         result['strict_check']['command']=command
+        tool_args={'course_id':str(subject)}
+        if modules_list is not None:
+            tool_args['module_ids']=modules_list
+        else:
+            tool_args['section']=section
+        if chat:
+            tool_args['chat_id']=chat
+        result['strict_check']['tool']={'name':'study_check_chapter','arguments':tool_args,
+                                        'missing_arguments':[] if chat else ['chat_id']}
         result['strict_check']['last_receipt']=chapter_lib.receipt_summary(
             self.study.parent,
             subject,

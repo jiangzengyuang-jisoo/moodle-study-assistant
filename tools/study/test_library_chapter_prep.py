@@ -111,6 +111,24 @@ class ChapterPrepTests(unittest.TestCase):
     # ------------------------------------------------------------------
     # resolution
     # ------------------------------------------------------------------
+    def test_preferred_tool_keeps_scope_and_requires_real_chat_identity(self):
+        self.material()
+        self.index()
+        before = self.state_bytes()
+        by_section = self.prep(chat="主聊天会话")
+        check = by_section["strict_check"]
+        self.assertEqual(check["preferred"], "mcp")
+        self.assertEqual(check["command_role"], "fallback_only")
+        self.assertEqual(check["tool"], {"name": "study_check_chapter", "arguments": {
+            "course_id": "top", "section": "Topic 6", "chat_id": "主聊天会话"}, "missing_arguments": []})
+        no_chat = self.prep()["strict_check"]["tool"]
+        self.assertEqual(no_chat["missing_arguments"], ["chat_id"])
+        self.assertNotIn("chat_id", no_chat["arguments"])
+        by_modules = self.lib.chapter_prep("top", modules=[501], render="none", chat="主聊天会话")
+        self.assertEqual(by_modules["strict_check"]["tool"]["arguments"], {
+            "course_id": "top", "module_ids": [501], "chat_id": "主聊天会话"})
+        self.assertEqual(before, self.state_bytes())
+
     def test_topic_six_unique_matches_full_text_and_visual_candidates(self):
         self.material(pages=topic6_pages())
         self.index()

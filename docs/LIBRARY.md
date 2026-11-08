@@ -32,7 +32,7 @@
 边界：
 
 - 命令只读：不联网、不写学习状态、不写核读回执、不建索引；只可能在 `Library/renders/` 新建派生页图。与其它 library 命令一样，它仍会写一行不含题目/答案/聊天 ID 的本地耗时日志。`--read-only` 是兼容标志。
-- `strict_check.last_receipt` 只是**上次**严格核对的背景，**不是本轮核验**；本章文件仍必须 `chapter-check --mode strict`。`chapter-prep` 会给出要执行的 `chapter-check` 命令与 `strict_check.required: true`。
+- `strict_check.last_receipt` 只是**上次**严格核对的背景，**不是本轮核验**；本章文件仍须优先调用 Moodle `study_check_chapter` 严格核对，并显式传原主聊天 `chat_id`。`chapter-prep` 的 `strict_check.preferred` 为 `mcp`、`strict_check.tool` 给出工具与已知参数；若 `missing_arguments` 含 `chat_id`，补本轮真实主聊天 ID 后再调用，不传占位符。`strict_check.command_role: fallback_only` 说明 `strict_check.command` 是异常 CLI 后备；`strict_check.required: true` 表示仍需实际核对，不是强制走 shell，MCP 成功后不双跑。参数与后备条件见 [TOOLS.md](TOOLS.md#章节核对工具study_check_chapter)。
 - `coverage.verified` 恒为 false，`visual_review_required` 只是待看候选；公式、图表、表格、题号必须看原页，整章覆盖仍要逐 unit 核对文字或原页。准备资料不等于核读或掌握。
 - 源文件或缓存不新鲜时返回 `needs_sync` 而不返回旧文本，先按 `cache.sync_command` 同步/重建再准备。
 - `render --units` 一次校验来源后批量渲染/复用多页；`--unit` 单页用法继续兼容。`search`、`read --start/--end` 仍用于定向补读，不是每次都要逐页往返。
@@ -88,7 +88,7 @@
 
 `Study/_System/Library/catalog.json` 是全库累计索引，包含当前版本行和 `_Archive` 归档版本行；报告里的 `materials` 总数不等于某一门课的当前材料数，单科当前材料以 `state.materials`、`outline --course` 或缺口清单中的逐课程统计为准。
 
-需要校务信息的任务在每个新对话首次进入时完整检查一次，开始教某一章时只核对本章文件（`chapter-check`，见 [WORKFLOW.md](WORKFLOW.md#单章资料核对不触发完整采集)）；用户明确要求刷新或查询最新学校信息时再次完整检查。同一对话后续消息复用已核验结果，切换课程、跨日、上下文压缩和重新打开旧对话不另触发，不设固定间隔。网络只读采集使用全局最多4个并发请求，各论坛分页顺序、正文/回复数量和权限检查保留。需要刷新时，只有把刷新命令作为 Harness 后台任务（`run_in_background`）启动后，才能在等待期间用 `job_output` 读取结果并继续本地 context/chapter-prep 准备；前台 shell 调用是独占屏障，多个 `pwsh` 不会并行，别把“同一消息发两条命令”当作并行。依赖此次学校检查的结论须等刷新与变更核读完成。刷新成功不自动表示内容已审阅，复用旧结果不写成当前刚完成检查。
+需要校务信息的任务在每个新对话首次进入时完整检查一次，开始教某一章时只核对本章文件（优先 `study_check_chapter`，`chapter-check` 为异常 CLI 后备，见 [WORKFLOW.md](WORKFLOW.md#单章资料核对不触发完整采集)）；用户明确要求刷新或查询最新学校信息时再次完整检查。同一对话后续消息复用已核验结果，切换课程、跨日、上下文压缩和重新打开旧对话不另触发，不设固定间隔。网络只读采集使用全局最多4个并发请求，各论坛分页顺序、正文/回复数量和权限检查保留。需要刷新时，只有把刷新命令作为 Harness 后台任务（`run_in_background`）启动后，才能在等待期间用 `job_output` 读取结果并继续本地 context/chapter-prep 准备；前台 shell 调用是独占屏障，多个 `pwsh` 不会并行，别把“同一消息发两条命令”当作并行。依赖此次学校检查的结论须等刷新与变更核读完成。刷新成功不自动表示内容已审阅，复用旧结果不写成当前刚完成检查。
 
 ## 学科合并与缺口
 

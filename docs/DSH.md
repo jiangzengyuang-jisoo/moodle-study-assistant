@@ -95,7 +95,7 @@
 规则：
 
 - 同一聊天跨轮、重开、上下文压缩：ID 不变，第二次起复用已核验结果，**不会重复首次刷新**。
-- 真正新建聊天：新的 `DSH_SESSION_ID`；需要校务信息时首次完整采集一次，开始教某一章只做 `chapter-check`。
+- 真正新建聊天：新的 `DSH_SESSION_ID`；需要校务信息时首次完整采集一次，开始教某一章只用 `study_check_chapter` 严格核对本章（CLI `chapter-check` 为异常后备）。
 - **禁止**随机生成 ID，也**禁止**所有聊天共用一个固定 ID；无法可靠取得身份时按上表第 2 行与本人约定名称，或明确报错停下。
 - DSH 内部子会话/子代理拿到的是自己的裸 UUID，**不能**当原始聊天 ID：子任务必须由主助手把主聊天 ID 显式写进任务，并加 `--subtask`（只允许 `continue`/`status`，不联网、不写学习状态）。
 
@@ -105,8 +105,8 @@
 .\study.cmd continue          # 需要校务信息的学习接续；本聊天首次调用会完整采集一次
 .\study.cmd today             # 接续 + 今日复习与视图
 .\study.cmd status            # 只看本地状态，不联网
-.\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode strict   # 只核对本章文件，不完整采集
-.\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode strict --force  # 本人明确要求重新核对
+.\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode strict   # CLI 异常后备；正常使用 study_check_chapter
+.\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode strict --force  # CLI 后备且本人明确要求重新核对
 .\study.cmd teaching-event    # 讲解后保存教学位置（stdin 小 JSON；见 SESSION.md）
 .\study.cmd refresh           # 本人明确要求更新学校信息时才用
 ```
@@ -118,9 +118,23 @@
 & 'tools/study/library.cmd' render <material_id> --units 34,35,36
 ```
 
-`chapter-prep` 一次返回本章材料/unit 清单、headings 目录、预算内整页正文、公式图表候选页（复用哈希渲染缓存）和本章接续；它的 `strict_check.last_receipt` 只是上次回执背景，**不是本轮核验**，本章文件仍须 `chapter-check --mode strict` 核对。
+`chapter-prep` 一次返回本章材料/unit 清单、headings 目录、预算内整页正文、公式图表候选页（复用哈希渲染缓存）和本章接续；它的 `strict_check.last_receipt` 只是上次回执背景，**不是本轮核验**，本章文件仍须优先通过 `study_check_chapter` 严格核对；`strict_check.command` 只供 CLI 后备，不双跑。
 
-### 慢速章节核对与后台任务
+### 章节核对默认使用 Moodle 工具
+
+本章资料经 `context --read-only` / `chapter-prep` 准备后，主助手优先调用 `study_check_chapter`，不启动 `pwsh` 执行章节核对。参数与示例集中在 [TOOLS.md](TOOLS.md#章节核对工具study_check_chapter)：指定 `course_id`、`section` 或 `module_ids`、必填原主聊天 `chat_id`，只在本人明确要求重查时传 `force: true`。服务启动环境不保证有 `DSH_SESSION_ID`，不能省略身份、用 MCP 服务 ID 或所有聊天共享一个固定值；内部子任务不得以自己的 ID 发起核对，应交回主助手处理。
+
+专用工具沿用本地章节定位、所选课程及完整授权、学校/账号绑定、SHA-256 严格比对和同聊天回执复用。它只接受限定参数，不接受任意命令、路径或网址；会读取学校文件字节用于核对并写本地 `ChapterChecks` 回执，不改学习状态、不安装资料、不写学校。凭据由本机服务内部使用，不回传给模型。
+
+默认 MCP 调用不经过 `pwsh` 的受限执行链，因此无需这次临时扩大 shell 权限；不用把全局权限改成 Full access。`readOnlyHint` 等提示不是放行凭据，功能范围由服务端限制。若本人另选 Auto review 或其他审批策略，仍尊重客户端决定，不承诺任意配置都零审批。
+
+**异常分流**：只有 `study_check_chapter` 未加载/不存在，或 MCP 服务启动、传输故障时，才按同一课程、章节/模块、原聊天 ID 改用 `study.cmd ... chapter-check --mode strict`。不要因学校拒绝、账号/课程授权不符、参数错误或客户端审批拒绝而切换路径；先补足/纠正必要信息，保留失败状态。用户取消或审批拒绝时停止，不将其归为传输故障。超时或连接中断只说明客户端未取得结果，不能证明原核对已停止；确认原调用结束后才可按原范围回退，不并发重跑，也不擅自终止或重启用户应用。只走一次后备，不在 MCP 与 CLI 间循环尝试；仅后备 CLI 真实出现下节解密错误时，才申请单次批准。
+
+若工具返回 `STUDY_MCP_RESTART_REQUIRED`，表示已保存连接配置或授权与长驻服务不一致，先重新加载 Moodle 服务，不把它当成 shell 解密错误，也不改走 CLI 绕过。
+
+**升级加载**：原 MCP 配置可继续使用，无需改 profile 或权限。更新代码后，在方便时重启本项目 MCP 连接；客户端没有单独重连入口时退出并重开 Harness，再回到原聊天或新建项目聊天，确认工具列表出现 `study_check_chapter`。助手不得擅自重启正在使用的客户端。只重读规则不能给已经运行的旧服务添加新工具。
+
+### 慢速章节核对与后台任务（仅 CLI 后备）
 
 - `chapter-check` 的 stderr 是简短阶段进度，stdout 只有最终 JSON；不要用 `Select-Object -Last 40` 等截断进度，也不要在前台等待时反复启动同一条命令。
 - 本机 DSH 实测支持 shell 后台任务：`run_in_background` 立即返回 job id，运行中可用 `job_output` 读取已产生的 stdout/stderr（`[status: running]`）；等待时继续跟进**原任务**即可，不重复启动，不另起第二个核对。
@@ -136,7 +150,7 @@
 
 ### 授权解密失败时申请单次重试
 
-当当前已授权的学校只读操作在 Harness 受限执行环境中返回 `STUDY_TOKEN_DECRYPT_FAILED`，主助手应主动发起下面的单次授权流程；不要等本人再复制提示词，也不要先另问一句“要不要重试”。这是一项申请权限的规则，不是预先批准执行。
+本节仅是异常备用，正常章节核对使用上节的 `study_check_chapter`。只有按上节允许条件退回 CLI 后，该已授权学校只读操作在 Harness 受限执行环境中返回 `STUDY_TOKEN_DECRYPT_FAILED`，主助手应主动发起下面的单次授权流程；不要等本人再复制提示词，也不要先另问一句“要不要重试”。这是一项申请权限的规则，不是预先批准执行。
 
 1. 保留刚失败的原始命令、工作目录、参数、课程/章节/资料范围和原聊天 ID，确认原任务已经结束。若原调用已用 `danger-full-access` 仍失败，不再次申请；本规则不适用于未授权任务、学校权限拒绝或账号范围不符。
 2. 用 Harness 的 `pwsh` 工具重新提交同一命令，设置 `sandbox_permissions: "danger-full-access"`，同时提供中文 `justification`，例如“需要在正常 Windows 用户环境中使用已有加密授权，重试刚才失败的本章只读核对”。由客户端弹出单次审批，只有获得 `allowed-once` 后才执行。不得自行启动提权进程、改全局权限或绕过审批。
@@ -157,7 +171,7 @@
 
 ## 5. 只读与数据边界
 
-- Moodle MCP 工具仍是只读查询集合；不注册提交、发帖、改完成状态等操作。选课时确认完整初始化后，刷新通过独立资料阶段自动下载、归档与索引授权课程的可访问内容；仅信息或未授权范围不下载。详见 [课程内容同步](COURSE_CONTENT.md)。
+- Moodle MCP 工具仍不写学校状态；新增章节核对会读取授权文件字节并写本地核对回执，其他查询保持原边界；不注册提交、发帖、改完成状态等操作。选课时确认完整初始化后，刷新通过独立资料阶段自动下载、归档与索引授权课程的可访问内容；仅信息或未授权范围不下载。详见 [课程内容同步](COURSE_CONTENT.md)。
 - 所有学习状态写入仍走正式入口：纯教学位置用 `study.cmd teaching-event`（只交本轮变化，程序合并、校验、原子保存并至多重建一次视图），完整核读用 `study.cmd review`，其他状态用 `state_io.py` 等既有入口；锁、版本哈希、快照绑定、操作去重、历史证据保护不变；助手不直接改写 `state.json`。
 - 普通问答、查询或纠正本地记忆不触发 Moodle 联网；只有学习启动或本人明确刷新才检查学校信息。
 - DSH 配置里只有本机路径和 `serverName`，不含凭据；Moodle Token 仍由 Windows DPAPI 加密保存在 `.private/`，不进入聊天、状态或 Git。
@@ -182,7 +196,7 @@ DSH 适配新增的测试：
 
 ## 7. 已知限制与待验证
 
-- 技能目录与 MCP 配置修改后**必须重启 DSH** 才生效；运行中的聊天不会热加载 profile。
+- 仅新增章节核对工具不需改配置，但必须重连 MCP 服务（无此入口则重启 DSH）加载；技能目录与 MCP 配置修改后**必须重启 DSH** 才生效；运行中的聊天不会热加载 profile。
 - 在聊天中人工上传图片→模型识别的链路尚未在本适配中实测（`read_image` 读取本地文件已实测）。
 - DSH 跨桌面版重启后同一聊天 ID 是否保持，尚未实测；以 `chat_identity.py` 输出与第二次 `continue` 是否复用为准。
 - 真实学校 SSO/MFA、Windows OCR 中文语言包、PPTX/DOCX 经 `office-render` 的清晰度仍需按实际课件验证。

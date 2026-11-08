@@ -609,7 +609,7 @@ def receipt_summary(root, course_id, section=None, modules=None, chat=None):
     current turn and it does not write or extend any receipt.
     """
     note = ('上次回执只是背景信息，不是本轮核验；本章文件内容哈希仍必须由 '
-            'chapter-check --mode strict 核对（同聊天同范围且本地未变时通常 <1s 且不联网）。')
+            'study_check_chapter 核对（chapter-check --mode strict 仅为备用；同聊天同范围且本地未变时复用回执、不联网）。')
     summary = {'found': False, 'note': note}
     if not section and not modules:
         return summary

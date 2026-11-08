@@ -1,4 +1,5 @@
 import {decryptWindowsToken} from './windows-token.mjs';
+import {createMcpChapterContext} from './mcp-workspace.mjs';
 import {connectionDiagnostic} from './connection-errors.mjs';
 import {loadCollectionRequest, bindCollection} from './collection-request.mjs';
 import {resolveChatId} from './chat-identity.mjs';
@@ -365,6 +366,16 @@ async function main() {
   }
   const config = bundle?.config ?? json(join(root, 'config.local.json'));
   process.env.TZ = config.timezone;
+  if (mode === 'mcp') {
+    // Capture the same authorization generation used to establish this service.
+    const credential = readFileSync(join(root, '.private/moodle-token.dpapi'));
+    const client = await new ReadOnlyClient(config.moodle_url, tokenFromWindows(credential)).connect();
+    const context = createMcpChapterContext({root, loadState, client, config, credential});
+    context.beforeCheck();
+    const {serve} = await import('./server.mjs');
+    await serve(client, undefined, context);
+    return;
+  }
   const client = await new ReadOnlyClient(config.moodle_url, tokenFromWindows(bundle?.credential)).connect();
   if (mode === 'check') { console.log('Moodle API 已连接。'); return; }
   if (mode === 'courses') {
@@ -459,7 +470,6 @@ async function main() {
     if (result.errors.length) process.exitCode = 2;
     return;
   }
-  if (mode === 'mcp') { const { serve } = await import('./server.mjs'); await serve(client); return; }
   throw new Error('用法：run.mjs init | check | courses [--select IDS --mode full|info_only --yes] | library-sync [--course ID] [--snapshot PATH] [--dry-run] | chapter-check --course ID --section 章节 [--mode quick|strict] [--module IDS] [--chat-key KEY] [--force] [--no-persist] | content-sync --snapshot PATH | refresh | mcp | download <module-id> [...] --authorized');
 }
 main().catch(error => {
