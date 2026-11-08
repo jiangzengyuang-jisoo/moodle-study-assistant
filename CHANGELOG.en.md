@@ -29,6 +29,14 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-08
 
+### One-time approved recovery after authorization decryption failure
+
+- When an already-authorized read operation returns `STUDY_TOKEN_DECRYPT_FAILED` in restricted Harness execution, the assistant proactively requests a one-time full-access retry of the same command through `pwsh`, rather than asking the learner to copy recovery instructions. Use `sandbox_permissions: "danger-full-access"` and a Chinese `justification`; execute only after client approval returns `allowed-once`.
+- Allow at most one request per failed operation; stop after denial, cancellation, unavailable approval or retry failure. Ordinary follow-ups do not re-request. Do not change global permissions, relogin or handle credentials, broaden scope, or bypass failure state with `--force`, receipt deletion or a new chat ID.
+- Align root rules, skill entry points, chapter workflow, session documentation and the tutoring skill around this narrow exception; commands still do not retry themselves. Resume the original task on success, or teach from adequate local material without claiming fresh verification.
+- Validation: all 6 existing request-routing checks and Git diff whitespace validation pass. Review reconciled the no-automatic-retry, no-expanded-connection-repair and failed-receipt reuse rules. The real Harness approval flow was not triggered, and the rule does not guarantee decryption or connection success.
+- Upgrade: new chats read the updated project rules; existing chats must reread `AGENTS.md` and the recovery section. No configuration change or learning-data migration is needed; the client may still require a one-time approval click.
+
 ### Chapter pacing, mathematical notation and reply scope
 
 - Ordinary chapter teaching now builds understanding across turns: explain one core concept with a concrete example, justified steps, new-symbol explanations and a necessary demonstration, then ask one relevant question and wait. Explicit whole-chapter, complete-handout, summary or no-interaction requests override the default; continue/skip does not require answering old questions.
