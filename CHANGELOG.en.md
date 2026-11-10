@@ -8,7 +8,7 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 | Date | Main changes |
 | --- | --- |
-| [2026-11-10](#2026-11-10) | Interpret teaching intent and stage; preserve practice and Feynman checks after important concepts |
+| [2026-11-10](#2026-11-10) | Unify progress and verify saves; preserve practice and Feynman checks after important concepts |
 | [2026-11-08](#2026-11-08) | Publish audit fixes for remaining study capacity and bound-answer grading |
 | [2026-11-07](#2026-11-07) | Fix remaining-time limits and grading-state saves; preserve archived evidence and review options, with scoped queries and chapter recovery |
 | [2026-11-06](#2026-11-06) | Complete English changelog, language links, and English README navigation |
@@ -23,6 +23,15 @@ Existing users should first read the [upgrade steps that preserve learning recor
 | [2026-09-22](#2026-09-22) | Initial release: Windows installation, school account connection, course information, and learning records |
 
 ## 2026-11-10
+
+### Teaching progress and verified saves (Codex)
+
+- Course overview, course continuation and memory queries share one teaching-position selector. Assignment scope, recorded teaching position and mastery evidence remain separate. Conflicts require review; neither the highest chapter number nor the time an old lesson was saved determines current progress.
+- Add `library.cmd teaching-save --course ID` to append learning events with actual occurrence times and chat/turn sources under the shared lock. Saves are read back and verified; retries are idempotent and stale requests cannot overwrite state. Existing answers, scores and FSRS history remain unchanged.
+- Answered, skipped and answer-shown questions no longer remain current pending prompts. New original answers retain assistance conditions and work with existing source verification; unknown conditions do not imply independent mastery.
+- On progress queries, user corrections or conflicting records, inspect relevant unreviewed chats when tools are available. Titles only locate candidates; homework answer delivery does not establish a systematic teaching position. Report the recorded scope when chat access is unavailable.
+- Validation: 130 public Node tests, 92 entry-point Python tests, 561 study-tool tests and 85 final targeted regressions passed; 324 local tool tests and 67 final targeted regressions passed. Tests use synthetic records. Read-only checks on a real profile confirmed agreement across all three readers and unchanged files during verification. Chat review still requires the assistant; a save receipt cannot prove that conversations which never invoked saving were recorded.
+- Usage: upgrade while preserving learning records, then read the [teaching continuity guide](docs/MEMORY.md#教学接续保存与漏记检查). No profile reset, background task or automatic Moodle refresh is added. The DeepSeek branch is unchanged.
 
 ### Teaching instructions and practice continuity (Codex)
 

@@ -12,12 +12,12 @@ import unicodedata
 from course_links import record_course_ids, review_attempt_context
 
 
-_COURSE_FIELDS = ('topic_evidence', 'assistant_notes', 'teaching_cursor',
+_COURSE_FIELDS = ('topic_evidence', 'assistant_notes', 'teaching_cursor', 'teaching_events',
                   'teaching_history', 'history', 'learning_progress',
                   'review_backlog', 'coverage_records', 'learning_history', 'practice_history', 'memory_corrections')
 _COLLECTIONS = ('learning_feedback', 'mistakes', 'review_attempts')
 _META = ('id', 'topic', 'display_title', 'knowledge_point', 'chapter', 'type', 'entry_type', 'at', 'date',
-         'recorded_at', 'answered_at', 'updated_at')
+         'recorded_at', 'occurred_at', 'event_type', 'answered_at', 'updated_at')
 _SOURCE_META = ('material_id', 'task_id', 'pages', 'slides', 'source_type')
 
 

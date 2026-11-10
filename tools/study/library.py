@@ -511,8 +511,15 @@ def main():
     p=sub.add_parser('evidence-source'); p.add_argument('--course',required=True); p.add_argument('--observation',required=True)
     p=sub.add_parser('memory'); p.add_argument('--course',required=True); p.add_argument('--query'); p.add_argument('--limit',type=int,default=8)
     p=sub.add_parser('memory-correct'); p.add_argument('--course',required=True)
+    p=sub.add_parser('teaching-save'); p.add_argument('--course',required=True)
     p=sub.add_parser('detail'); p.add_argument('collection'); p.add_argument('record_id')
     args=parser.parse_args(); lib=Library(args.state,args.cache_dir)
+    if args.command == 'teaching-save':
+        sys.dont_write_bytecode=True
+        from teaching_progress import save_teaching
+        if hasattr(sys.stdin, 'reconfigure'): sys.stdin.reconfigure(encoding='utf-8')
+        print(json.dumps(save_teaching(args.state, args.course, json.load(sys.stdin)), ensure_ascii=False, indent=2))
+        return
     if args.command in {'memory', 'memory-correct'}:
         sys.dont_write_bytecode = True
         if args.command == 'memory':

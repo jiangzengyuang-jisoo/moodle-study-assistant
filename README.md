@@ -174,7 +174,7 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
-| [2026-11-10](CHANGELOG.en.md#2026-11-10) | Preserve explanation/practice alternation, scoped requests and Feynman checks after important concepts |
+| [2026-11-10](CHANGELOG.en.md#2026-11-10) | Unify teaching progress and verify saves; preserve practice, scoped requests and Feynman checks |
 | [2026-11-08](CHANGELOG.en.md#2026-11-08) | Publish audit fixes and downloadable Chinese/English beginner PDF tutorials |
 | [2026-11-07](CHANGELOG.en.md#2026-11-07) | Respect remaining study time; allow grading workflow updates to bound answers; preserve archived evidence and review options |
 

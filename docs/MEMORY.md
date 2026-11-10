@@ -50,7 +50,50 @@
 
 以后原记录移动时用内容指纹重新定位；找不到或匹配不唯一时标记待核对，不把纠正套到新记录上。此时仍可核读已保留的原快照。旧版无快照的纠正标为 `unavailable_legacy`，不会凭当前内容补造过去的证据；快照校验失败标为 `invalid`。旧纠正也只能保留并追加新说明，不能静默删除。
 
+## 教学接续保存与漏记检查
+
+总览、单科 `context` 和 `memory` 共用 `teaching_progress`：只表示有来源的已记录教学位置，包含记录路径、发生时间与冲突/限制。作业要求、教学位置和掌握证据分别读取；不能用状态文件最近更新时间证明最近聊天都已保存，也不能按最高章节号决定当前位置。冲突需核读候选原文，旧题继续保留为历史或待复习，不自动当作当前待答题。
+
+### 有实际变化时保存并回读
+
+完成一段实际讲解、收到并反馈真实作答、切换主题或收尾时，通过 `tools/study/library.cmd teaching-save --course 课程ID` 保存。普通确认且无进度变化时不重复写入。先读最新状态版本，再将 UTF-8 JSON 交给标准输入：
+
+```json
+{
+  "id": "本次事件的稳定唯一编号",
+  "expected_revision": 7,
+  "occurred_at": "2026-11-10T20:00:00+08:00",
+  "event_type": "explanation",
+  "affects_current": true,
+  "source": {"kind": "chat", "thread_id": "原聊天ID", "turn_ids": ["实际讲解所在轮次ID"]},
+  "position": {
+    "topic": "已实际讲解的主题",
+    "chapter": "5",
+    "section": "5.3",
+    "stage": "explanation_completed_check_pending",
+    "next_step": "按当前请求接续练习或讲解",
+    "pending_question": {"id": "题目ID", "prompt": "实际已出题的题面", "status": "pending"}
+  }
+}
+```
+
+示例仅表示结构，不能原样写入正式档案。`occurred_at` 是实际学习事件时间，保存时间由工具另记；回顾旧聊天时不能填今天来冒充旧课的新进展。时间无法核实时保留待确认，不猜测。`event_type` 可为 `explanation`、`attempt`、`feedback`、`topic_change`、`session_end`、`history_recovery`、`answer_exposure`；答案展示单独记录，`affects_current=false`，不凭作业答案推进系统教学位置。主动回到旧章复习则可记录真实的 `topic_change`，不按章节数字禁止。
+
+待答题状态分 `pending/skipped/answered/answer_shown`；无当前题可传 `null`，不删旧事件。在当前教学题上提供完整解答时，用 `feedback` 保持同一教学位置、将该题记为 `answer_shown`，不继续当成待答题，也不新增独立作答。真实作答可附 `attempts` 数组，每项包含 `id`、`question`、原文 `user_answer`、`source_turn_id` 和 `conditions: {"assisted": null, "answer_exposed": null}`；未知条件保留 null，不补为独立。该入口只保存接续与原答，不修改成绩、掌握或 FSRS；正式评分和复习评级仍走现有入口。已准备但尚未发送的讲解不能登记为已讲解，助手示范不能写成用户作答。
+
+若有明确依据，可在每条原答补充 `topic`、`answered_at` 和 `conditions.independent`；未知则省略或保留 null，不能从未提示反推独立完成。正式掌握观察仍须按现有入口验证原答范围、时间与全部帮助条件，保存事件本身不代表通过复测。
+
+事件以 `courses[].teaching_events` 追加保存，不改写原答和旧接续。相同事件编号及内容重试不会重复追加；相同编号换内容、过期版本均拒绝覆盖。工具在共享锁内保存后重新读取，只有 `readback_verified=true` 才能说已保存；`active_advanced=false` 表示本次未新切换接续，也可能是同一事件的重复确认，实际当前位置以 `current_progress` 为准。写入或回读失败时保留原事件编号，不伪报成功。需要恢复时用相同请求重试；收到回执后按原流程重建并检查视图。
+
+### 按需核对原聊天
+
+当用户询问“学到哪里”、明确纠正经历或现有记录互相矛盾时，先查本地进度，再用当前客户端可用的聊天列表与正文读取工具，查找该科可能尚未核读的新聊天/新轮次。标题只定位候选，必须核读正文，区分系统教学、复习旧课、作业直接答案和工具讨论。范围只限相关课程，不默认全量扫描历史、不刷新 Moodle、不创建后台任务。
+
+核读后将真实新事件通过上述入口补存，使用原学习时间和原聊天/轮次定位。`source.reviewed_at` 可记录本次核读时间，`thread_id/turn_ids` 只代表实际读过的范围，不代表整段聊天已全查。已核读且无变化的轮次复用依据；只补查新增或有矛盾的部分。聊天工具不可用或范围不完整时，说明“已保存记录截至……，后续尚未核实”，不能断言这是全部最新进度，也不要求用户重做题来证明以前学过。
+
 ## 怎样验证
+
+`test_progress_selection.py` 和 `test_teaching_save.py` 使用虚构记录检查三入口一致、旧课补录、返回旧章、已结束题目、冲突、重复保存、回读失败及历史证据保护；`test_teaching_event_evidence.py` 检查新原答可由正式证据入口追溯，独立、帮助条件或范围不足时仍拒绝升级掌握。
 
 `tools/study/test_memory.py` 使用虚构资料检查跨章节与中英文召回、错误课程隔离、原答隐藏、纠正幂等、过期目标拒绝及独立进程重新读取。运行方式见 [工具与测试](TOOLS.md#验证与发布)。
 

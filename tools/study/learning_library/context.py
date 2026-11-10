@@ -15,7 +15,6 @@ import json
 import re
 from typing import Any
 
-from cursor_evidence import PENDING_KEYS
 from course_links import record_course_ids
 
 
@@ -37,11 +36,11 @@ _ANSWER_KEYS = {
 }
 _TIME_KEYS = ("updated_at", "answered_at", "saved_at", "recorded_at", "at", "date", "created_at")
 _CURRENT_KEYS = (
-    "material_id", "pages", "task_id", "work_unit_id", "chapter", "topic", "stage", "next_step",
+    "material_id", "pages", "task_id", "work_unit_id", "chapter", "section", "topic", "stage", "next_step",
     "updated_at", "missing_material", "coverage_note",
 )
 _EVIDENCE_KEYS = (
-    "id", "topic", "chapter", "material_id", "type", "entry_type", "stage", "status", "at", "date", "recorded_at", "answered_at",
+    "id", "topic", "chapter", "material_id", "type", "entry_type", "stage", "status", "at", "date", "recorded_at", "answered_at", "occurred_at",
     "conditions", "scaffolding", "assisted", "independent", "answer_exposed",
     "answer_previously_exposed", "hints_used", "mastery_verified", "mastery_inferred",
     "mastery_scope", "mastery_limits", "fsrs_rating", "fsrs_rated", "actual_minutes",
@@ -101,19 +100,6 @@ def _walk(value: Any, path: str = "", inherited: float = 0.0):
             yield from _walk(item, path + "/" + str(i), inherited)
 
 
-def _walk_active(value: Any, path: str = "", inherited: float = 0.0):
-    """Archived prompts/next steps cannot compete with the current position."""
-    if isinstance(value, dict):
-        stamp = _stamp(value, inherited)
-        yield path, value, stamp
-        for key, item in value.items():
-            if key not in {'checks', 'history', 'review_backlog'}:
-                yield from _walk_active(item, path + '/' + _escape(key), stamp)
-    elif isinstance(value, list):
-        for i, item in enumerate(value):
-            yield from _walk_active(item, path + '/' + str(i), inherited)
-
-
 def _safe(value: Any) -> Any:
     """Remove keyed answer/marking payloads without changing original objects."""
     if isinstance(value, dict):
@@ -129,6 +115,123 @@ def _safe(value: Any) -> Any:
 
 def _pick(value: dict, keys: tuple | list) -> dict:
     return {key: _safe(value[key]) for key in keys if key in value}
+
+
+_POSITION_KEYS = (
+    "id", "topic", "chapter", "section", "stage", "next_step", "next_check", "status",
+    "material_id", "pages", "task_id", "work_unit_id", "missing_material", "coverage_note",
+    "occurred_at", "event_at", "at", "date", "updated_at",
+)
+_ACTIVE_BRANCHES = ("latest_followup", "followup", "followups", "session_handoff", "handoff")
+_PENDING_FIELDS = ("pending_question", "pending_check", "pending_questions", "pending_checks")
+
+
+def _progress_time(node: dict, inherited=(None, None, None), *, event=False):
+    # Occurrence wins over later bookkeeping. Legacy timestamps remain explicitly
+    # labelled because old records do not consistently distinguish these times.
+    keys = ("occurred_at",) if event else (
+        "occurred_at", "event_at", "at", "answered_at", "date", "updated_at",
+        "saved_at", "recorded_at", "created_at")
+    for key in keys:
+        raw = node.get(key)
+        if not isinstance(raw, str):
+            continue
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            stamp = dt.replace(tzinfo=timezone.utc).timestamp() if dt.tzinfo is None else dt.timestamp()
+            return stamp, raw, key
+        except ValueError:
+            # An invalid explicit occurrence must not become a save-time event.
+            if key in ("occurred_at", "event_at"):
+                return None, None, key
+    return inherited
+
+
+def _progress_nodes(value: Any, path: str, inherited=(None, None, None)):
+    """Only active continuity containers, never source, checks or history."""
+    if isinstance(value, dict):
+        if value.get("affects_current") is False:
+            return
+        clock = _progress_time(value, inherited)
+        yield path, value, clock
+        for key in _ACTIVE_BRANCHES:
+            if key in value:
+                yield from _progress_nodes(value[key], path + "/" + key, clock)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from _progress_nodes(item, path + "/" + str(index), inherited)
+
+
+def teaching_progress(course: dict, base_path: str = "/courses/0") -> dict:
+    """Select the same saved teaching position for overview, context and memory.
+
+    This is not a chapter maximum or an inference from prose/title/assignment
+    scope. Missing or conflicting evidence remains visible for source review.
+    """
+    candidates = []
+    for path, node, clock in _progress_nodes(course.get("teaching_cursor"), base_path + "/teaching_cursor"):
+        if any(node.get(key) is not None for key in ("topic", "chapter", "section", "stage", "next_step", "next_check")):
+            candidates.append((clock, path, node, node.get("source")))
+    events = course.get("teaching_events") or []
+    if isinstance(events, list):
+        for index, event in enumerate(events):
+            if not isinstance(event, dict) or event.get("affects_current") is not True:
+                continue
+            position = event.get("position")
+            if isinstance(position, dict) and position:
+                candidates.append((_progress_time(event, event=True),
+                                   f"{base_path}/teaching_events/{index}/position", position, event.get("source")))
+    result = {"status": "missing", "path": None, "record": None, "as_of": None,
+              "conflict": False, "limitations": ["saved_records_only_not_complete_chat_history"]}
+    if candidates:
+        newest = max((row[0][0] for row in candidates if row[0][0] is not None), default=None)
+        current = [row for row in candidates if row[0][0] == newest]
+        # Timestamp and record identity are not part of teaching-position equality.
+        semantic_keys = tuple(key for key in _POSITION_KEYS if key not in
+                              {"id", "occurred_at", "event_at", "at", "date", "updated_at"}) + _PENDING_FIELDS
+        signatures = {json.dumps(_pick(row[2], semantic_keys), sort_keys=True, ensure_ascii=False) for row in current}
+        result["as_of"] = current[0][0][1]
+        if len(signatures) > 1:
+            result.update(status="conflict", conflict=True,
+                          candidates=[{"path": row[1], "as_of": row[0][1]} for row in current])
+            result["limitations"].append("same_time_positions_conflict_review_sources")
+        else:
+            clock, path, node, source = current[-1]
+            record = _pick(node, _POSITION_KEYS)
+            if _size(record) > 1400:
+                record = {"omitted": True, "detail_path": path}
+            result.update(status="recorded", path=path, record=record, as_of=clock[1], as_of_field=clock[2])
+            if source is not None:
+                result["source_path"] = path.removesuffix("/position") + "/source" if "/teaching_events/" in path else path + "/source"
+                if isinstance(source, dict):
+                    summary = _pick(source, ("kind", "thread_id", "turn_ids", "reviewed_at"))
+                    result["source"] = summary if _size(summary) <= 800 else {"omitted": True, "detail_path": result["source_path"]}
+            if clock[2] not in ("occurred_at", "event_at"):
+                result["limitations"].append("legacy_time_may_describe_recording_not_occurrence")
+        if any(row[0][0] is None for row in candidates):
+            result["limitations"].append("undated_positions_cannot_be_ordered")
+    else:
+        newest = None
+    notes = course.get("assistant_notes")
+    if notes:
+        review = []
+        for index, note in enumerate(notes if isinstance(notes, list) else [notes]):
+            stamp = _progress_time(note)[0] if isinstance(note, dict) else None
+            if stamp is None or newest is None or stamp > newest:
+                review.append(base_path + "/assistant_notes" + ("/" + str(index) if isinstance(notes, list) else ""))
+        if review:
+            result["notes_review"] = {"required": True, "paths": review[-8:], "total": len(review)}
+            result["limitations"].append("newer_or_undated_notes_need_review_no_position_inferred")
+    return result
+
+
+def _progress_dimensions(course: dict, base_path: str) -> dict:
+    focus = course.get("assignment_focus")
+    scope = _pick(focus, ("target", "required_chapters", "task_ids", "meaning")) if isinstance(focus, dict) else _safe(focus)
+    evidence = [base_path + "/" + field for field in
+                ("topic_evidence", "teaching_events", "teaching_cursor", "learning_progress") if course.get(field) is not None]
+    return {"assignment_scope": scope,
+            "mastery": {"status": "not_assessed", "evidence_paths": evidence}}
 
 
 def _id(record: Any, index: int) -> str:
@@ -236,42 +339,75 @@ class _Projection:
         return result
 
 
-def _continuity(cursor: Any, base_path: str, projection: _Projection) -> Any:
-    if cursor is None:
+def _continuity(cursor: Any, base_path: str, projection: _Projection,
+                progress: dict | None = None, course: dict | None = None) -> Any:
+    course_path = base_path.rsplit("/", 1)[0]
+    course = course if course is not None else {"teaching_cursor": cursor}
+    progress = progress if progress is not None else teaching_progress(course, course_path)
+    if cursor is None and progress["status"] == "missing" and not course.get("teaching_events"):
         return None
-    if not isinstance(cursor, dict):
+    if cursor is not None and not isinstance(cursor, dict):
         return _safe(cursor)
-    result = projection.mapping(cursor, base_path, _CURRENT_KEYS)
-    pending = []
-    handoffs = []
-    continuations = []
-    evidence = []
-    for path, node, stamp in _walk_active(cursor, base_path):
+    # Preserve omission locators for legacy fields while displaying the selected
+    # position, rather than an older root cursor alongside a newer continuation.
+    projection.mapping(cursor, base_path, _CURRENT_KEYS)
+    result = _pick(progress.get("record") or {}, _CURRENT_KEYS)
+    selected_path = progress.get("path")
+    if selected_path is None and progress["status"] == "missing":
+        selected_path = base_path
+    active_nodes = list(_progress_nodes(cursor, base_path))
+    if selected_path and "/teaching_events/" in selected_path:
+        index = int(selected_path.split("/teaching_events/", 1)[1].split("/", 1)[0])
+        active_nodes.append((selected_path, course["teaching_events"][index]["position"], (None, None, None)))
+    pending, prior_pending, resolved, handoffs, evidence = [], [], [], [], []
+    for path, node, clock in active_nodes:
         leaf = path.rsplit("/", 1)[-1]
-        if leaf in ("session_handoff", "handoff"):
-            handoffs.append((stamp, path, node))
-        for key in PENDING_KEYS:
-            if key in node and node[key] is not None:
-                pending.append({"path": path + "/" + key, "record": _pending(node[key])})
-        if "next_step" in node or "next_check" in node:
-            continuations.append((stamp, path, node))
-    # Historical attempts remain evidence, but never active questions/handoffs.
+        if selected_path and (path == selected_path or path.startswith(selected_path + "/")) and leaf in ("session_handoff", "handoff"):
+            handoffs.append((clock[0] or 0.0, path, node))
+        for key in _PENDING_FIELDS:
+            if node.get(key) is not None:
+                locator = path + "/" + key
+                if path == selected_path:
+                    items = list(enumerate(node[key])) if isinstance(node[key], list) else [(None, node[key])]
+                    for index, question in items:
+                        question_path = locator + ("/" + str(index) if index is not None else "")
+                        status = question.get("status") if isinstance(question, dict) else None
+                        if status in {"answered", "skipped", "answer_shown", "completed", "solved", "closed", "cancelled", "canceled", "resolved"}:
+                            resolved.append({"path": question_path, "status": status})
+                        else:
+                            pending.append({"path": question_path, "record": _pending(question)})
+                else:
+                    prior_pending.append({"path": locator, "status": "prior_position_needs_review"})
+    # Historical answers remain evidence and are never current pending prompts.
     for path, node, stamp in _walk(cursor, base_path):
         if any(key in node for key in ("answer", "user_answer", "user_attempt", "answered_at", "conditions", "scaffolding", "assisted", "independent")):
-            evidence.append((stamp, path, node))
+            evidence.append((_progress_time(node)[0] or stamp, path, node))
+    for index, event in enumerate(course.get("teaching_events") or []):
+        if not isinstance(event, dict):
+            continue
+        stamp = _progress_time(event, event=True)[0] or 0.0
+        for answer_index, attempt in enumerate(event.get("attempts") or []):
+            if isinstance(attempt, dict) and attempt.get("user_answer") is not None:
+                answer = attempt["user_answer"]
+                if not isinstance(answer, str) or answer.strip():
+                    path = f"{course_path}/teaching_events/{index}/attempts/{answer_index}"
+                    evidence.append((stamp, path, {**attempt, "occurred_at": event.get("occurred_at")}))
     if handoffs:
         _, path, node = max(handoffs, key=lambda row: row[0])
         result["session_handoff"] = {"path": path, "record": _safe(node)}
     if pending:
         result["pending_questions"] = pending
         projection.omit(base_path, "answer_and_marking_fields_hidden")
-    if continuations:
-        _, path, node = max(continuations, key=lambda row: row[0])
-        result["latest_continuation"] = {"path": path, "record": _pick(node, ("id", "next_step", "next_check", "at", "date", "updated_at", "stage", "status"))}
+    if prior_pending:
+        result["prior_pending_questions"] = prior_pending
+    if resolved:
+        result["resolved_questions"] = resolved
+    if progress["status"] == "recorded":
+        result["latest_continuation"] = {"path": progress["path"], "record": deepcopy(progress["record"])}
+    elif progress["conflict"]:
+        result["progress_conflict"] = True
     if evidence:
         _, path, node = max(evidence, key=lambda row: row[0])
-        # Preserve explicit assistance/independence and assessment limits.  Never
-        # manufacture an independent flag from absence of a hint record.
         result["latest_attempt_context"] = {"path": path, "record": _pick(node, _EVIDENCE_KEYS), "full_attempt_available": True,
                                             "scope_note": "Historical evidence only; verify its topic and conditions before applying it to the current lesson."}
     return result
@@ -283,9 +419,15 @@ def _overview(state: dict, detail: bool) -> dict:
         # or unrelated integration state.
         return {"state_revision": state.get("revision"), "mode": "all_courses_detail", "sections": {"courses": [build_context(state, c["id"], True) for c in state.get("courses", [])]}, "omitted": [], "answer_keys_may_be_present": True}
     courses = []
-    for course in state.get("courses", []):
-        cursor = course.get("teaching_cursor")
-        courses.append({"id": course.get("id"), "name": course.get("name"), "aliases": deepcopy(course.get("aliases")), "current_topic": deepcopy(course.get("current_topic")), "next_step": deepcopy(cursor.get("next_step")) if isinstance(cursor, dict) else None, "detail": {"collection": "courses", "record_id": course.get("id")}})
+    for index, course in enumerate(state.get("courses", [])):
+        base = f"/courses/{index}"
+        progress = teaching_progress(course, base)
+        record = progress.get("record") or {}
+        courses.append({"id": course.get("id"), "name": course.get("name"), "aliases": deepcopy(course.get("aliases")),
+                        "current_topic": deepcopy(course.get("current_topic")),
+                        "next_step": deepcopy(record.get("next_step", record.get("next_check"))),
+                        "teaching_progress": progress, **_progress_dimensions(course, base),
+                        "detail": {"collection": "courses", "record_id": course.get("id")}})
     return {"state_revision": state.get("revision"), "state_updated_at": state.get("updated_at"), "mode": "course_overview", "summary": {"course_count": len(courses)}, "sections": {"courses": courses}, "omitted": [{"path": "/courses", "reason": "select_course_for_learning_context"}], "details": {"usage": "context --course COURSE_ID; detail COLLECTION RECORD_ID"}}
 
 
@@ -312,14 +454,15 @@ def build_context(state: dict, course_id: str | None = None, detail: bool = Fals
         result["sections"] = {"course": deepcopy(course), **{key: [_filter_related(row, course_id) for _, row in rows] for key, rows in related.items()}}
         result["answer_keys_may_be_present"] = True
         return result
+    progress = teaching_progress(course, base)
     project = _Projection()
     sections = result["sections"]
     from learning_library.memory import correction_context
     sections['memory_review'] = correction_context(course, base)
     sections['memory_review']['query_usage'] = 'memory --course ' + course_id + ' --query TOPIC'
-    sections["course"] = {"id": course_id, "name": course.get("name"), "current_topic": deepcopy(course.get("current_topic")), "assignment_focus": project.mapping(course.get("assignment_focus"), base + "/assignment_focus", ("target", "required_chapters", "task_ids", "meaning", "api_checked_at", "mapping_updated_at")), "orientation": project.mapping(course.get("orientation"), base + "/orientation", ("core_question", "prerequisites", "required_workflow", "resource_hierarchy", "study_approach", "scope_note", "exam_focus"), 1500), "assistant_notes": project.notes(course.get("assistant_notes"), base + "/assistant_notes"), "teaching_cursor": _continuity(course.get("teaching_cursor"), base + "/teaching_cursor", project), "learning_progress": project.mapping(course.get("learning_progress"), base + "/learning_progress", ("current_chapter", "last_completed_chapter", "chapter_progress_status", "teaching_continuity", "mastery_verified", "required_chapters"))}
+    sections["course"] = {"id": course_id, "name": course.get("name"), "current_topic": deepcopy(course.get("current_topic")), "assignment_focus": project.mapping(course.get("assignment_focus"), base + "/assignment_focus", ("target", "required_chapters", "task_ids", "meaning", "api_checked_at", "mapping_updated_at")), "orientation": project.mapping(course.get("orientation"), base + "/orientation", ("core_question", "prerequisites", "required_workflow", "resource_hierarchy", "study_approach", "scope_note", "exam_focus"), 1500), "assistant_notes": project.notes(course.get("assistant_notes"), base + "/assistant_notes"), "teaching_progress": progress, **_progress_dimensions(course, base), "teaching_cursor": _continuity(course.get("teaching_cursor"), base + "/teaching_cursor", project, progress, course), "learning_progress": project.mapping(course.get("learning_progress"), base + "/learning_progress", ("current_chapter", "last_completed_chapter", "chapter_progress_status", "teaching_continuity", "mastery_verified", "required_chapters"))}
     sections['course']['continuity_policy'] = {
-        'current_position': base + '/teaching_cursor',
+        'current_position': progress.get('path'),
         'history_lookup': 'evidence --course ' + course_id + ' --query TOPIC',
         'missing_evidence': '未查到记录不等于未学过；判断缺口前查跨章节记录及其原文。',
         'coverage_and_mastery': '覆盖核对和学习表现分开；用户自报讲过不证明独立掌握。',
