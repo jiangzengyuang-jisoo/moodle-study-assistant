@@ -100,6 +100,29 @@ class RequestRoutingContractTests(unittest.TestCase):
         self.assertNotIn("Continue or skip requests advance", read("SKILL.md"))
         self.assertIn("continuing does not automatically skip practice", read("SKILL.md"))
 
+    def test_unified_progress_reader_and_verified_save_contract(self):
+        agents = read("AGENTS.md")
+        self.assertIn("teaching-save", agents)
+        self.assertIn("teaching_progress", agents)
+        skill = read("skills/self-study-tutor/SKILL.md")
+        self.assertIn("teaching-save", skill)
+        self.assertIn("teaching_progress", skill)
+        memory = read("docs/MEMORY.md")
+        self.assertIn("## 教学接续保存与漏记检查", memory)
+        self.assertIn("teaching-save", memory)
+        for phrase in ("occurred_at", "expected_revision", "readback_verified", "answer_shown", "source"):
+            self.assertIn(phrase, memory)
+        session = read("docs/SESSION.md")
+        self.assertIn("teaching-save", session)
+        tools = read("docs/TOOLS.md")
+        self.assertIn("## 保存教学进度（teaching-save）", tools)
+        context = read("tools/study/learning_library/context.py")
+        self.assertIn("def teaching_progress", context)
+        progress = read("tools/study/teaching_progress.py")
+        self.assertIn("def save_teaching", progress)
+        self.assertIn("readback_verified", progress)
+        self.assertIn("append-only", progress)
+
     def test_onboarding_tips_do_not_force_first_collection(self):
         entry = read("tools/onboarding/entry.py")
         self.assertIn("只教或复习某一章且本地已有资料时，先读取本地记录并只核对本章文件", entry)

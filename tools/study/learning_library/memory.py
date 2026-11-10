@@ -58,27 +58,36 @@ def correction_context(course, course_path):
 
 
 def inspect_memory(state, course_id, query=None, limit=8):
-    from learning_library.context import _Projection, _continuity, read_detail
+    from learning_library.context import _Projection, _POSITION_KEYS, _progress_dimensions, read_detail, teaching_progress
     if type(limit) is not int or not 1 <= limit <= 20:
         raise ValueError('Memory limit must be between 1 and 20')
     index, course = _course(state, course_id)
+    base = f'/courses/{index}'
+    progress = teaching_progress(course, base)
     claims = []
     for field in ('current_topic', 'teaching_cursor', 'learning_progress'):
         value = course.get(field)
+        path = base + '/' + field
+        if field == 'teaching_cursor' and value is None and course.get('teaching_events'):
+            value = course['teaching_events']
+            path = base + '/teaching_events'
         if value is None:
             continue
-        path = f'/courses/{index}/{field}'
         root_record = {'path': path, 'record_sha256': record_hash(value)}
         projection = _Projection()
-        if field == 'teaching_cursor' and isinstance(value, dict):
-            continuation = _continuity(value, path, projection).get('latest_continuation')
-            if continuation:
-                path = continuation['path']
+        if field == 'teaching_cursor':
+            projection.mapping(value, path, _POSITION_KEYS)
+            if progress['status'] in ('conflict', 'missing'):
+                interpretation = ('conflicting_positions_review_sources' if progress['conflict']
+                                  else 'no_saved_teaching_position')
+                claims.append({'field': field, 'value': None, 'path': None,
+                               'root_record': root_record, 'interpretation': interpretation})
+                continue
+            if progress['path']:
+                path = progress['path']
                 value = read_detail(state, 'path', path)['record']
         preview = projection.mapping(value, path,
-                                     ('topic', 'stage', 'next_step', 'next_check', 'material_id',
-                                      'pages', 'updated_at', 'at', 'date', 'current_chapter',
-                                      'chapter_progress_status'))
+                                     (*_POSITION_KEYS, 'current_chapter', 'chapter_progress_status'))
         if len(json.dumps(preview, ensure_ascii=False)) > 1400:
             preview = {'omitted': True, 'detail_path': path}
         claims.append({'field': field, 'value': preview, 'path': path,
@@ -93,10 +102,11 @@ def inspect_memory(state, course_id, query=None, limit=8):
         visible.append(row); used += size
     answer = {'state_revision': state.get('revision'), 'course_id': course['id'],
               'state_written': False, 'network_started': False, 'claims': claims,
+              'teaching_progress': progress, **_progress_dimensions(course, base),
               'corrections': visible, 'correction_count': len(all_rows),
               'corrections_truncated': len(visible) < len(all_rows),
               'learning_conclusion': 'not_assessed',
-              'note': '课程推进与教学接续分别显示。旧记录不代表本轮重新核验；纠正是用户陈述，须核对，不修改原答、评分或掌握等级。',
+              'note': '作业范围、已记录教学位置与掌握分别显示。记录缺失不等于未学；旧记录不代表全部聊天已核读。纠正须核对，不修改原答、评分或掌握等级。',
               'correction_usage': 'memory-correct --course ID; stdin: id, expected_revision, target_path, target_sha256, statement'}
     if query is not None:
         answer['evidence'] = search_evidence(state, course['id'], query, limit)
@@ -138,7 +148,9 @@ def apply_correction(state, course_id, payload):
 
 
 def validate_preserved(current, draft):
-    """All normal saves preserve previous corrections exactly, in original order."""
+    """Normal saves preserve previous corrections and teaching events exactly."""
+    from teaching_progress import validate_events_preserved
+    validate_events_preserved(current, draft)
     updated = {c.get('id'): c for c in draft.get('courses', []) if isinstance(c, dict)}
     for course in current.get('courses', []):
         previous = course.get('memory_corrections', [])

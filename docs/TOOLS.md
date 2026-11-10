@@ -153,9 +153,19 @@ node tools/moodle/run.mjs download 123 --authorized
 
 所有写入均以最新状态为基础，保留上一版本、验证临时 JSON、检查并发冲突后保存。状态写入必须顺序执行，不能并行提交多个命令。
 
-## 保存教学位置（teaching-event）
+## 保存教学进度（teaching-save）
 
-讲完一章、推进或切换教学位置后，通过标准输入提交一个小事件；程序读最新状态合并、校验、原子保存并至多重建一次视图，成功后不必再跑 `daily.py run/check`：
+`teaching-save` 是新教学进度与原答的统一保存入口。实际讲解、收到并反馈真实作答、切换主题或收尾后，先读最新 `revision`，再把 UTF-8 JSON 交给标准输入；事件以 `courses[].teaching_events` 追加保存，共享锁内完整校验、原子保存后回读确认。相同编号同内容重试不重复记录，同编号换内容或过期 `expected_revision` 拒绝覆盖；写入或回读失败不会返回已保存。该命令不改写旧原答、评分、掌握或 FSRS，也不重建页面视图。
+
+```powershell
+Get-Content -Raw -Encoding UTF8 'tmp/teaching-save.json' | .\tools\study\library.cmd teaching-save --course 课程ID
+```
+
+字段、实际发生时间、聊天/轮次来源、原答与帮助条件、待答题状态及回执说明见 [MEMORY.md](MEMORY.md#教学接续保存与漏记检查)。总览、单科 `context` 与 `memory` 共用同一教学位置读取口径；需要更新页面时再按原流程运行 `daily.py run` 与 `daily.py check`。
+
+## 保存教学位置（teaching-event，兼容旧流程）
+
+`teaching-event` 继续兼容旧流程（引导登记、旧档案、`checks_append`/`review_backlog_append` 等），新教学进度与原答优先用上面的 `teaching-save`。讲完一章、推进或切换教学位置后，通过标准输入提交一个小事件；程序读最新状态合并、校验、原子保存并至多重建一次视图，成功后不必再跑 `daily.py run/check`：
 
 ```powershell
 Get-Content -Raw -Encoding UTF8 'tmp/teaching-event.json' | .\study.cmd --chat "原始用户聊天ID" teaching-event [--operation-id 编号]

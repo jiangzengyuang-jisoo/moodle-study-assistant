@@ -12,7 +12,8 @@
 .\study.cmd --chat "原始用户聊天ID" refresh
 .\study.cmd --chat "原始用户聊天ID" status
 .\study.cmd --chat "原始用户聊天ID" chapter-check --course 课程ID --section "第8章" --mode strict
-.\study.cmd --chat "原始用户聊天ID" teaching-event     # 标准输入一个小 JSON，只交本轮教学位置变化
+.\study.cmd --chat "原始用户聊天ID" teaching-event     # 标准输入一个小 JSON，只交本轮教学位置变化（兼容旧流程）
+.\tools\study\library.cmd teaching-save --course 课程ID   # 标准输入小 JSON，追加实际教学事件并回读确认
 ```
 
 - `continue`：只在当前请求需要校务信息（作业要求、截止日期、公告、讨论）、学习计划或考前准备时使用；普通章节讲解且本地已有该章资料时不用它（走 `library.cmd context --read-only` + `library.cmd chapter-prep` + `study_check_chapter`）。先输出最新本地学习接续，本聊天首次调用再完整检查学校信息，后续复用。
@@ -21,7 +22,8 @@
 - `status`：查看采集、待核读、中断、失败或已核读状态，不联网。
 - `study_check_chapter`：正常章节核对的 Moodle MCP 工具，固定 strict；必填 `course_id`、原主聊天 `chat_id`，用 `section` 或 `module_ids` 指明本章；仅明确重查时 `force: true`。工具本机保存章节回执，不改学习状态或学校信息。详见 [工具合同](TOOLS.md#章节核对工具study_check_chapter)。
 - `chapter-check`：仅工具缺失或 MCP 服务启动/传输故障时的 CLI 后备；相同范围与聊天 ID，不因业务拒绝或审批拒绝换路径。它只核对某一章已有资料与学校文件是否一致（`strict` 比较内容哈希，`quick` 只看大小/修改时间），联网范围限于该课程目录和本章文件；先用本地资料索引与来源映射定位本章模块，匹配不唯一时返回候选和原因，不按数字相同选择整个区块。默认 `strict`；`--modules` 可直接指定模块，本人明确要求重查时加 `--force`。同一聊天、账号、课程、范围和本地文件内容哈希未变时复用最近一次严格回执，不重复联网；本地新增本章资料只核对新增部分，失败或部分完成不算全部核验成功，也不因普通追问自动重试。受限环境的 `STUDY_TOKEN_DECRYPT_FAILED` 例外按 [DSH 单次授权恢复](DSH.md#授权解密失败时申请单次重试) 主动申请原命令重试，获批才执行，最多一次；不因此改用 `refresh` 或 `--force`。不读作业、公告、论坛或日历，不写学习状态、不建索引、不产生核读回执；已有本地资料时开始新一章用它，校务信息仍走 `continue`。判定和处理见 [WORKFLOW.md](WORKFLOW.md#单章资料核对不触发完整采集)。
-- `teaching-event`：只交本轮教学位置变化的小事件保存入口；程序读最新状态、合并、校验、原子保存并至多重建一次视图，成功后不必再跑 `daily.py run/check`。完整字段、禁止项与幂等语义见下文[教学位置事件](#教学位置事件teaching-event)。
+- `teaching-event`：兼容旧流程的小事件保存入口；程序读最新状态、合并、校验、原子保存并至多重建一次视图，成功后不必再跑 `daily.py run/check`。完整字段、禁止项与幂等语义见下文[教学位置事件](#教学位置事件teaching-event)。新教学进度和原答优先用下面的 `teaching-save`。
+- `teaching-save`：新教学进度与原答的统一保存入口；标准输入含 `occurred_at`、聊天/轮次 `source`、`position`、真实 `attempts` 与帮助条件的小事件。共享锁内追加 `teaching_events`、完整校验、原子保存后回读确认；相同编号同内容幂等，过期版本拒绝覆盖。该命令不重建页面视图，需要时再按原流程运行 `daily.py run/check`。字段与示例见 [MEMORY.md](MEMORY.md#教学接续保存与漏记检查)。
 - 教或复习某一章的资料准备用 `tools/study/library.cmd chapter-prep --course 课程ID --section "Topic 6"`（或用 `--modules`）：一次只读返回本章材料/unit 清单、headings 目录、预算内整页正文与 `omitted` 补读命令、公式图表候选页（复用哈希渲染缓存）和本章接续，减少“读一页—再决策”的往返。它的 `strict_check.last_receipt` 只是上次严格回执背景，**不是本轮核验**；本章文件仍须优先用 `study_check_chapter` 严格核对；`strict_check.command` 是 CLI 后备，工具成功后不再双跑，公式/图表仍看原页，整章覆盖仍要逐 unit 核对；批量准备整章不代表一轮讲完整章，保存只对应本轮实际讲解单元。详见 [LIBRARY.md](LIBRARY.md#一次准备一章) 与 [TOOLS.md](TOOLS.md#一次准备一章chapter-prep)。
 
 无关问答不调用以上入口，也不预读学习状态。只维修连接时使用 `diagnose.cmd`（已授权联网才加 `-Online -NoPause`）；确需了解接续时用 `status` 或 `tools/study/library.cmd context --read-only`，不调用会触发完整采集的 `continue/today/refresh`。这些只读查看和诊断不会占用首次采集机会，同一聊天以后开始学习仍正常采集。
@@ -65,6 +67,8 @@
 
 ## 保存不重复、冲突不覆盖
 
+教学位置和原答的增量记录使用 [MEMORY.md 的 teaching-save 入口](MEMORY.md#教学接续保存与漏记检查)，保存后回读确认；该入口复用工作区锁与证据保护，无需全量草稿或学校快照。旧 `teaching-event` 继续兼容，但新教学进度优先用 `teaching-save`。一般状态变更继续遵守以下流程。
+
 - Python 学习写入、资料升级/清理以及 Node 建档/选课统一使用工作区操作系统文件锁。顺序是聊天锁 → 工作区锁 → 资料/缓存锁；网络采集、AI 核读不占用工作区写锁。进程结束后锁自动释放，锁文件存在不表示仍有人占用。
 - `daily.py attempt/feedback` 自动沿用原 `attempt_id/feedback_id` 作为操作编号。其他需要重试的事件先用 `study.cmd --chat "ID" operation-id` 分配编号，提交给 `daily.py --operation-id "编号" ...`；重试必须沿用相同编号和内容。
 - 同一操作的请求摘要与结果随学习状态一起提交。即使运行记录没来得及更新，状态回执仍能判断已保存；重试只补页面，不再计一次作答、反馈或 FSRS 评级。同编号不同内容报冲突。
@@ -75,7 +79,7 @@
 
 ### 教学位置事件（teaching-event）
 
-讲完一章、推进或切换教学位置时，用 `study.cmd --chat "原始用户聊天ID" teaching-event` 保存。它接受标准输入的一个 JSON 小事件，只描述本轮变化；程序在共享锁内读最新状态，合并、刷新计划元数据、执行完整草稿校验（`validate_draft`）、原子保存，并在同一事务内至多重建一次 9 份视图。**成功后不需要再运行 `daily.py run/check`**，也不会覆盖别的课程或已有学习证据。
+讲完一章、推进或切换教学位置时，优先用 [MEMORY.md 的 teaching-save 入口](MEMORY.md#教学接续保存与漏记检查) 保存实际教学事件并回读；旧 `teaching-event` 仅保留兼容旧流程、`checks_append`/`review_backlog_append` 和引导登记。用 `study.cmd --chat "原始用户聊天ID" teaching-event` 时，它接受标准输入的一个 JSON 小事件，只描述本轮变化；程序在共享锁内读最新状态，合并、刷新计划元数据、执行完整草稿校验（`validate_draft`）、原子保存，并在同一事务内至多重建一次 9 份视图。**成功后不需要再运行 `daily.py run/check`**，也不会覆盖别的课程或已有学习证据。
 
 ```powershell
 # 事件 JSON 放在被忽略的 tmp/ 或 Study/ 下；下面是结构示例，值必须来自本轮实际教学

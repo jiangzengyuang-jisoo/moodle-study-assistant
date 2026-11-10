@@ -107,7 +107,8 @@
 .\study.cmd status            # 只看本地状态，不联网
 .\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode strict   # CLI 异常后备；正常使用 study_check_chapter
 .\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode strict --force  # CLI 后备且本人明确要求重新核对
-.\study.cmd teaching-event    # 讲解后保存教学位置（stdin 小 JSON；见 SESSION.md）
+.\study.cmd teaching-event    # 兼容旧流程；新教学进度优先用下面的 teaching-save
+.\tools\study\library.cmd teaching-save --course 课程ID   # 追加实际教学事件并回读（stdin 小 JSON；见 MEMORY.md）
 .\study.cmd refresh           # 本人明确要求更新学校信息时才用
 ```
 
@@ -172,7 +173,7 @@
 ## 5. 只读与数据边界
 
 - Moodle MCP 工具仍不写学校状态；新增章节核对会读取授权文件字节并写本地核对回执，其他查询保持原边界；不注册提交、发帖、改完成状态等操作。选课时确认完整初始化后，刷新通过独立资料阶段自动下载、归档与索引授权课程的可访问内容；仅信息或未授权范围不下载。详见 [课程内容同步](COURSE_CONTENT.md)。
-- 所有学习状态写入仍走正式入口：纯教学位置用 `study.cmd teaching-event`（只交本轮变化，程序合并、校验、原子保存并至多重建一次视图），完整核读用 `study.cmd review`，其他状态用 `state_io.py` 等既有入口；锁、版本哈希、快照绑定、操作去重、历史证据保护不变；助手不直接改写 `state.json`。
+- 所有学习状态写入仍走正式入口：新教学进度与原答用 `library.cmd teaching-save --course ID`（追加实际发生时间、聊天/轮次来源与真实原答，保存后回读确认；见 [MEMORY.md](MEMORY.md#教学接续保存与漏记检查)），旧 `study.cmd teaching-event` 继续兼容；完整核读用 `study.cmd review`，其他状态用 `state_io.py` 等既有入口；锁、版本哈希、快照绑定、操作去重、历史证据保护不变；助手不直接改写 `state.json`。
 - 普通问答、查询或纠正本地记忆不触发 Moodle 联网；只有学习启动或本人明确刷新才检查学校信息。
 - DSH 配置里只有本机路径和 `serverName`，不含凭据；Moodle Token 仍由 Windows DPAPI 加密保存在 `.private/`，不进入聊天、状态或 Git。
 

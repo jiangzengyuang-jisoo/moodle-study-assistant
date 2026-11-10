@@ -17,7 +17,7 @@ _SOLUTIONS = {'answer_key', 'answer_keys', 'correct_answer', 'correct_answers',
               'expected_answer', 'expected_answers', 'solution', 'solutions',
               'rubric', 'marking_scheme', 'answer_check', 'grading_key'}
 _ATTEMPT_COLLECTIONS = {'review_attempts', 'mistakes', 'mock_attempts', 'review_sessions', 'learning_feedback'}
-_COURSE_RECORDS = {'teaching_cursor', 'assistant_notes', 'learning_history', 'practice_history'}
+_COURSE_RECORDS = {'teaching_cursor', 'teaching_events', 'assistant_notes', 'learning_history', 'practice_history'}
 _NON_ATTEMPT_PATHS = _SOLUTIONS | _ANSWERS | {'assessment', 'feedback', 'grading', 'scoring', 'marking'}
 _ANSWER_TIMES = ('answered_at', 'submitted_at', 'attempted_at', 'reviewed_at')
 
