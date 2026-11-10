@@ -8,6 +8,7 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 | Date | Main changes |
 | --- | --- |
+| [2026-11-10](#2026-11-10) | Interpret teaching intent and stage; preserve practice and Feynman checks after important concepts |
 | [2026-11-08](#2026-11-08) | Publish audit fixes for remaining study capacity and bound-answer grading |
 | [2026-11-07](#2026-11-07) | Fix remaining-time limits and grading-state saves; preserve archived evidence and review options, with scoped queries and chapter recovery |
 | [2026-11-06](#2026-11-06) | Complete English changelog, language links, and English README navigation |
@@ -20,6 +21,15 @@ Existing users should first read the [upgrade steps that preserve learning recor
 | [2026-10-16](#2026-10-16) | Built-in self-study tutor with graded hints, Feynman explanations, transfer practice, and independent checks |
 | [2026-10-11](#2026-10-11) | Daily review questions, learning feedback, weekly reviews, exam coverage checks, and mock exams |
 | [2026-09-22](#2026-09-22) | Initial release: Windows installation, school account connection, course information, and learning records |
+
+## 2026-11-10
+
+### Teaching instructions and practice continuity (Codex)
+
+- Interpret continuation, acknowledgment, help and topic changes using intent, teaching stage and scope. Ambiguous continuation does not automatically skip questions or reveal answers; clarify at most once when necessary. Skipping or solving one question does not disable later practice.
+- Alternate explanation and practice by default and check for prolonged explanation without attempts before advancing. Keep Feynman checks after important concepts, with flexible timing and related content grouped together. Respect requests for full explanations, direct answers and topic changes; record coverage separately from mastery.
+- Validation: review simulated continuation, equivalent skip requests, pending-question ambiguity, help and chapter-wide explanation requests; check document changes and references. These are instruction checks, not evidence of improved learning. No runtime code changed or code tests rerun.
+- Usage: follow the upgrade steps that preserve learning records, then have the assistant read the updated repository skill and tutoring rules on the Codex branch. No learning-profile reset is needed. The DeepSeek branch is unchanged.
 
 ## 2026-11-08
 
