@@ -7,7 +7,7 @@
 // touch learning data.
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const DEFAULT_SCHOOL_URL = 'https://moodle.hku.hk'
@@ -64,12 +64,54 @@ export function writeSettings(patch) {
   return next
 }
 
+// Windows directory names are case-insensitive and a path may arrive with
+// either separator, so ownership checks compare resolved, case-folded paths.
+function comparablePath(value) {
+  const resolved = resolve(String(value))
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+}
+
+// True when `candidate` is `owner` itself or lies anywhere inside it. The
+// relation's first segment decides this, so a sibling folder whose name merely
+// starts with ".." (for example "<program>/..hidden") is still treated as
+// inside instead of slipping past a naive startsWith("..") check.
+function sameOrInside(owner, candidate) {
+  const relation = relative(comparablePath(owner), comparablePath(candidate))
+  const first = relation.split(sep)[0]
+  return first !== '..' && !isAbsolute(relation)
+}
+
+// Actionable refusal for a data folder that would overlap the plugin program or
+// the runtime support directory. Both directions are refused: a data folder
+// inside them is replaced on upgrade/repair, and choosing one of their parent
+// folders buries program/support files in personal study material (and lets a
+// later upgrade modify documents on its own).
+function protectedDataDirError(kind, dir, contains) {
+  const example = defaultDataDir()
+  const detail = `${kind}目录（${dir}）`
+  if (contains) {
+    return `资料保存位置不能包含${detail}：该文件夹里已有插件程序/运行环境文件，插件升级或修复运行环境时可能覆盖学习资料。请改选一个独立文件夹，例如 ${example}。`
+  }
+  return `资料保存位置不能是${detail}本身或它里面的文件夹：插件升级会替换程序文件，修复运行环境会重建支持目录，学习资料可能丢失或被打乱。请改选一个独立文件夹，例如 ${example}。`
+}
+
 export function resolveDataDir(value) {
   const raw = String(value ?? '').trim()
   if (!raw) throw new Error('请提供资料保存文件夹的绝对路径')
   const expanded = raw.replace(/^~(?=$|[\\/])/, homedir())
   if (!isAbsolute(expanded)) throw new Error('资料保存位置必须是绝对路径，例如 C:\\Users\\你\\Documents\\MoodleStudy')
-  return resolve(expanded)
+  const resolved = resolve(expanded)
+  // Personal data must stay separate from the read-only program package and
+  // the machine-local runtime (venv, logs, setup state). The default location
+  // (Documents\MoodleStudy) and any other independent absolute folder pass.
+  for (const [kind, dir] of [
+    ['插件程序', programDir()],
+    ['运行支持', supportDir()],
+  ]) {
+    if (sameOrInside(dir, resolved)) throw new Error(protectedDataDirError(kind, dir, false))
+    if (sameOrInside(resolved, dir)) throw new Error(protectedDataDirError(kind, dir, true))
+  }
+  return resolved
 }
 
 export function defaultDataDir() {

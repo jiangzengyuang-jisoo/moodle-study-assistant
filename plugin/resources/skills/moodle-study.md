@@ -1,6 +1,6 @@
 ---
 name: moodle-study
-description: "使用本插件在 DeepSeek Harness 聊天中完成 Moodle 学习：首次设置与中断恢复、读取本地课程资料、按章节教学、核对本章文件、保存教学位置，以及在需要时更新学校作业/公告信息。用于学生询问课程学习、复习、课件内容、首次连接学校账号、设置资料位置、更换课程/位置、学校暂时连不上或工具报错时；不用于普通网页检索或其他学校事务。"
+description: "使用本插件在 DeepSeek Harness 聊天中完成 Moodle 学习：首次设置与中断恢复、读取本地课程资料、按章节教学、核对本章文件、保存教学进度与原答，以及在需要时更新学校作业/公告信息。用于学生询问课程学习、复习、课件内容、首次连接学校账号、设置资料位置、更换课程/位置、学校暂时连不上或工具报错时；不用于普通网页检索或其他学校事务。"
 ---
 
 # Moodle 学习助手（DSH 插件）使用说明
@@ -8,7 +8,7 @@ description: "使用本插件在 DeepSeek Harness 聊天中完成 Moodle 学习�
 本插件提供三类工具，全部在 Harness 内直接调用。MCP 工具在界面中显示为 `mcp__moodle_study__<名称>`（下文用短名）；Host 工具 `moodle_study_chat`、`moodle_study_status` 始终可用。
 
 - **设置与恢复工具**（每次启动都注册）：`study_setup_status`、`study_setup_location`、`study_setup_runtime`、`study_setup_courses`、`study_setup_select_courses`、`study_setup_sync`、`study_setup_finish`、`study_connect_school`、`study_reconnect`、`study_job_status`。
-- **本地学习工具**（每次启动都注册；除 `study_refresh` 需要联网外，其余只依赖本机资料与运行环境）：`study_local_context`、`study_chapter_prep`、`study_material_read`、`study_material_render`、`study_teaching_event`、`study_local_status`、`study_refresh`。
+- **本地学习工具**（每次启动都注册；除 `study_refresh` 需要联网外，其余只依赖本机资料与运行环境）：`study_local_context`、`study_chapter_prep`、`study_material_read`、`study_material_render`、`study_teaching_save`、`study_teaching_event`、`study_local_status`、`study_refresh`。
 - **Moodle 只读工具**：15 个学校查询工具（课程、作业、测验、论坛、日历、成绩、通知、资料、站点信息、讨论）与 `study_check_chapter`。它们始终注册，首次调用时才连接学校；连不上时返回结构化连接状态，不会返回成功或假数据。章节核对工具在设置好资料位置并登录过学校后出现。
 
 不需要让学生运行命令、修改配置文件或理解技术术语。
@@ -44,12 +44,12 @@ description: "使用本插件在 DeepSeek Harness 聊天中完成 Moodle 学习�
    - 用 `study_chapter_prep` 一次批量准备本章材料/目录/正文/图表候选页，按返回的 `omitted` 提示用 `study_material_read` 补读，需要核对公式图表时用 `study_material_render` 看原页；
    - 用 `study_check_chapter` 严格核对本章文件。参数：`course_id`（本地课程 ID）、`section` 或 `module_ids`、必填 `chat_id`（先调用 `moodle_study_chat` 取得）；同一聊天同一章且本地资料未变时会复用回执，不要额外传 `force`；只有学生明确要求重新核对才传 `force: true`。学校连不上或核对失败时会如实返回失败状态，不会把失败写成成功回执，也不要把它当成本轮已核验最新版本。
 3. 材料够用后立即输出实质讲解，不要先做维护、保存或补跑计划页面。默认一次讲透一个适量知识点（具体例子 → 概念/符号/条件 → 示范 → 一个相关问题），等学生回答后再推进；学生明确要求整章讲义、完整答案或不要互动时按其要求一次交付。
-4. 讲解确实输出后，用 `study_teaching_event` 保存本轮教学位置（`chat_id` + 只含本轮变化的 `event`）；不要手写整份学习状态。
+4. 讲解确实输出、学生给出真实作答，或教学位置/原答实际变化后，用 `study_teaching_save` 保存：传 `course_id`、`chat_id`（先调用 `moodle_study_chat` 取得）和只含本轮变化的 `event`；`event.id` 由你提供并在重试时沿用同一编号，`expected_revision` 一般省略，工具会读取当前状态版本，并发变化由引擎拒绝并返回可重试错误。`source.kind` 固定为 chat、`source.thread_id` 由 `chat_id` 补全，`occurred_at`、`event_type`、`affects_current`、`turn_ids`、`position`、`attempts`（真实原答）由引擎校验。只有返回 `readback_verified=true` 才能说已保存；失败如实说明，不要手写整份学习状态。旧 `study_teaching_event` 仅兼容旧流程（如引导登记），新教学进度与原答优先用 `study_teaching_save`。
 5. 学生需要作业要求、截止日期、公告、考试安排，或本地缺该章资料时，才用 `study_refresh`（先取 `chat_id`）采集最新学校信息；普通讲解不查询或汇报无关的公告、在线练习、旧章未答题。
 
 ## 学校暂时连不上时
 
-- 本地学习工具（`study_local_context`、`study_chapter_prep`、`study_material_read`、`study_material_render`、`study_teaching_event`、`study_local_status`）只依赖本机资料与运行环境，学校网络故障时仍然可用：可以继续读本地资料、按章节讲解并保存教学记录。
+- 本地学习工具（`study_local_context`、`study_chapter_prep`、`study_material_read`、`study_material_render`、`study_teaching_save`、`study_teaching_event`、`study_local_status`）只依赖本机资料与运行环境，学校网络故障时仍然可用：可以继续读本地资料、按章节讲解并保存教学记录。
 - 联网工具失败会返回结构化连接状态（`kind`、`next_step`、`requires_login` 等）。**网络/接口暂时故障**用 `study_reconnect` 或直接重试联网工具，不需要重新登录；只有**登录失效或凭据无法解密**（`requires_login: true`）时，才由学生本人调用 `study_connect_school` 重新登录。
 - 需要最新学校信息而暂时拿不到时，明确告诉学生“当前不是最新线上结果”，不要声称已完成同步、已核验最新版本或最新通知；`study_refresh` 失败时同样如实说明。
 - 不承诺离线模型推理：断网只保证读取本机资料与本地教学记录，模型调用仍依赖 Harness 当前的模型服务。

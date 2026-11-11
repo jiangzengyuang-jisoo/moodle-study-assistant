@@ -221,6 +221,10 @@ def main():
     args = parser.parse_args()
     with state_io.workspace_lock(args.state):
         state_io.prepare_state(args.state)
+        if not args.state.exists():
+            raise ValueError(
+                '学习档案主状态缺失；不会创建空白档案，也不会覆盖 state.previous.json。'
+                '请先备份 Study/_System，再由助手核对并恢复主状态后继续。')
         original = args.state.read_bytes()
         state = json.loads(original.decode("utf-8-sig"))
         loop_enabled = state.get("settings", {}).get("learning_loop", {}).get("enabled") is True

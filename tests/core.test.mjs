@@ -1,10 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { initialize, normalizeSite, ReadOnlyClient } from '../tools/moodle/core.mjs';
 import { collectRefresh, redactEvidence } from '../tools/moodle/refresh.mjs';
+
+const ROOT = dirname(fileURLToPath(import.meta.url)) + '/..';
+const venvPython = [join(ROOT, '.venv/Scripts/python.exe'), join(ROOT, '.venv/bin/python')]
+  .find(candidate => existsSync(candidate)) || 'python';
 
 test('initialization is blank, portable and preserves existing state', () => {
   const root = mkdtempSync(join(tmpdir(), '学习 project '));
@@ -98,4 +104,60 @@ test('invalid release target fails before creating state or configuration', () =
     assert.throws(() => initialize(root), /Invalid client/);
     assert.equal(existsSync(join(root, 'Study')), false);
   } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('a missing primary state is never replaced when a recovery backup exists', () => {
+  const root = mkdtempSync(join(tmpdir(), 'lost state '));
+  try {
+    const system = join(root, 'Study/_System');
+    mkdirSync(system, { recursive: true });
+    const backupPath = join(system, 'state.previous.json');
+    const backup = JSON.stringify({ revision: 42, courses: [{ id: 'sentinel', name: 'Last recoverable profile' }], audit_sentinel: 'must-survive' });
+    writeFileSync(backupPath, backup, 'utf8');
+
+    // Re-running the real setup first step must stop before creating anything:
+    // a blank state would later be saved over state.previous.json.
+    assert.throws(() => initialize(root), /备份|恢复|state\.previous/);
+    assert.equal(existsSync(join(system, 'state.json')), false);
+    assert.equal(existsSync(join(root, 'config.local.json')), false);
+    assert.equal(readFileSync(backupPath, 'utf8'), backup);
+
+    // The direct review initialization must fail closed as well, byte-identically.
+    const review = spawnSync(venvPython, [join(ROOT, 'tools/study/review.py'), '--state', join(system, 'state.json'), 'init'],
+      { cwd: ROOT, encoding: 'utf8', windowsHide: true, timeout: 60000,
+        env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } });
+    assert.notEqual(review.status, 0);
+    assert.equal(existsSync(join(system, 'state.json')), false);
+    assert.equal(readFileSync(backupPath, 'utf8'), backup);
+  } finally { rmSync(root, { recursive: true, force: true}); }
+});
+
+test('other recovery artifacts also block a blank initialization', () => {
+  for (const artifact of [
+    ['Study/_System/refresh-latest.json', '{"pages": []}'],
+    ['Study/_System/LibrarySync/latest.json', '{"courses": []}'],
+    ['Study/_System/Backups/keep.txt', 'previous state backup'],
+    ['Study/_System/Runtime/timings.jsonl', '{"stage": "state_save"}'],
+    ['.private/moodle-token.dpapi', 'encrypted token sentinel'],
+  ]) {
+    const root = mkdtempSync(join(tmpdir(), 'lost artifact '));
+    try {
+      mkdirSync(join(root, dirname(artifact[0])), { recursive: true });
+      writeFileSync(join(root, artifact[0]), artifact[1], 'utf8');
+      assert.throws(() => initialize(root), /备份|恢复/, `expected refusal for ${artifact[0]}`);
+      assert.equal(existsSync(join(root, 'Study/_System/state.json')), false);
+    } finally { rmSync(root, { recursive: true, force: true}); }
+  }
+});
+
+test('a genuinely new folder still initializes and repeats idempotently', () => {
+  const root = mkdtempSync(join(tmpdir(), 'fresh init '));
+  try {
+    initialize(root);
+    const path = join(root, 'Study/_System/state.json');
+    const first = readFileSync(path);
+    initialize(root);
+    assert.deepEqual(readFileSync(path), first);
+    assert.equal(existsSync(join(root, 'Study/_System/state.previous.json')), false);
+  } finally { rmSync(root, { recursive: true, force: true}); }
 });

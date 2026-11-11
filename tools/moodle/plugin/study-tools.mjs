@@ -12,7 +12,7 @@ import { z } from 'zod'
 import { jobSummary, runningJob, startJob } from './jobs.mjs'
 import { remoteFailure } from './onboarding-tools.mjs'
 import { engineEnv, pythonStep, venvPython } from './python-runtime.mjs'
-import { programDir, readSettings, statePath, supportDir } from './settings.mjs'
+import { programDir, readSettings, readState, statePath, supportDir } from './settings.mjs'
 
 const MAX_BUFFER = 64 * 1024 * 1024
 
@@ -91,6 +91,18 @@ function runEngine(script, args, { stdin = null, timeoutMs = 240000 } = {}) {
 function toolResult(result) {
   if (!result.ok) return output(result.failure, true)
   return output(result.payload)
+}
+
+// Current state revision used as the optimistic-concurrency token of the
+// teaching-save entry. Reading it here keeps the tool contract simple (callers
+// may omit expected_revision) while the engine still detects a concurrent
+// writer: it re-reads the state under the workspace lock and refuses to append
+// when the revision moved on, so nothing is silently overwritten.
+function currentStateRevision() {
+  const settings = readSettings()
+  if (!settings?.dataDir) return null
+  const revision = readState(settings.dataDir)?.revision
+  return Number.isInteger(revision) && revision >= 0 ? revision : null
 }
 
 function renderBlocks(result) {
@@ -245,6 +257,82 @@ export function registerStudyTools(server, context = {}) {
       if (event.onboarding) payload.onboarding = event.onboarding
       return toolResult(
         runEngine('session.py', ['--chat', args.chat_id, 'teaching-event'], {
+          stdin: JSON.stringify(payload),
+          timeoutMs: 120000,
+        }),
+      )
+    },
+  )
+
+  server.registerTool(
+    'study_teaching_save',
+    {
+      title: '保存教学进度与原答',
+      description:
+        'Append what was actually taught in this turn, or the student\'s real original answer, through the official teaching-save entry (a small append-only event; never a whole-state rewrite). Use it after the substantive explanation was actually shown or a real answer was received, for new teaching progress and original answers. The engine appends one event, validates it, saves atomically and re-reads the state, so only report "saved" when the returned readback_verified is true; a failure is returned as a real error and nothing is reported as saved. chat_id fills source.thread_id (source.kind is always chat). Provide a stable event.id yourself and reuse it unchanged when retrying; expected_revision may be omitted, in which case the tool reads the current state revision (a concurrent change is rejected by the engine with a retryable error). views_need_refresh means building the daily views is still needed if pages are required. The old study_teaching_event tool remains only for legacy flows such as onboarding registration.',
+      inputSchema: z.object({
+        course_id: z.string().trim().min(1).max(200).describe('Local course id that was actually taught.'),
+        chat_id: z.string().trim().min(1).max(500).describe('Current main-chat id returned by moodle_study_chat; fills source.thread_id.'),
+        expected_revision: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe('Optional state revision the caller read; omit to use the current revision (recommended).'),
+        event: z.object({
+          id: z
+            .string()
+            .trim()
+            .min(1)
+            .max(120)
+            .describe('Stable unique event id provided by the caller; reuse the same id and content when retrying.'),
+          occurred_at: z.string().trim().min(1).max(64).describe('Actual event time, ISO 8601 with timezone; never a future time.'),
+          event_type: z
+            .string()
+            .trim()
+            .min(1)
+            .max(40)
+            .describe(
+              'explanation, attempt, feedback, topic_change, session_end, history_recovery or answer_exposure; validated by the engine.',
+            ),
+          affects_current: z.boolean(),
+          turn_ids: z
+            .array(z.string().trim().max(200))
+            .max(100)
+            .describe('Chat turns actually inspected/produced for this event; validated by the engine (non-empty, unique).'),
+          position: z.record(z.any()).describe('Teaching position (topic/stage/next_step + optional chapter, section, material_id, pages, pending_question); validated by the engine.'),
+          attempts: z
+            .array(z.record(z.any()))
+            .max(20)
+            .optional()
+            .describe('Real original answers with id, question, user_answer, conditions and source_turn_id; validated by the engine.'),
+          reviewed_at: z.string().trim().max(64).optional().describe('Set only when backfilling an older chat that was re-read now.'),
+        }),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async (args) => {
+      const event = args.event
+      const payload = {
+        id: event.id,
+        occurred_at: event.occurred_at,
+        event_type: event.event_type,
+        affects_current: event.affects_current,
+        source: { kind: 'chat', thread_id: args.chat_id, turn_ids: event.turn_ids },
+        position: event.position,
+      }
+      if (event.reviewed_at) payload.source.reviewed_at = event.reviewed_at
+      if ('attempts' in event) payload.attempts = event.attempts
+      if (Number.isInteger(args.expected_revision)) payload.expected_revision = args.expected_revision
+      else {
+        // Omitted means "use the revision I just read". If the state cannot be
+        // read, leave it out and let the engine/runEngine report the real
+        // precondition failure instead of inventing a revision.
+        const revision = currentStateRevision()
+        if (revision !== null) payload.expected_revision = revision
+      }
+      return toolResult(
+        runEngine('library.py', ['teaching-save', '--course', args.course_id], {
           stdin: JSON.stringify(payload),
           timeoutMs: 120000,
         }),

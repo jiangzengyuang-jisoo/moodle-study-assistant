@@ -102,6 +102,28 @@ def read(path):
     return json.loads(Path(path).read_text(encoding='utf-8-sig'))
 
 
+def recovery_artifacts(path):
+    """Local evidence that a learning profile existed before its primary state.
+
+    Creating a blank state over such a folder lets the next initialization save
+    the blank state as ``state.previous.json`` and destroy the last recoverable
+    copy, so initialization must stop and let the assistant restore instead.
+    """
+    path = Path(path)
+    system = path.parent
+    candidates = [
+        system / 'state.previous.json',
+        system / 'refresh-latest.json',
+        system / 'refresh-last-complete.json',
+        system / 'LibrarySync' / 'latest.json',
+        system / 'Backups',
+        system / 'Runtime' / 'timings.jsonl',
+    ]
+    if len(system.parents) > 1:
+        candidates.append(system.parents[1] / '.private' / 'moodle-token.dpapi')
+    return [str(candidate) for candidate in candidates if candidate.exists()]
+
+
 @locked
 def prepare_state(path):
     """Resolve file/state transactions before another supported writer reads state.
@@ -282,6 +304,11 @@ def bridge(path, mode, payload):
     prepare_state(path)
     if mode == 'init':
         if not path.exists():
+            artifacts = recovery_artifacts(path)
+            if artifacts:
+                raise ValueError(
+                    '学习档案主状态缺失，但仍存在可恢复记录（' + '、'.join(artifacts)
+                    + '）。已停止创建空白档案，以免覆盖最后备份；请先备份 Study/_System，再由助手核对并恢复后再继续。')
             atomic(path, payload)
         return
     if mode != 'replace':

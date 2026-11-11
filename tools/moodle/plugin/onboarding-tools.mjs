@@ -55,8 +55,10 @@ const LOCAL_STUDY_TOOLS = [
   'study_chapter_prep',
   'study_material_read',
   'study_material_render',
+  'study_teaching_save',
   'study_teaching_event',
   'study_local_status',
+  'study_refresh',
 ]
 
 let defaultGateway = null

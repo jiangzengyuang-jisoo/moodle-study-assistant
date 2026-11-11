@@ -93,6 +93,7 @@ async function main() {
     'study_chapter_prep',
     'study_material_read',
     'study_material_render',
+    'study_teaching_save',
     'study_teaching_event',
     'study_local_status',
     'study_refresh',
@@ -137,6 +138,75 @@ async function main() {
     'teaching event tool returns a structured engine result',
     typeof teaching.content?.[0]?.text === 'string' && teaching.content[0].text.length > 0,
     teaching.content?.[0]?.text?.slice(0, 160),
+  )
+
+  // New teaching-save contract: exercise the real tool against the real engine
+  // in the isolated verification profile (a synthetic course is added only to
+  // that throwaway data directory).
+  const studyDir = join(programDir, 'tools', 'study')
+  const statePath = join(dataDir, 'Study', '_System', 'state.json')
+  const addCourse = spawnSync(venvPython, ['-B', '-c', [
+    'import json, sys',
+    `sys.path.insert(0, ${JSON.stringify(studyDir)})`,
+    'import state_io',
+    `path = ${JSON.stringify(statePath)}`,
+    "state = json.loads(open(path, encoding='utf-8-sig').read())",
+    'draft = json.loads(json.dumps(state))',
+    "draft['courses'].append({'id': 'verify-course', 'name': 'Verification course'})",
+    "state_io.bridge(path, 'replace', {'expected': state, 'state': draft})",
+    'print("course-added")',
+  ].join('\n')], { env: { ...process.env }, encoding: 'utf8', timeout: 120000, windowsHide: true })
+  record('verification course is prepared through the shared state writer', addCourse.status === 0, String(addCourse.stderr ?? '').slice(-400))
+
+  const saveEvent = {
+    id: 'verify-teaching-save-1',
+    occurred_at: new Date(Date.now() - 60 * 1000).toISOString(),
+    event_type: 'explanation',
+    affects_current: true,
+    turn_ids: ['verify-turn-1'],
+    position: {
+      topic: 'Verification topic',
+      stage: 'explanation_completed_check_pending',
+      next_step: 'verification only',
+    },
+  }
+  const saveResult = await client.callTool({
+    name: 'study_teaching_save',
+    arguments: {
+      course_id: 'verify-course',
+      chat_id: 'session-00000000-0000-4000-8000-000000000000',
+      event: saveEvent,
+    },
+  })
+  const savePayload = parseTool(saveResult)
+  record(
+    'teaching-save tool saves through the real engine and verifies readback',
+    saveResult.isError !== true && savePayload?.saved === true && savePayload?.readback_verified === true
+      && savePayload?.event_id === saveEvent.id && typeof savePayload?.revision === 'number',
+    savePayload,
+  )
+  const savedState = JSON.parse(readFileSync(statePath, 'utf8'))
+  const savedCourse = savedState.courses.find((course) => course.id === 'verify-course')
+  record(
+    'teaching event is appended to the isolated state (append-only)',
+    Array.isArray(savedCourse?.teaching_events) && savedCourse.teaching_events.length === 1
+      && savedCourse.teaching_events[0].id === saveEvent.id,
+    savedCourse?.teaching_events?.length ?? null,
+  )
+  const retry = await client.callTool({
+    name: 'study_teaching_save',
+    arguments: {
+      course_id: 'verify-course',
+      chat_id: 'session-00000000-0000-4000-8000-000000000000',
+      event: saveEvent,
+    },
+  })
+  const retryPayload = parseTool(retry)
+  record(
+    'teaching-save retry is idempotent (no duplicate event)',
+    retry.isError !== true && retryPayload?.already_saved === true
+      && retryPayload?.revision === savePayload?.revision,
+    retryPayload,
   )
 
   await client.close()

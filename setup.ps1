@@ -7,6 +7,11 @@ if ($clientTarget.version -ne 1 -or $clientTarget.client -notin @('codex', 'deep
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw 'Install Node.js 22+ LTS from https://nodejs.org/ then reopen setup.cmd.' }
 & node -e "if(Number(process.versions.node.split('.')[0])<22)process.exit(1)"
 if ($LASTEXITCODE -ne 0) { throw 'Node.js 22 or newer is required.' }
+$stateFile = Join-Path $PSScriptRoot 'Study/_System/state.json'
+$previousStateFile = Join-Path $PSScriptRoot 'Study/_System/state.previous.json'
+if (-not (Test-Path -LiteralPath $stateFile) -and (Test-Path -LiteralPath $previousStateFile)) {
+    throw 'The learning profile state.json is missing while state.previous.json still exists. Initialization was stopped so the last recoverable backup is not replaced with a blank profile. Back up Study/_System and restore the primary state before running setup again; do not delete the backup.'
+}
 $setupPython = Find-StudyPython -Root $PSScriptRoot -PreferredPython $PythonExecutable
 if (-not $setupPython) { throw 'Install Python 3.11+ from https://www.python.org/downloads/windows/ and enable Add Python to PATH.' }
 $pythonCommand = $setupPython.Command
