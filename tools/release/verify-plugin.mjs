@@ -5,18 +5,28 @@
 // It exercises the real MCP handshake, the always-available setup/recovery
 // tools, the local study tools, the Python runtime bootstrap and the
 // structured school-unavailable behaviour of remote tools.
+//
+// The target is the local build by default; pass an absolute unpacked package
+// directory as the first argument (or set MOODLE_STUDY_VERIFY_PACKAGE) to verify
+// an actually installed/released npm artifact. The study-tool verification is
+// then run as a child process against that same resolved target.
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
+import { join } from 'node:path'
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
-const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
-// Default target is the built package; pass an absolute package directory as
-// the first argument to verify an actually installed npm artifact instead.
-const packageDir = process.argv[2] ? resolve(process.argv[2]) : join(repoRoot, 'dist', 'moodle-study-assistant')
-const entry = join(packageDir, 'program', 'tools', 'moodle', 'mcp-entry.mjs')
+import { repoRoot, resolveVerifyTarget } from './verify-target.mjs'
+
+let target
+try {
+  target = resolveVerifyTarget()
+} catch (error) {
+  console.error(`verify-plugin: ${error?.message ?? error}`)
+  process.exit(1)
+}
+const { packageDir, entry, version } = target
 const workRoot = join(repoRoot, 'tmp', 'plugin-verify')
 const supportDir = join(workRoot, 'support')
 const dataDir = join(workRoot, 'data')
@@ -66,9 +76,10 @@ const REMOTE_TOOL_SAMPLE = ['moodle_list_courses', 'moodle_get_course', 'moodle_
 
 async function main() {
   if (!existsSync(entry)) {
-    console.error('verify-plugin: build the plugin first (npm run build:plugin)')
+    console.error(`verify-plugin: target is missing the MCP entry: ${entry}`)
     process.exit(1)
   }
+  console.log(`verify-plugin: target ${packageDir} (${version})`)
   rmSync(workRoot, { recursive: true, force: true })
   mkdirSync(supportDir, { recursive: true })
   mkdirSync(dataDir, { recursive: true })
@@ -122,6 +133,23 @@ async function main() {
   record('status reports local study unavailable before the location is set', status0.local_study?.available === false)
   record('no personal data dir is created before the student chooses one', !existsSync(join(dataDir, 'Study')))
 
+  // The installed package is replaced as a whole on upgrade/uninstall, so a
+  // data folder anywhere inside it must be refused, not only under `program`.
+  const refusedInsidePackage = await client.callTool({
+    name: 'study_setup_location',
+    arguments: { data_dir: join(packageDir, 'data') },
+  })
+  const refusedInsidePackageText = toolText(refusedInsidePackage)
+  record(
+    'location tool refuses a folder inside the installed plugin package',
+    refusedInsidePackage.isError === true && refusedInsidePackageText.includes('插件安装包目录'),
+    refusedInsidePackageText.slice(0, 200),
+  )
+  record(
+    'no package folder is created by the refused location',
+    !existsSync(join(packageDir, 'data')),
+  )
+
   const remoteEarly = await client.callTool({ name: 'moodle_list_courses', arguments: {} })
   const remoteEarlyText = toolText(remoteEarly)
   record(
@@ -164,6 +192,7 @@ async function main() {
 
   const runtime = parseTool(await client.callTool({ name: 'study_setup_runtime', arguments: {} }))
   record('runtime install starts as a background job', runtime.ok === true && Boolean(runtime.job?.id), runtime.job?.state)
+  const runtimeJobId = runtime.job?.id ?? null
 
   let runtimeDone = false
   let runtimeState = null
@@ -211,6 +240,24 @@ async function main() {
   const job = parseTool(await client.callTool({ name: 'study_job_status', arguments: {} }))
   record('job status tool responds', job.ok === true, job.running)
 
+  // An explicit job_id is a lookup of exactly that job, not "whatever is
+  // running or newest". The runtime job has already finished by now.
+  const jobById = parseTool(
+    await client.callTool({ name: 'study_job_status', arguments: { job_id: runtimeJobId ?? 'missing-runtime-job' } }),
+  )
+  record(
+    'job status returns the requested job id even after it finished',
+    jobById.ok === true && jobById.job?.id === runtimeJobId && jobById.running === false,
+    { requested: runtimeJobId, returned: jobById.job?.id ?? null, running: jobById.running ?? null },
+  )
+  const unknownJob = await client.callTool({ name: 'study_job_status', arguments: { job_id: 'missing-job-id' } })
+  const unknownJobPayload = parseTool(unknownJob)
+  record(
+    'job status reports an unknown id instead of returning another job',
+    unknownJob.isError === true && unknownJobPayload.error === 'JOB_NOT_FOUND' && !unknownJobPayload.job,
+    unknownJobPayload.error ?? unknownJobPayload.job?.id ?? null,
+  )
+
   const settingsFile = join(supportDir, 'settings.json')
   if (existsSync(settingsFile)) {
     const supportSettings = JSON.parse(readFileSync(settingsFile, 'utf8'))
@@ -243,6 +290,20 @@ async function main() {
     'package size is plausible for a self-contained package',
     programBytes > 5 * 1024 * 1024 && programBytes < 80 * 1024 * 1024,
     `${Math.round((programBytes / 1024 / 1024) * 10) / 10} MB`,
+  )
+
+  // Target parity: the study-tool verifier runs as a child process against the
+  // same resolved package, so the startup and study-tool checks cannot verify
+  // different artifacts.
+  const studyVerifier = spawnSync(
+    process.execPath,
+    [join(repoRoot, 'tools', 'release', 'verify-study-tools.mjs'), packageDir],
+    { stdio: 'inherit', env: { ...process.env }, timeout: 600000 },
+  )
+  record(
+    'study-tool verification runs against the same package target',
+    !studyVerifier.error && studyVerifier.status === 0,
+    studyVerifier.error ? String(studyVerifier.error.message ?? studyVerifier.error) : `exit ${studyVerifier.status}`,
   )
 
   const failed = results.filter((item) => !item.ok)

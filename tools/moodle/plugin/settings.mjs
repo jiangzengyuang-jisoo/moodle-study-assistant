@@ -7,7 +7,7 @@
 // touch learning data.
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const DEFAULT_SCHOOL_URL = 'https://moodle.hku.hk'
@@ -18,6 +18,27 @@ export function programDir() {
   if (process.env.MOODLE_STUDY_PROGRAM_DIR) return resolve(process.env.MOODLE_STUDY_PROGRAM_DIR)
   // tools/moodle/plugin/settings.mjs -> plugin package / program root
   return fileURLToPath(new URL('../../..', import.meta.url))
+}
+
+// The installed bundle ships its program files under `<package>/program` and
+// keeps the host entry, manifest, resources and bundled node_modules at
+// `<package>/`. Upgrading, repairing or uninstalling the plugin replaces that
+// whole package directory, so personal learning data must stay outside it (not
+// only outside the `program` subdirectory). A source checkout has no such
+// package boundary: there the parent directory of the repository is not
+// protected and `programDir()` alone (the repository root) is guarded instead.
+export function pluginPackageDir() {
+  if (process.env.MOODLE_STUDY_PLUGIN_DIR) return resolve(process.env.MOODLE_STUDY_PLUGIN_DIR)
+  const program = programDir()
+  if (basename(program) !== 'program') return null
+  const candidate = dirname(program)
+  try {
+    const manifest = JSON.parse(readFileSync(join(candidate, 'package.json'), 'utf8'))
+    if (manifest?.name === 'dsh-moodle-study') return candidate
+  } catch {
+    // Source checkout or test fixture without an installed package manifest.
+  }
+  return null
 }
 
 export function supportDir() {
@@ -81,18 +102,19 @@ function sameOrInside(owner, candidate) {
   return first !== '..' && !isAbsolute(relation)
 }
 
-// Actionable refusal for a data folder that would overlap the plugin program or
-// the runtime support directory. Both directions are refused: a data folder
-// inside them is replaced on upgrade/repair, and choosing one of their parent
-// folders buries program/support files in personal study material (and lets a
-// later upgrade modify documents on its own).
+// Actionable refusal for a data folder that would overlap the plugin program,
+// the whole installed package or the runtime support directory. Both
+// directions are refused: a data folder inside them is replaced on
+// upgrade/uninstall/repair, and choosing one of their parent folders buries
+// program/support files in personal study material (and lets a later upgrade
+// modify documents on its own).
 function protectedDataDirError(kind, dir, contains) {
   const example = defaultDataDir()
   const detail = `${kind}目录（${dir}）`
   if (contains) {
-    return `资料保存位置不能包含${detail}：该文件夹里已有插件程序/运行环境文件，插件升级或修复运行环境时可能覆盖学习资料。请改选一个独立文件夹，例如 ${example}。`
+    return `资料保存位置不能包含${detail}：该文件夹里已有插件程序、运行环境或安装包文件，插件升级、修复运行环境或卸载时可能覆盖学习资料。请改选一个独立文件夹，例如 ${example}。`
   }
-  return `资料保存位置不能是${detail}本身或它里面的文件夹：插件升级会替换程序文件，修复运行环境会重建支持目录，学习资料可能丢失或被打乱。请改选一个独立文件夹，例如 ${example}。`
+  return `资料保存位置不能是${detail}本身或它里面的文件夹：插件升级、修复运行环境或卸载会替换${kind}文件，学习资料可能丢失或被打乱。请改选一个独立文件夹，例如 ${example}。`
 }
 
 export function resolveDataDir(value) {
@@ -101,13 +123,18 @@ export function resolveDataDir(value) {
   const expanded = raw.replace(/^~(?=$|[\\/])/, homedir())
   if (!isAbsolute(expanded)) throw new Error('资料保存位置必须是绝对路径，例如 C:\\Users\\你\\Documents\\MoodleStudy')
   const resolved = resolve(expanded)
-  // Personal data must stay separate from the read-only program package and
-  // the machine-local runtime (venv, logs, setup state). The default location
-  // (Documents\MoodleStudy) and any other independent absolute folder pass.
-  for (const [kind, dir] of [
-    ['插件程序', programDir()],
-    ['运行支持', supportDir()],
-  ]) {
+  // Personal data must stay separate from the read-only program package, the
+  // whole installed bundle and the machine-local runtime (venv, logs, setup
+  // state). The default location (Documents\MoodleStudy) and any other
+  // independent absolute folder pass. For an installed bundle the package check
+  // runs first: a folder inside or around the bundle is replaced as a whole, so
+  // the package-level guidance is the useful one. A source checkout has no
+  // package boundary and falls back to the program/support checks.
+  const protectedDirs = []
+  const packageDir = pluginPackageDir()
+  if (packageDir) protectedDirs.push(['插件安装包', packageDir])
+  protectedDirs.push(['插件程序', programDir()], ['运行支持', supportDir()])
+  for (const [kind, dir] of protectedDirs) {
     if (sameOrInside(dir, resolved)) throw new Error(protectedDataDirError(kind, dir, false))
     if (sameOrInside(resolved, dir)) throw new Error(protectedDataDirError(kind, dir, true))
   }

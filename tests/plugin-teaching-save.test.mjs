@@ -590,6 +590,43 @@ test('resolveDataDir refuses program/support directories in both directions', ()
     }
     assert.throws(() => resolveDataDir(support.toUpperCase()), /运行支持目录/)
   }
+  // An installed bundle ships program files under <package>/program, but the
+  // whole package directory is replaced on upgrade/uninstall. A data folder
+  // anywhere inside the package (not only under program/) must be refused.
+  const installedRoot = mkdtempSync(join(tmpRoot, 'plugin-teaching-save-installed-'))
+  const packageDir = join(installedRoot, 'dsh-moodle-study')
+  const packagedProgram = join(packageDir, 'program')
+  mkdirSync(packagedProgram, { recursive: true })
+  writeFileSync(
+    join(packageDir, 'package.json'),
+    JSON.stringify({ name: 'dsh-moodle-study', version: '0.0.0-test', type: 'module' }),
+  )
+  const previousProgram = process.env.MOODLE_STUDY_PROGRAM_DIR
+  try {
+    process.env.MOODLE_STUDY_PROGRAM_DIR = packagedProgram
+    for (const value of [
+      packageDir,
+      join(packageDir, 'data'),
+      join(packageDir, 'resources'),
+      join(packageDir, 'node_modules'),
+      join(packageDir, 'docs'),
+    ]) {
+      assert.throws(() => resolveDataDir(value), /插件安装包目录/, `expected package refusal for ${value}`)
+    }
+    // A folder containing the package is refused too, with actionable advice.
+    assert.throws(() => resolveDataDir(installedRoot), /不能包含插件安装包目录/)
+    assert.throws(() => resolveDataDir(packageDir), (error) => {
+      assert.match(error.message, /独立文件夹/)
+      assert.match(error.message, /Documents[\\/]MoodleStudy/)
+      return true
+    })
+    // An independent sibling folder stays valid.
+    assert.equal(resolveDataDir(join(installedRoot, 'student')), resolve(join(installedRoot, 'student')))
+  } finally {
+    if (previousProgram === undefined) delete process.env.MOODLE_STUDY_PROGRAM_DIR
+    else process.env.MOODLE_STUDY_PROGRAM_DIR = previousProgram
+    rmSync(installedRoot, { recursive: true, force: true })
+  }
   // The refusal is actionable Chinese guidance, not a generic message.
   assert.throws(() => resolveDataDir(program), (error) => {
     assert.match(error.message, /独立文件夹/)

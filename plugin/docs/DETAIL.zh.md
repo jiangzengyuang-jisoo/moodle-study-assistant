@@ -9,7 +9,7 @@
 
 ## 安装
 
-发布到 npm 后，推荐在 DeepSeek Harness 的 **Plugins → Discover** 中添加社区插件目录，再安装 **Moodle 学习助手（Windows 试用版）**；也可以直接安装 npm 包 `dsh-moodle-study@0.6.0-trial.4`。使用离线试用包时：
+发布到 npm 后，推荐在 DeepSeek Harness 的 **Plugins → Discover** 中添加社区插件目录，再安装 **Moodle 学习助手（Windows 试用版）**；也可以直接安装 npm 包 `dsh-moodle-study@0.6.0-trial.5`。使用离线试用包时：
 
 1. 打开 DeepSeek Harness 左侧 **Plugins** → **Add plugin**。
 2. 粘贴试用包文件夹的绝对路径（或 `.tgz` 文件路径），阅读第三方插件说明后点 **Install**。
@@ -51,6 +51,7 @@
 - 个人学习数据（课程、笔记、错题、复习记录、教学位置、资料原件）只保存在学生选择的资料目录。
 - 学校 API Token 由现有 Windows DPAPI 机制加密保存在资料目录的 `.private/` 内，只对当前 Windows 用户可解密；插件不把 Token 写入聊天、日志或配置。
 - 插件安装目录只包含程序与通用规则；升级插件不会改动学习数据。
+- 资料位置不能选在插件安装包目录（含其内部文件夹）里：插件升级、修复或卸载会替换整个安装包。选择独立文件夹即可，已有独立资料目录不受影响。
 - 卸载插件默认保留资料目录；如需彻底删除，由学生自行删除其选择的资料文件夹和 Harness 支持目录（`%LOCALAPPDATA%\MoodleStudyAssistant`，其中只有运行环境与日志）。
 
 ## 已知限制

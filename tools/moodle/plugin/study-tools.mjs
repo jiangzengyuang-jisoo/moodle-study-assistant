@@ -238,8 +238,8 @@ export function registerStudyTools(server, context = {}) {
             worked_example: z.string().max(4000).optional(),
             coverage_note: z.string().max(800).optional(),
           }).describe('This turn only: what was actually taught and where.'),
-          checks_append: z.array(z.record(z.any())).max(5).optional().describe('Completed archived check records (only when the student actually answered).'),
-          review_backlog_append: z.array(z.record(z.any())).max(3).optional().describe('Old-chapter review items to keep.'),
+          checks_append: z.array(z.record(z.string(), z.any())).max(5).optional().describe('Completed archived check records (only when the student actually answered).'),
+          review_backlog_append: z.array(z.record(z.string(), z.any())).max(3).optional().describe('Old-chapter review items to keep.'),
           onboarding: z.enum(['shown', 'skipped']).optional(),
         }).describe('One small teaching-position event; never a whole-state rewrite.'),
       }),
@@ -300,9 +300,9 @@ export function registerStudyTools(server, context = {}) {
             .array(z.string().trim().max(200))
             .max(100)
             .describe('Chat turns actually inspected/produced for this event; validated by the engine (non-empty, unique).'),
-          position: z.record(z.any()).describe('Teaching position (topic/stage/next_step + optional chapter, section, material_id, pages, pending_question); validated by the engine.'),
+          position: z.record(z.string(), z.any()).describe('Teaching position (topic/stage/next_step + optional chapter, section, material_id, pages, pending_question); validated by the engine.'),
           attempts: z
-            .array(z.record(z.any()))
+            .array(z.record(z.string(), z.any()))
             .max(20)
             .optional()
             .describe('Real original answers with id, question, user_answer, conditions and source_turn_id; validated by the engine.'),

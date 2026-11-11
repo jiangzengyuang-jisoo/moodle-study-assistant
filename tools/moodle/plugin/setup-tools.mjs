@@ -5,7 +5,7 @@
 // must still see the tool that the status output tells them to call.
 import { z } from 'zod'
 
-import { jobSummary, latestJob, runningJob } from './jobs.mjs'
+import { jobSummary, jobView, latestJob, runningJob } from './jobs.mjs'
 import {
   collectStatus,
   connectHandler,
@@ -49,11 +49,42 @@ function registerJobStatus(server) {
     'study_job_status',
     {
       title: '查看后台任务进度',
-      description: 'Read the progress and log tail of a running setup/sync job, or the most recent one when no job id is given.',
-      inputSchema: z.object({ job_id: z.string().trim().max(100).optional() }),
+      description:
+        'Read the progress and log tail of the background job identified by job_id. Only that job is returned; an unknown id is reported as JOB_NOT_FOUND instead of silently returning another job. Without job_id it returns the running job, or the most recent one when nothing is running.',
+      inputSchema: z.object({
+        job_id: z
+          .string()
+          .trim()
+          .max(100)
+          .optional()
+          .describe('Job id returned by a setup/sync/refresh tool. When given, only this job is queried.'),
+      }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    async () => {
+    async (args) => {
+      const requested = String(args?.job_id ?? '').trim()
+      // An explicit id is a lookup, never a fallback to whatever happens to be
+      // running: querying an older sync job must not return a newer job's state.
+      if (requested) {
+        const requestedJob = jobView(requested)
+        if (!requestedJob) {
+          return output(
+            {
+              ok: false,
+              error: 'JOB_NOT_FOUND',
+              job_id: requested,
+              message:
+                '没有找到这个后台任务。工具重连后内存中的任务记录会清空，但已完成的状态仍可从 study_setup_status 看出；也可不传 job_id 查询最近任务。',
+            },
+            true,
+          )
+        }
+        return output({
+          ok: true,
+          running: requestedJob.state === 'running',
+          job: jobSummary(requestedJob),
+        })
+      }
       const active = runningJob()
       if (active) return output({ ok: true, running: true, job: jobSummary(active) })
       const candidates = ['setup-runtime', 'setup-login', 'setup-sync', 'study-refresh']

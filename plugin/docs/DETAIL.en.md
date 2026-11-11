@@ -9,7 +9,7 @@ Study your Moodle course chapters from materials saved on your own computer, ins
 
 ## Install
 
-After the npm release, the recommended way is **Plugins → Discover**: add the community plugin index, then install **Moodle Study Assistant (Windows trial)**. You can also install the npm package `dsh-moodle-study@0.6.0-trial.4` directly. For the offline trial package:
+After the npm release, the recommended way is **Plugins → Discover**: add the community plugin index, then install **Moodle Study Assistant (Windows trial)**. You can also install the npm package `dsh-moodle-study@0.6.0-trial.5` directly. For the offline trial package:
 
 1. Open **Plugins** in DeepSeek Harness and choose **Add plugin**.
 2. Paste the absolute path of the trial package folder (or its `.tgz` file), read the third-party notice and click **Install**.
@@ -51,6 +51,7 @@ Each step reports its status in chat. After a successful sign-in or a data-locat
 - Personal study data lives only in the student-chosen data folder: courses, notes, mistakes, review history, teaching position and material originals.
 - The school API token is stored with the existing Windows DPAPI mechanism under `<data>/.private/` and is decryptable only by the current Windows user. It never appears in chat, logs or configuration.
 - The plugin install folder contains program files and shared rules only; upgrades never touch learning data.
+- The data folder cannot be the plugin package folder or any folder inside it: plugin upgrade, repair or uninstall replaces the whole package. Choose an independent data folder instead; existing independent folders are unaffected.
 - Uninstalling the plugin keeps the data folder by default. Removing it completely is a separate explicit action by the student (data folder plus `%LOCALAPPDATA%\MoodleStudyAssistant` for runtime and logs).
 
 ## Known limitations

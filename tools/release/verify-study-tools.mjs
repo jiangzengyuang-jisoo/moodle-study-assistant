@@ -1,19 +1,34 @@
 // Offline verification of the study-mode tool set registered by the plugin's
 // MCP server. It mounts the real tool registrations on an in-memory MCP
 // transport, so no school connection and no student data are involved.
+//
+// It verifies the same package target as verify-plugin: the local build by
+// default, or an explicit unpacked package directory passed as the first
+// argument (or via MOODLE_STUDY_VERIFY_PACKAGE). Normally verify-plugin invokes
+// it with its own resolved target after preparing the isolated support/data
+// directories; running it standalone first reports the missing prerequisite.
 import { existsSync, readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { dirname, join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 
-const repoRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
-const programDir = join(repoRoot, 'dist', 'moodle-study-assistant', 'program')
+import { repoRoot, resolveVerifyTarget } from './verify-target.mjs'
+
+let target
+try {
+  target = resolveVerifyTarget()
+} catch (error) {
+  console.error(`verify-study-tools: ${error?.message ?? error}`)
+  process.exit(1)
+}
+const { packageDir, programDir, version } = target
 const supportDir = join(repoRoot, 'tmp', 'plugin-verify', 'support')
 const dataDir = join(repoRoot, 'tmp', 'plugin-verify', 'data')
+console.log(`verify-study-tools: target ${packageDir} (${version})`)
 process.env.MOODLE_STUDY_SUPPORT_DIR = supportDir
 process.env.MOODLE_STUDY_PROGRAM_DIR = programDir
 process.env.STUDY_DATA_ROOT = dataDir

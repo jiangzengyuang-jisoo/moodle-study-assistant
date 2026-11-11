@@ -1,6 +1,6 @@
 {
   "name": "dsh-moodle-study",
-  "version": "0.6.0-trial.4",
+  "version": "0.6.0-trial.5",
   "description": "Moodle study assistant for DeepSeek Harness: connect a school Moodle account and study course chapters from downloaded materials. Windows community trial.",
   "type": "module",
   "license": "MIT",
@@ -41,9 +41,9 @@
     "THIRD_PARTY_NOTICES.md"
   ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.27.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "moodle-mcp": "0.2.0",
-    "zod": "3.25.76",
+    "zod": "4.6.7",
     "zod-to-json-schema": "3.25.2",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1"
