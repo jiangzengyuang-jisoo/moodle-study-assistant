@@ -1,5 +1,4 @@
 import {decryptWindowsToken} from './windows-token.mjs';
-import {createMcpChapterContext} from './mcp-workspace.mjs';
 import {connectionDiagnostic} from './connection-errors.mjs';
 import {loadCollectionRequest, bindCollection} from './collection-request.mjs';
 import {resolveChatId} from './chat-identity.mjs';
@@ -313,6 +312,18 @@ async function runChapterCheckMode() {
 async function main() {
   const mode = process.argv[2] ?? 'check';
   if (mode === 'init') { initialize(root); console.log('空白档案和本地 MCP 配置已准备好；已有档案保留。'); return; }
+  if (mode === 'mcp') {
+    // The installer registers this MCP server before the student has logged in.
+    // Startup must complete the handshake without config/token/state and without
+    // any network connection; remote tools resolve the current source-install
+    // config and credential lazily when they are called.
+    const {createSourceGateway, createSourceChapterContext} = await import('./source-gateway.mjs');
+    const gateway = createSourceGateway({root});
+    const chapterContext = createSourceChapterContext({root, gateway});
+    const {serve} = await import('./server.mjs');
+    await serve(gateway, undefined, chapterContext);
+    return;
+  }
   const chatOptions = mode === 'courses' ? chatCourseOptions(process.argv.slice(3), process.stdin.isTTY) : null;
   if (!existsSync(statePath)) throw new Error('请先运行 setup.cmd');
   if (mode === 'refresh') {
@@ -369,16 +380,6 @@ async function main() {
   }
   const config = bundle?.config ?? json(join(root, 'config.local.json'));
   process.env.TZ = config.timezone;
-  if (mode === 'mcp') {
-    // Capture the same authorization generation used to establish this service.
-    const credential = readFileSync(join(root, '.private/moodle-token.dpapi'));
-    const client = await new ReadOnlyClient(config.moodle_url, tokenFromWindows(credential)).connect();
-    const context = createMcpChapterContext({root, loadState, client, config, credential});
-    context.beforeCheck();
-    const {serve} = await import('./server.mjs');
-    await serve(client, undefined, context);
-    return;
-  }
   const client = await new ReadOnlyClient(config.moodle_url, tokenFromWindows(bundle?.credential)).connect();
   if (mode === 'check') { console.log('Moodle API 已连接。'); return; }
   if (mode === 'courses') {

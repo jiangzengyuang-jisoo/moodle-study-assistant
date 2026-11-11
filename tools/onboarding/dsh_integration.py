@@ -18,6 +18,15 @@ failed validation leaves the original file untouched.
 
 The reported status distinguishes "configuration is correct" from "the running
 client has loaded it": only a restarted client can prove runtime loading.
+
+``install`` reports one of: ``installed`` (entries merged; both the MCP entry and
+the skills directory are configured), ``unchanged`` (already correct; nothing
+written), ``conflict`` (an existing entry conflicts with this project; nothing is
+written) or ``skipped``/``error`` (no complete result). Every result carries
+``configuration_ok`` covering both parts plus the per-part ``mcp``/``skills``
+status and actionable ``warnings``/``next_steps``. The CLI exits 0 only for a
+successful and fully configured merge; conflicts exit non-zero so an installer
+cannot report a false success.
 """
 
 import argparse
@@ -51,6 +60,13 @@ BLOCK_RE = re.compile(re.escape(BEGIN) + r'.*?' + re.escape(END) + r'\n?', re.DO
 EMPTY_FLOW_LIST = re.compile(r'^[ \t]*\[\][ \t]*(?:#.*)?$')
 
 RUNTIME_NOTE = '配置正确本身不证明运行时已加载；需要重启 DeepSeek Harness 后在新聊天中实际确认。'
+SUCCESS_STATUSES = ('installed', 'unchanged', 'dry-run')
+FAILURE_STATUSES = ('conflict', 'skipped', 'error')
+DEFAULT_NEXT_STEPS = [
+    '修改 profile 配置后需重启 DeepSeek Harness 桌面版；新聊天才会加载技能与 MCP。',
+    '重启后回到项目聊天，由聊天内助手完成学校登录；MCP 工具在登录后才可用。',
+    '配置正确不等于运行时已验证：请在重启后的新聊天中确认技能与 moodle_study MCP 工具已加载。',
+]
 
 _JS_TAG = 'tag:yaml.org,2002:js'
 
@@ -220,16 +236,21 @@ def _command_available(command):
     return shutil.which(command) is not None
 
 
-def _skill_status(data, project):
-    expected = (Path(project) / 'skills').resolve()
-    overrides = []
+def _skill_entries(data):
+    """Return every user entry that defines the DSH skill provider."""
+    entries = []
     for item in _walk_dicts(data):
         if item.get('id') != 'skill-filesystem' and item.get('name') != SKILL_PROVIDER:
             continue
-        config = item.get('config')
-        if isinstance(config, dict):
-            overrides.append(config)
-    status = {'status': 'missing', 'override_count': len(overrides),
+        entries.append(item)
+    return entries
+
+
+def _skill_status(data, project):
+    expected = (Path(project) / 'skills').resolve()
+    entries = _skill_entries(data)
+    overrides = [item['config'] for item in entries if isinstance(item.get('config'), dict)]
+    status = {'status': 'missing', 'override_count': len(entries),
               'expected_dir': expected.as_posix(), 'warnings': []}
     if not expected.is_dir():
         status['warnings'].append('当前项目的 skills 目录不存在。')
@@ -246,8 +267,9 @@ def _skill_status(data, project):
                     return status
             except (OSError, ValueError):
                 continue
-    if overrides:
-        status['warnings'].append('已有 skill-filesystem 覆盖但未包含当前项目 skills 目录；不会覆盖。')
+    if entries:
+        status['status'] = 'conflict'
+        status['warnings'].append('已有 skill-filesystem 覆盖但未包含当前项目 skills 目录；不会覆盖，也不会重复添加。')
     return status
 
 
@@ -603,8 +625,30 @@ def _adopt_existing_mcp(base_text, base_data, project):
     return new_text, 1, ''
 
 
+def _next_steps_for_conflict(mcp_part, skills_part):
+    """Actionable repairs for a conflicting profile; never asks for a delete."""
+    steps = []
+    if mcp_part.get('status') == 'conflict':
+        steps.append('MCP 冲突：现有 moodle_study MCP 条目未指向当前项目。确认它是旧部署后运行'
+                     ' & .venv/Scripts/python.exe tools/onboarding/dsh_integration.py install --update-existing '
+                     '（只更新该条目的 run.mjs 路径）；否则按 docs/DSH.md 手动合并。')
+    if skills_part.get('status') == 'conflict':
+        steps.append('技能冲突：现有 skill-filesystem 覆盖未包含当前项目 skills 目录。'
+                     '按 docs/DSH.md 合并或移除旧覆盖（把当前项目 skills 目录加入 customSkillDirs）后重试。')
+    steps.append('不要删除现有配置后重试；冲突未解决前不会写入任何内容，原文件保持不变。')
+    return steps
+
+
 def install(project=None, env=None, dry_run=False, update_existing=False):
-    """Additively merge the DSH entries; validate before replacing the file."""
+    """Additively merge the DSH entries; validate before replacing the file.
+
+    ``configuration_ok`` describes the resulting persisted configuration (for
+    ``dry-run``, the configuration the shown content would produce). An existing
+    conflicting entry stops the merge before any write: nothing is overwritten
+    and the original file is kept. Only ``installed``/``unchanged``/``dry-run``
+    with ``configuration_ok`` true are complete; ``conflict``, ``skipped`` and
+    ``error`` are not.
+    """
     environment = os.environ if env is None else env
     root = Path(project or ROOT).resolve()
     folder = profile_dir(environment)
@@ -614,72 +658,92 @@ def install(project=None, env=None, dry_run=False, update_existing=False):
         'patch_path': patch.as_posix(),
         'backup': None,
         'validated': False,
+        'configuration_ok': False,
+        'mcp': {'status': 'unknown'},
+        'skills': {'status': 'unknown'},
         'warnings': [],
         'restart_required': False,
-        'next_steps': ['修改 profile 配置后需重启 DeepSeek Harness 桌面版；新聊天才会加载技能与 MCP。'],
+        'next_steps': list(DEFAULT_NEXT_STEPS),
     }
     status = inspect(root, environment)
     if not status['detected']:
-        base.update(status='skipped', reason='未检测到 DeepSeek Harness；项目仍可用 Codex 入口，未写入任何配置。')
+        base.update(status='skipped', reason='未检测到 DeepSeek Harness；项目仍可用 Codex 入口，未写入任何配置。',
+                    next_steps=['在 DeepSeek Harness 聊天中重新运行安装；项目仍可用 Codex 入口，无需删除任何配置。'])
         return base
     if yaml is None:
-        base.update(status='error', reason='缺少 YAML 解析依赖（PyYAML）；未修改任何配置。请先完成安装。')
+        base.update(status='error', reason='缺少 YAML 解析依赖（PyYAML）；未修改任何配置。请先完成安装。',
+                    next_steps=['先完成安装（setup 会安装 PyYAML）后重试；不要删除现有配置。'])
         return base
     if not folder.exists():
-        base.update(status='skipped', reason='未找到 DSH profile 目录；请先启动过一次 DeepSeek Harness。')
+        base.update(status='skipped', reason='未找到 DSH profile 目录；请先启动过一次 DeepSeek Harness。',
+                    next_steps=['先启动一次 DeepSeek Harness 创建 profile 目录，再重新运行安装；不要删除现有配置。'])
         return base
     try:
         original = patch.read_text(encoding='utf-8-sig') if patch.exists() else ''
     except OSError:
-        base.update(status='skipped', reason='无法读取现有 DSH profile patch；未覆盖任何配置。')
+        base.update(status='skipped', reason='无法读取现有 DSH profile patch；未覆盖任何配置。',
+                    next_steps=['检查 profile patch 的文件权限后重试；不要删除现有配置。'])
         return base
     had_bom = patch.exists() and patch.read_bytes().startswith(b'\xef\xbb\xbf')
 
     try:
         base_text, _ = _strip_generated(original)
         base_data = _load_document(base_text, '现有 profile patch')
+        mcp_part = _mcp_status(base_data, root)
+        skills_part = _skill_status(base_data, root)
         adopted = 0
-        adopt_problem = ''
-        if update_existing:
+        if update_existing and mcp_part['status'] == 'conflict':
             base_text, adopted, adopt_problem = _adopt_existing_mcp(base_text, base_data, root)
             if adopted:
                 base_data = _load_document(base_text, '更新现有 MCP 条目后的 profile patch')
+                mcp_part = _mcp_status(base_data, root)
+                skills_part = _skill_status(base_data, root)
                 base['warnings'].append('已将现有 moodle_study MCP 条目的 args 路径更新为当前项目；只改该字段。')
             elif adopt_problem:
-                base['warnings'].append('未能自动更新现有条目：' + adopt_problem + '；未覆盖任何配置。')
-        existing_mcp = _mcp_entries(base_data)
-        matching_mcp = [config for config in existing_mcp if _entry_path_matches(config, root)]
-        if matching_mcp:
-            add_mcp = False
-            base['warnings'].append('已有指向当前项目的 moodle_study MCP 条目；未重复添加。')
-        elif existing_mcp:
-            add_mcp = False
-            base['warnings'].append('已有同名 MCP 服务配置，但未指向当前项目；未覆盖。'
-                                    '确认这是旧部署后可用 --update-existing 只更新该路径。')
-        else:
-            add_mcp = True
-        add_skills = _skill_status(base_data, root)['status'] != 'configured'
-        if not add_skills:
-            base['warnings'].append('已有用户自定义 skill-filesystem 配置包含当前项目目录；未重复添加。')
-        elif any(item.get('id') == 'skill-filesystem' for item in _walk_dicts(base_data)):
-            add_skills = False
-            base['warnings'].append('已有用户自定义 skill-filesystem 配置但未包含当前项目 skills 目录；'
-                                    '未覆盖，请按 docs/DSH.md 手动合并。')
-        if not add_mcp and not add_skills and not adopted:
-            base.update(status='unchanged', reason='现有配置已满足要求，未修改文件。')
+                base['warnings'].append('未能自动更新现有 MCP 条目：' + adopt_problem + '；未覆盖任何配置。')
+        base['mcp'] = mcp_part
+        base['skills'] = skills_part
+        base['warnings'].extend(mcp_part.get('warnings', []))
+        base['warnings'].extend(skills_part.get('warnings', []))
+        conflicting = []
+        if mcp_part.get('status') == 'conflict':
+            conflicting.append('MCP 条目')
+        if skills_part.get('status') == 'conflict':
+            conflicting.append('技能目录')
+        if conflicting:
+            base.update(status='conflict',
+                        reason='未写入任何内容（原文件保持不变）：' + '、'.join(conflicting)
+                               + '。请按下一步提示修复后重试。',
+                        next_steps=_next_steps_for_conflict(mcp_part, skills_part))
             return base
-        new_text, base_data, generated = _compose(base_text, root, add_mcp=add_mcp, add_skills=add_skills)
-        if adopted and not [config for config in _mcp_entries(base_data)
-                            if _entry_path_matches(config, root)]:
-            raise PatchError('更新现有条目后仍未发现指向当前项目的 MCP 配置，保留原文件。')
+        add_mcp = mcp_part.get('status') == 'missing'
+        add_skills = skills_part.get('status') == 'missing'
+        if not add_mcp:
+            base['warnings'].append('已有指向当前项目的 moodle_study MCP 条目；未重复添加。')
+        if not add_skills:
+            base['warnings'].append('已有包含当前项目 skills 目录的 skill-filesystem 配置；未重复添加。')
+        if not add_mcp and not add_skills and not adopted:
+            base.update(status='unchanged', configuration_ok=True,
+                        reason='现有配置已满足要求（MCP 与技能目录均已配置），未修改文件。')
+            return base
+        new_text, composed_base, generated = _compose(base_text, root, add_mcp=add_mcp, add_skills=add_skills)
+        final_data = _load_document(new_text, '合并后的 profile patch')
+        final_mcp = _mcp_status(final_data, root)
+        final_skills = _skill_status(final_data, root)
+        if final_mcp.get('status') != 'configured' or final_skills.get('status') != 'configured':
+            raise PatchError('合并后的配置仍未同时覆盖 MCP 与技能目录，保留原文件。')
+        base['mcp'] = final_mcp
+        base['skills'] = final_skills
     except PatchError as error:
-        base.update(status='error', reason=str(error))
+        base.update(status='error', reason=str(error),
+                    next_steps=['按错误信息修复 DSH profile 或按 docs/DSH.md 手动合并后重试；不要删除现有配置。'])
         return base
 
     base['mcp_added'] = add_mcp
     base['skills_added'] = add_skills
     base['updated_existing'] = bool(adopted)
     base['restart_required'] = True
+    base['configuration_ok'] = True
     if patch.exists() and new_text.rstrip('\n') == original.rstrip('\n'):
         base.update(status='unchanged', reason='现有配置与生成内容一致，未修改文件。')
         return base
@@ -696,7 +760,7 @@ def install(project=None, env=None, dry_run=False, update_existing=False):
         # Validate the exact bytes that will replace the original file.
         written = temporary.read_text(encoding='utf-8-sig')
         final_data = _load_document(written, '临时目标文件')
-        if final_data != (base_data + generated):
+        if final_data != (composed_base + generated):
             raise PatchError('临时目标文件的复核结构与预期不一致，保留原文件。')
         os.replace(temporary, patch)
         base['validated'] = True
@@ -707,28 +771,51 @@ def install(project=None, env=None, dry_run=False, update_existing=False):
                 temporary.unlink()
         except OSError:
             pass
-        base.update(status='error', reason='写入或校验 DSH profile patch 失败：%s。原文件未替换。' % str(error)[:160])
+        base.update(status='error', configuration_ok=False,
+                    reason='写入或校验 DSH profile patch 失败：%s。原文件未替换。' % str(error)[:160],
+                    next_steps=['检查 profile 目录权限或按 docs/DSH.md 手动合并后重试；不要删除现有配置。'])
         return base
     base.update(status='installed')
     return base
 
 
+def _print_parts(result):
+    print('  MCP：' + str(result.get('mcp', {}).get('status', 'unknown')))
+    print('  技能目录：' + str(result.get('skills', {}).get('status', 'unknown')))
+    print('  configuration_ok：' + ('true' if result.get('configuration_ok') else 'false'))
+
+
 def _print_human(result):
-    if result.get('status') in ('installed', 'unchanged', 'dry-run'):
-        print('DSH 配置：' + result['status'])
+    status = result.get('status')
+    if status in SUCCESS_STATUSES:
+        print('DSH 配置：' + status)
         print('  profile patch：' + result['patch_path'])
         if result.get('backup'):
             print('  备份：' + result['backup'])
-        for warning in result.get('warnings', []):
-            print('  提醒：' + warning)
-        for step in result.get('next_steps', []):
-            print('  下一步：' + step)
+        _print_parts(result)
+    elif status == 'conflict':
+        print('DSH 配置冲突：' + result.get('reason', ''))
+        print('  profile patch：' + result['patch_path'])
+        _print_parts(result)
     else:
-        print('DSH 配置未修改：' + result.get('reason', result.get('status', 'unknown')))
-        for warning in result.get('warnings', []):
-            print('  提醒：' + warning)
+        print('DSH 配置未完成（' + str(status) + '）：' + result.get('reason', result.get('status', 'unknown')))
+        _print_parts(result)
+    for warning in result.get('warnings', []):
+        print('  提醒：' + warning)
+    for step in result.get('next_steps', []):
+        print('  下一步：' + step)
     if result.get('content'):
         print('\n需要手动粘贴的配置段：\n' + result['content'])
+
+
+def _exit_code(result):
+    """Exit 0 only for a successful and fully configured merge."""
+    status = result.get('status')
+    if status in SUCCESS_STATUSES:
+        return 0 if result.get('configuration_ok') else 1
+    if status in FAILURE_STATUSES:
+        return 1
+    return 0  # status/print are read-only informational commands
 
 
 def main(argv=None):
@@ -751,7 +838,7 @@ def main(argv=None):
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         _print_human(result)
-    return 0 if result.get('status') not in ('skipped', 'error') else 1
+    return _exit_code(result)
 
 
 if __name__ == '__main__':

@@ -31,6 +31,21 @@ function safeFailure(error) {
     error: 'STUDY_MCP_RESTART_REQUIRED', message: '学校连接配置或已保存授权已变化，当前 Moodle 工具需要重新连接。',
     next_step: '重新加载本项目 Moodle 工具或重启 Harness 后重试；不要使用旧连接、重置凭据或申请命令提权。',
   };
+  // The source-install MCP server keeps this tool registered before login; its
+  // lazy workspace context reports setup/login states with fixed guidance.
+  if (error?.code === 'STUDY_SETUP_REQUIRED') return {
+    error: 'STUDY_SETUP_REQUIRED', message: '本机的学习档案或学校连接配置尚未就绪，本次章节核对未开始；已下载的本地资料不受影响。',
+    next_step: '先完成本机初始化（运行 setup.cmd 或安装器给出的初始化步骤），再在同一聊天重试；不需要重装或重建学习档案。',
+  };
+  if (error?.code === 'STUDY_LOGIN_REQUIRED') return {
+    error: 'STUDY_LOGIN_REQUIRED', login_required: true,
+    message: '还没有连接学校账号，本次章节核对未开始。已下载的本地资料仍可继续学习；不需要重装或重建学习档案。',
+    next_step: '请让助手在本聊天完成学校浏览器登录后重试；当前不需要重启 Harness。',
+  };
+  if (error?.code === 'STUDY_REMOTE_FAILED') return {
+    error: 'STUDY_REMOTE_FAILED', message: '本次学校只读请求没有完成，章节核对未开始；已下载的本地资料不受影响。',
+    next_step: '稍后重试同一个章节核对；若持续失败，请让助手核对学校服务或重新完成学校登录。',
+  };
   // Never forward arbitrary exception messages: network errors can contain an
   // authenticated URL, token, local path or response body. Only fixed categories.
   const message = String(error?.message ?? '');

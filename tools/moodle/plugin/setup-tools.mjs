@@ -150,7 +150,7 @@ function registerLocation(server, context) {
     {
       title: '安装/修复学习引擎运行依赖',
       description:
-        'Install or repair the local Python runtime dependencies used by the study engine (locked versions, about 20 MB on first use) into a private environment managed by the plugin. Safe to re-run after an interrupted install; completed steps are skipped. Start it, then poll study_job_status.',
+        'Install or repair the local Python runtime dependencies used by the study engine (locked versions, about 20 MB on first use) into a private environment managed by the plugin. Safe to re-run after an interrupted install: it re-checks the current interpreter, pip and dependency imports, then repairs only what is missing (interrupted venv creation, missing pip via offline ensurepip, damaged interpreter or missing packages). It reports ready only after a local health check, and a failed repair is retried on the next call. Start it, then poll study_job_status.',
       inputSchema: z.object({}),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },

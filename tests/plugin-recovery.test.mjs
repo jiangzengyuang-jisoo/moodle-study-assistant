@@ -5,15 +5,38 @@
 // environment overrides, and sync evidence is produced from real-shaped
 // artifact files (collection snapshot, material-library report).
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
-const repoRoot = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')
+const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const support = mkdtempSync(join(tmpdir(), 'moodle-plugin-recovery-'))
+// Runtime readiness is graded (interpreter + pip + imports, never a file-only
+// marker), so these setup tests need a real private venv. Point the program dir
+// at a throwaway copy with an empty requirements-core.txt: the runtime chain
+// then has nothing to install from the network and the tests stay offline.
+const program = mkdtempSync(join(tmpdir(), 'moodle-plugin-program-'))
+writeFileSync(join(program, 'requirements-core.txt'), '', 'utf8')
+const basePython =
+  [
+    process.env.MOODLE_STUDY_TEST_BASE_PYTHON,
+    join(repoRoot, '.venv', 'Scripts', 'python.exe'),
+    join(repoRoot, '.venv', 'bin', 'python'),
+  ]
+    .filter(Boolean)
+    .find((candidate) => {
+      try {
+        return statSync(candidate).isFile()
+      } catch {
+        return false
+      }
+    }) ?? 'python'
 process.env.MOODLE_STUDY_SUPPORT_DIR = support
-process.env.MOODLE_STUDY_PROGRAM_DIR = repoRoot
+process.env.MOODLE_STUDY_PROGRAM_DIR = program
+process.env.MOODLE_STUDY_BASE_PYTHON = basePython
 
 const { evaluateSyncEvidence } = await import('../tools/moodle/plugin/sync-evidence.mjs')
 const { nextSteps, collectStatus, finishHandler, locationHandler, remoteFailure } = await import(
@@ -21,11 +44,13 @@ const { nextSteps, collectStatus, finishHandler, locationHandler, remoteFailure 
 )
 const { RemoteError } = await import('../tools/moodle/plugin/remote.mjs')
 const { readSettings } = await import('../tools/moodle/plugin/settings.mjs')
+const { coreRuntimeRecord } = await import('../tools/moodle/plugin/python-runtime.mjs')
 const { registerSetupTools } = await import('../tools/moodle/plugin/setup-tools.mjs')
 const { registerStudyTools } = await import('../tools/moodle/plugin/study-tools.mjs')
 
 after(() => {
-  rmSync(support, { recursive: true, force: true })
+  rmSync(support, { recursive: true, force: true, maxRetries: 3 })
+  rmSync(program, { recursive: true, force: true, maxRetries: 3 })
 })
 
 const ACCOUNT = { site: 'https://school.example', user_id: 12345 }
@@ -35,10 +60,22 @@ function writeJson(path, value) {
   writeFileSync(path, JSON.stringify(value, null, 2) + '\n', 'utf8')
 }
 
+function ensureRuntimeFixture() {
+  const venvDir = join(support, 'venv')
+  if (!existsSync(join(venvDir, 'Scripts', 'python.exe')) && !existsSync(join(venvDir, 'bin', 'python'))) {
+    const created = spawnSync(basePython, ['-m', 'venv', venvDir], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 180000,
+    })
+    assert.equal(created.status, 0, `无法创建测试用 venv：${created.stderr || created.error?.message}`)
+  }
+  writeJson(join(support, 'runtime.json'), { core: coreRuntimeRecord(basePython) })
+}
+
+ensureRuntimeFixture()
+
 function makeDataDir({ courses = [], grants = {}, account = ACCOUNT, stage = 'courses_selected' } = {}) {
-  mkdirSync(join(support, 'venv', 'Scripts'), { recursive: true })
-  writeFileSync(join(support, 'venv', 'Scripts', 'python.exe'), '', 'utf8')
-  writeJson(join(support, 'runtime.json'), { core: { installed: true, at: '2026-11-01T00:00:00.000Z' } })
   const dataDir = mkdtempSync(join(tmpdir(), 'moodle-plugin-data-'))
   mkdirSync(join(dataDir, 'Study', '_System'), { recursive: true })
   mkdirSync(join(dataDir, '.private'), { recursive: true })

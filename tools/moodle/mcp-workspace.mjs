@@ -29,10 +29,13 @@ export function createMcpChapterContext({root, loadState, client, config, creden
     try {
       assertProfileAccount({state: loadState(), root: workspace, site: client.baseUrl,
         userId: client.userId, action: '章节核对'});
-    } catch {
-      const error = new Error('同一学习档案无法与当前学校连接确认一致，已停止章节核对。');
-      error.code = 'PROFILE_ACCOUNT_GUARD';
-      throw error;
+    } catch (error) {
+      // A missing/damaged local learning profile is a setup state, not another
+      // school account; keep its structured setup code for the tool error.
+      if (error?.code === 'STUDY_SETUP_REQUIRED') throw error;
+      const guarded = new Error('同一学习档案无法与当前学校连接确认一致，已停止章节核对。');
+      guarded.code = 'PROFILE_ACCOUNT_GUARD';
+      throw guarded;
     }
   };
   return {

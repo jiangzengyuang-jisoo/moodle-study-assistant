@@ -46,7 +46,7 @@ function runEngine(script, args, { stdin = null, timeoutMs = 240000 } = {}) {
   const settings = readSettings()
   const python = venvPython()
   if (!python) {
-    return { ok: false, failure: { error: 'RUNTIME_NOT_READY', message: '运行依赖尚未安装，请先调用 study_setup_status。' } }
+    return { ok: false, failure: { error: 'RUNTIME_NOT_READY', message: '运行依赖尚未安装或健康检查未通过，请先调用 study_setup_runtime 安装/修复；可用 study_setup_status 查看诊断。', next_step: 'study_setup_runtime' } }
   }
   if (!settings?.dataDir || !existsSync(statePath(settings.dataDir))) {
     return {

@@ -37,14 +37,27 @@ if ($LASTEXITCODE -ne 0) { throw 'Learning workflow initialization failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Material library initialization failed. Your study records are preserved.' }
 # The release branch chooses the client, not inherited environment variables.
 if ($clientTarget.client -eq 'deepseek') {
-    Write-Host 'DeepSeek release; merging MCP and skill configuration (existing entries preserved, backup written).'
-    & '.venv/Scripts/python.exe' tools/onboarding/dsh_integration.py install
-    if ($LASTEXITCODE -ne 0) {
-        throw 'DeepSeek Harness configuration did not complete. Continue diagnosis in this chat; preserve existing files.'
+    $dshHelper = Join-Path $PSScriptRoot 'tools/onboarding/setup-dsh.ps1'
+    if (Test-Path -LiteralPath $dshHelper) {
+        . $dshHelper
+        $dshExit = Invoke-DshConfiguration -Root $PSScriptRoot
     } else {
-        Write-Host 'DeepSeek Harness configuration merged. Restart DeepSeek Harness and reopen this folder as the workspace.'
+        # A partial copy of the project may not ship the completion helper yet;
+        # keep the historical exit-code check so the merge result is honoured.
+        Write-Host 'DSH completion helper not found; checking the configuration merge exit code only.'
+        & '.venv/Scripts/python.exe' tools/onboarding/dsh_integration.py install
+        $dshExit = $LASTEXITCODE
+    }
+    if ($dshExit -ne 0) {
+        Write-Host 'Setup did not complete: the DeepSeek Harness configuration (MCP + skills) is NOT verified.'
+        Write-Host 'Do not delete the existing configuration; fix the conflict or error described above and rerun setup.'
+        exit $dshExit
     }
 }
 & '.venv/Scripts/python.exe' tools/study/product_tour.py status
 if ($LASTEXITCODE -ne 0) { throw 'Usage guide status needs repair. Preserve existing study records.' }
-Write-Host 'Setup complete. Continue in this chat: follow docs/CHAT_ONBOARDING.md, finish school connection and chat course selection, then proactively teach the user how to use this system. Do not send the user to a CMD menu.'
+if ($clientTarget.client -eq 'deepseek') {
+    Write-Host 'Setup complete for the local files and the merged DeepSeek Harness configuration (MCP + skills). Restart DeepSeek Harness and reopen this project folder; then finish school login and chat course selection from the project chat (the in-chat assistant completes the login; do not send the student to a CMD menu). A correct configuration is not runtime verification: confirm the self-study-tutor skill and the moodle_study MCP tools in the restarted project chat. Continue in this chat: follow docs/CHAT_ONBOARDING.md, then proactively teach the user how to use this system.'
+} else {
+    Write-Host 'Setup complete. Continue in this chat: follow docs/CHAT_ONBOARDING.md, finish school connection and chat course selection, then proactively teach the user how to use this system. Do not send the user to a CMD menu.'
+}

@@ -16,13 +16,15 @@ import { courseCatalog, selectCoursesInChat } from '../chat-course-selection.mjs
 import { saveState } from '../state-bridge.mjs'
 import { jobSummary, latestJob, runningJob, startJob } from './jobs.mjs'
 import {
-  coreRuntimeReady,
+  coreRuntimeHealth,
   coreRuntimeSteps,
   engineEnv,
   loginRuntimeReady,
   loginRuntimeSteps,
   nodeStep,
   pythonStep,
+  runtimeHealthSummary,
+  runtimeRepairAdvice,
   venvPython,
 } from './python-runtime.mjs'
 import { RemoteError, createRemoteGateway } from './remote.mjs'
@@ -199,6 +201,8 @@ function buildCapabilities({ settings, local, school, state, evidence }) {
     locationSet: Boolean(local.dataDir && local.dataDirExists),
     configReady: Boolean(local.configPresent),
     runtimeReady: Boolean(local.runtimeReady),
+    runtimeStatus: local.runtimeStatus ?? 'unknown',
+    runtimeGuidance: runtimeRepairAdvice(local.runtimeStatus ?? 'unknown'),
     tokenPresent: Boolean(local.tokenPresent),
     schoolConnected: school.state === 'connected',
     schoolNetworkIssue: school.state === 'network',
@@ -236,11 +240,13 @@ export function nextSteps(capabilities, evidence = null) {
     return steps
   }
   if (!capabilities.runtimeReady) {
+    const guidance = capabilities.runtimeGuidance ?? runtimeRepairAdvice(capabilities.runtimeStatus)
     steps.push({
       step: 'install_runtime',
       title: '安装/修复学习引擎运行依赖',
       tool: 'study_setup_runtime',
-      hint: '首次安装需要联网下载约 20MB；安装中断或损坏时可重复调用，已完成的步骤会跳过。',
+      hint: guidance.hint,
+      recovery: guidance.recovery,
     })
     return steps
   }
@@ -319,7 +325,8 @@ export function nextSteps(capabilities, evidence = null) {
 
 export async function collectStatus({ remote = gatewayOf(null), verifySchool = true } = {}) {
   const settings = readSettings() ?? {}
-  const local = localCapabilities(settings)
+  const runtimeHealth = coreRuntimeHealth()
+  const local = localCapabilities(settings, runtimeHealth)
   const state = local.dataDirExists ? readState(local.dataDir) : null
   const activeJob = runningJob()
   const failedJobs = ['setup-runtime', 'setup-login', 'setup-sync']
@@ -327,6 +334,7 @@ export async function collectStatus({ remote = gatewayOf(null), verifySchool = t
     .filter(Boolean)
     .filter((job) => job.state === 'failed')
     .map((job) => jobSummary(job))
+  const runtimeAdvice = runtimeRepairAdvice(runtimeHealth)
 
   let school
   if (!local.dataDirExists || !local.configPresent) {
@@ -363,7 +371,12 @@ export async function collectStatus({ remote = gatewayOf(null), verifySchool = t
       dataDirDefault: local.dataDirDefault,
       configPresent: local.configPresent,
       pythonPresent: local.pythonPresent,
+      pythonExecutable: local.pythonExecutable,
+      pipAvailable: local.pipAvailable,
+      dependenciesOk: local.dependenciesOk,
       coreInstalled: local.coreInstalled,
+      runtimeStatus: local.runtimeStatus,
+      runtimeHealth: local.runtimeHealth,
       runtimeReady: local.runtimeReady,
       loginRuntimeReady: local.loginRuntimeReady,
       python: runtimePython(),
@@ -410,6 +423,10 @@ export async function collectStatus({ remote = gatewayOf(null), verifySchool = t
     recent_failed_jobs: failedJobs.slice(-2),
     recovery: [
       '任何一步中断后重新调用 study_setup_status，会从当前进度继续，不会删除已有资料。',
+      // Only add the long runtime guidance once setup actually progressed past
+      // choosing the data location; a brand-new chat should see the next step,
+      // not a repair lecture.
+      ...(local.runtimeReady || !local.configPresent ? [] : [runtimeAdvice.recovery]),
       '学校网络故障用 study_reconnect 重试；只有登录失效或凭据无法解密才需要学生本人重新连接学校。',
       '资料同步中断或部分失败时重跑 study_setup_sync 会增量补齐，不会重复下载已成功内容。',
     ],
@@ -495,9 +512,11 @@ export function locationHandler(args, context = {}) {
   const state = readState(dataDir)
   const evidence = evaluateSyncEvidence({ dataDir, state, profileAccount: state?.settings?.profile_account_scope ?? null })
   const school = gateway.status()
+  const currentSettings = readSettings()
+  const runtimeHealth = coreRuntimeHealth()
   const capabilities = buildCapabilities({
-    settings: readSettings(),
-    local: localCapabilities(readSettings()),
+    settings: currentSettings,
+    local: localCapabilities(currentSettings, runtimeHealth),
     school,
     state,
     evidence,
@@ -519,31 +538,85 @@ export function locationHandler(args, context = {}) {
   }
 }
 
+// Setup stages that already depend on a working runtime: repairing the runtime
+// must never downgrade them (a previously complete setup stays complete).
+const POST_RUNTIME_STAGES = new Set(['connected', 'courses_selected', 'synced', 'ready'])
+
+function latestRuntimeFailure() {
+  const job = latestJob('setup-runtime')
+  if (!job || job.state !== 'failed') return null
+  const failedStep = job.steps.find((step) => step.state === 'failed') ?? null
+  return {
+    id: job.id,
+    error: job.error,
+    failedStep: failedStep?.label ?? null,
+    log: String(job.log ?? '').slice(-1500),
+    startedAt: job.startedAt,
+    finishedAt: job.finishedAt,
+  }
+}
+
+function capabilitiesWith(settings, health, context) {
+  const local = localCapabilities(settings, health)
+  return buildCapabilities({
+    settings,
+    local,
+    school: gatewayOf(context).status(),
+    state: readState(settings.dataDir),
+    evidence: null,
+  })
+}
+
 export function runtimeHandler(args, context = {}) {
   const settings = readSettings()
   if (!settings?.dataDir) {
     return { error: 'LOCATION_REQUIRED', message: '请先调用 study_setup_location 选择资料保存位置。' }
   }
-  if (coreRuntimeReady()) {
-    return { ok: true, alreadyReady: true, message: '运行依赖已安装。', next_steps: nextSteps(buildCapabilities({ settings, local: localCapabilities(settings), school: gatewayOf(context).status(), state: readState(settings.dataDir), evidence: null })) }
+  // The old marker + existing python.exe is never enough: this graded local
+  // probe decides whether the runtime is healthy.
+  const health = coreRuntimeHealth()
+  const runtime = runtimeHealthSummary(health)
+  if (health.ready) {
+    return {
+      ok: true,
+      alreadyReady: true,
+      runtime,
+      message: '运行依赖已安装，健康检查通过。',
+      next_steps: nextSteps(capabilitiesWith(settings, health, context)),
+    }
   }
-  const chain = coreRuntimeSteps()
-  if (chain.error) return { error: 'PYTHON_NOT_FOUND', message: chain.error }
+  const chain = coreRuntimeSteps({ health })
+  if (chain.error) {
+    return {
+      error: chain.error.code,
+      message: chain.error.message,
+      next_step: chain.error.nextStep,
+      runtime,
+    }
+  }
+  const previousFailure = latestRuntimeFailure()
+  const advice = runtimeRepairAdvice(health)
   const job = startJob({
     name: 'setup-runtime',
     steps: chain.steps,
     logPath: join(supportDir(), 'logs', 'setup-runtime.log'),
     onSuccess: () => {
       chain.markRuntime()
-      writeSettings({ stage: 'runtime_ready' })
+      const current = readSettings() ?? {}
+      const stage = POST_RUNTIME_STAGES.has(current.stage) ? current.stage : 'runtime_ready'
+      writeSettings({ stage, lastError: null })
     },
-    onFailure: (message) => writeSettings({ lastError: message }),
+    onFailure: (message) => writeSettings({ lastError: `运行依赖修复失败：${message}` }),
   })
   return {
     ok: true,
+    repairing: true,
+    runtime,
     job: jobSummary(job),
-    message:
-      '正在安装/修复学习引擎运行依赖（首次约 20MB 下载）。安装中断后可重复调用；请用 study_job_status 查看进度。',
+    previous_failure: previousFailure,
+    message: `正在修复学习引擎运行依赖（诊断：${runtime?.statusText ?? health.status}）。${advice.hint}`,
+    next_step: 'study_job_status',
+    recovery: advice.recovery,
   }
 }
 
@@ -552,8 +625,16 @@ export function connectHandler(args, context = {}) {
   if (!settings?.dataDir) {
     return { error: 'LOCATION_REQUIRED', message: '请先调用 study_setup_location 选择资料保存位置。' }
   }
-  if (!coreRuntimeReady()) {
-    return { error: 'RUNTIME_REQUIRED', message: '请先调用 study_setup_runtime 安装运行依赖后再登录学校。' }
+  const health = coreRuntimeHealth()
+  if (!health.ready) {
+    const advice = runtimeRepairAdvice(health)
+    return {
+      error: 'RUNTIME_REQUIRED',
+      message: '请先调用 study_setup_runtime 安装/修复运行依赖后再登录学校。',
+      next_step: 'study_setup_runtime',
+      runtime: runtimeHealthSummary(health),
+      recovery: advice.recovery,
+    }
   }
   const steps = []
   if (!loginRuntimeReady()) {
