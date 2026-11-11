@@ -141,7 +141,9 @@ node tools/moodle/run.mjs download 123 --authorized
 
 展示提示或解答时，以 `daily.py answer-shown` 记录 `session_id`、`review_id`、`variant_id` 和实际 `evidence`，可选 `shown_at`。这是曝光记录，不是虚构一次作答；下一次独立检查换新变式。
 
-统一学习流程启用后，旧 `review.py record` 拒绝绕过题包和曝光校验的直接写入。`review.py due --minutes 15` 可作只读预览，与正式题包共用当天剩余容量规则且不写状态。不要绕过 `daily.py` 直接调用内部函数给真实状态评级。
+旧 `review.py record` 已退役，所有档案（包括缺少学习闭环启用标志的旧档案）均拒绝直接写入，并提示改用 `daily.py attempt`。`review.py due --minutes 15` 使用当前选题、来源与曝光校验，返回 `read_only_preview`，与正式题包共用当天剩余容量规则且不保存预览题包；无核验新题时返回待准备，不再展示旧 prompt。`review.py render` 转到 `daily.py render` 统一页面入口，仍返回 `status: rendered`；FSRS 内部核心与保存函数保留供当前流程调用。不要绕过 `daily.py` 直接调用内部函数给真实状态评级。
+
+页面内容未变时保留原文件与修改时间，新鲜度检查复用同轮计划内容；这是减少重复文件操作和计划计算，不代表测得整体显著提速。状态保存后页面失败仍可沿用原 `attempt_id` / `operation_id` 重试，不重复追加作答或 FSRS 历史。
 
 ### 保存学习反馈
 

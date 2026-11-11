@@ -309,8 +309,85 @@ async function runChapterCheckMode() {
   console.log(JSON.stringify(result, null, 2));
 }
 
+// Syntax-only preflight: never read a profile, credentials or the network here.
+// Course existence/account checks still belong to their existing scoped handlers.
+function validateArguments(mode, args) {
+  const schemas = {
+    init: {}, check: {}, mcp: {}, refresh: {'--chat': 'value'},
+    collect: {'--request': 'value', '--output': 'value'},
+    courses: {'--list': 'flag', '--select-file': 'value', '--select': 'value',
+      '--mode': 'value', '--yes': 'flag', '--no-sync': 'flag', '--refresh': 'flag', '--chat': 'value'},
+    'library-sync': {'--course': 'repeat', '--snapshot': 'value', '--no-snapshot': 'flag',
+      '--max-bytes': 'value', '--batch-size': 'value', '--dry-run': 'flag'},
+    'chapter-check': {'--course': 'value', '--section': 'value', '--module': 'value',
+      '--mode': 'value', '--chat-key': 'value', '--force': 'flag', '--no-persist': 'flag'},
+    'content-sync': {'--snapshot': 'value'}, download: {'--authorized': 'flag'},
+  };
+  const examples = {
+    init: 'init', check: 'check', mcp: 'mcp', refresh: 'refresh --chat 原聊天ID',
+    collect: 'collect --request request.json --output snapshot.json',
+    courses: 'courses --list；或 courses --select 101 --mode info_only --yes',
+    'library-sync': 'library-sync --course 本地课程ID --dry-run',
+    'chapter-check': 'chapter-check --course 本地课程ID --section "Topic 1" --chat-key 原聊天键',
+    'content-sync': 'content-sync --snapshot 本轮快照.json',
+    download: 'download 123 --authorized（仅限本人明确授权的模块）',
+  };
+  const fail = message => {
+    const example = Object.hasOwn(examples, mode) ? examples[mode] : 'check；或 courses --list';
+    throw new Error('参数错误：' + message + ' 示例：node tools/moodle/run.mjs ' + example);
+  };
+  // Do not echo untrusted arguments: a mistyped argument may contain a token/URL.
+  if (!Object.hasOwn(schemas, mode)) fail('未知命令。使用 init、check、courses、library-sync、chapter-check、content-sync、collect、refresh、mcp 或 download。');
+  const schema = schemas[mode], values = new Map(), positional = [];
+  for (let index = 0; index < args.length; index++) {
+    const name = args[index];
+    if (!Object.hasOwn(schema, name)) {
+      if (mode === 'download' && !name.startsWith('-')) { positional.push(name); continue; }
+      fail('存在未知选项或多余参数，请核对该命令的用法。');
+    }
+    const kind = schema[name];
+    if (values.has(name) && kind !== 'repeat') fail('同一选项不能重复传入。');
+    if (kind === 'flag') { values.set(name, true); continue; }
+    const value = args[++index];
+    if (!value?.trim() || value.startsWith('--')) fail(name + ' 后缺少参数值。');
+    values.set(name, value);
+  }
+  const required = name => { if (!values.has(name)) fail('缺少 ' + name + '。'); };
+  const positive = value => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
+  if (mode === 'collect') { required('--request'); required('--output'); }
+  if (mode === 'content-sync') required('--snapshot');
+  if (mode === 'courses') {
+    if (values.has('--mode') && !['full', 'info_only'].includes(values.get('--mode')))
+      fail('--mode 只能是 full 或 info_only。');
+    if (values.has('--select')) {
+      const ids = values.get('--select').trim().split(/[,，\s]+/).filter(Boolean);
+      if (!ids.length || !ids.every(positive))
+        fail('--select 使用 Moodle 正整数页面 ID（逗号或空格分隔），不是本地课程编号。');
+    }
+  }
+  if (mode === 'library-sync') {
+    for (const name of ['--max-bytes', '--batch-size'])
+      if (values.has(name) && !positive(values.get(name))) fail(name + ' 必须是正整数。');
+  }
+  if (mode === 'chapter-check') {
+    if (!values.has('--course')) fail('缺少 --course：可使用本地课程 ID（按原大小写）、Moodle 数字页面 ID 或唯一课程名。');
+    if (!values.has('--section') && !values.has('--module')) fail('需要 --section 章节或 --module Moodle 模块 ID。');
+    if (values.has('--mode') && !['quick', 'strict'].includes(values.get('--mode')))
+      fail('--mode 只能是 quick 或 strict。');
+    if (values.has('--module') && !values.get('--module').split(',').every(value => positive(value.trim())))
+      fail('--module 使用逗号分隔的 Moodle 正整数模块 ID。');
+  }
+  if (mode === 'download') {
+    required('--authorized');
+    if (!positional.length || positional.length > 20 || !positional.every(positive)
+        || new Set(positional.map(Number)).size !== positional.length)
+      fail('download 需要 1–20 个不重复的 Moodle 正整数模块 ID，并显式传入 --authorized。');
+  }
+}
+
 async function main() {
   const mode = process.argv[2] ?? 'check';
+  validateArguments(mode, process.argv.slice(3));
   if (mode === 'init') { initialize(root); console.log('空白档案和本地 MCP 配置已准备好；已有档案保留。'); return; }
   if (mode === 'mcp') {
     // The installer registers this MCP server before the student has logged in.

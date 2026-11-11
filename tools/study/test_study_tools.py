@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import review
 
 HERE = Path(__file__).resolve().parent
 
@@ -49,6 +50,19 @@ class ReviewTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
         return data
 
+    def core_record(self, payload, ok=True):
+        # The FSRS core remains imported by learning_loop; the legacy CLI is closed.
+        original = self.path.read_bytes()
+        state = json.loads(original)
+        if not ok:
+            with self.assertRaises(ValueError):
+                review.record(state, payload)
+            return
+        result = review.record(state, payload)
+        if result['status'] != 'duplicate':
+            review.save(self.path, state, original)
+        return result
+
     def attempt(self, **changes):
         data = {"review_id": "R1", "attempt_id": "attempt-1", "rating": "good",
                 "prompt": "独立求 lim x→1 (x²−1)/(x−1)", "answer": "2，因为可约为x+1且x≠1",
@@ -63,17 +77,43 @@ class ReviewTests(unittest.TestCase):
             self.assertEqual(state[key], self.original[key])
         after = self.path.read_bytes()
         preview = self.command("due", "--at", "2026-09-21T20:00:00+08:00", "--minutes", "5")
-        self.assertEqual([item["id"] for item in preview["items"]], ["R1"])
-        self.assertEqual(preview["estimated_minutes"], 5)
+        self.assertEqual(preview["items"], [])
+        self.assertEqual(preview["status"], "needs_preparation")
+        self.assertTrue(preview["read_only_preview"])
+        self.assertEqual(preview["budget_minutes"], 5)
         self.assertNotIn("隐藏答案", json.dumps(preview, ensure_ascii=False))
         self.assertEqual(self.path.read_bytes(), after)
         self.assertEqual(self.command("due", "--minutes", "4")["items"], [])
         self.command("init")
         self.assertEqual(self.path.read_bytes(), after)
 
+    def test_legacy_record_refuses_before_state_access(self):
+        for enabled in (None, False, True):
+            state = dict(self.original, settings={'learning_loop': {'enabled': enabled}})
+            self.path.write_text(json.dumps(state), encoding='utf-8')
+            before = self.path.read_bytes()
+            result, _ = call('review.py', '--state', self.path, 'record', payload=self.attempt())
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('daily.py attempt', result.stderr)
+            self.assertNotIn('Traceback', result.stderr)
+            self.assertEqual(self.path.read_bytes(), before)
+        result, _ = call('review.py', '--state', self.path.with_name('missing.json'), 'record')
+        self.assertIn('daily.py attempt', result.stderr)
+
+    def test_legacy_due_is_read_only_and_does_not_fall_back_to_answer_prompt(self):
+        before = self.path.read_bytes()
+        preview = self.command('due', '--at', '2026-09-21T20:00:00+08:00')
+        self.assertTrue(preview['read_only_preview'])
+        self.assertEqual(preview['status'], 'needs_preparation')
+        self.assertEqual(preview['items'], [])
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertFalse(self.path.with_name('Review Queue.md').exists())
+        self.command('due', '--minutes', '-1', ok=False)
+        self.assertEqual(self.path.read_bytes(), before)
+
     def test_record_persists_real_evidence_hk_date_and_deduplicates(self):
         self.command("init")
-        self.command("record", payload=self.attempt())
+        self.core_record(payload=self.attempt())
         state = json.loads(self.path.read_text(encoding="utf-8"))
         item = state["review_queue"][0]
         self.assertEqual(item["due_date"], "2026-09-20")
@@ -84,11 +124,12 @@ class ReviewTests(unittest.TestCase):
             self.assertEqual(state[key], self.original[key])
         self.assertEqual(state["integrations"]["moodle"], self.original["integrations"]["moodle"])
         after = self.path.read_bytes()
-        self.assertEqual(self.command("record", payload=self.attempt())["status"], "duplicate")
+        self.assertEqual(self.core_record(payload=self.attempt())["status"], "duplicate")
         self.assertEqual(self.path.read_bytes(), after)
-        self.command("record", payload=self.attempt(answer="不同答案"), ok=False)
+        self.core_record(payload=self.attempt(answer="不同答案"), ok=False)
         self.assertEqual(self.path.read_bytes(), after)
         self.assertTrue(self.path.with_name("state.previous.json").exists())
+        self.command("render")
         self.assertIn("2026-09-20", self.path.with_name("Review Queue.md").read_text(encoding="utf-8"))
 
     def test_rejects_assisted_empty_or_out_of_order_attempt_without_writing(self):
@@ -96,20 +137,20 @@ class ReviewTests(unittest.TestCase):
         before = self.path.read_bytes()
         for changes in ({"independent": False}, {"evidence": ""}, {"rating": "mastered"},
                         {"reviewed_at": "2026-09-21T20:00:00"}, {"review_id": "missing"}):
-            self.command("record", payload=self.attempt(**changes), ok=False)
+            self.core_record(payload=self.attempt(**changes), ok=False)
             self.assertEqual(self.path.read_bytes(), before)
-        self.command("record", payload=self.attempt())
+        self.core_record(payload=self.attempt())
         before = self.path.read_bytes()
-        self.command("record", payload=self.attempt(attempt_id="older", reviewed_at="2026-09-18T12:00:00+08:00"), ok=False)
+        self.core_record(payload=self.attempt(attempt_id="older", reviewed_at="2026-09-18T12:00:00+08:00"), ok=False)
         self.assertEqual(self.path.read_bytes(), before)
 
     def test_failed_recall_is_sooner_than_easy_and_due_filter_uses_time(self):
         self.command("init")
-        self.command("record", payload=self.attempt(rating="again"))
+        self.core_record(payload=self.attempt(rating="again"))
         again = json.loads(self.path.read_text(encoding="utf-8"))["review_queue"][0]["fsrs"]["card"]["due"]
         self.path.write_text(json.dumps(self.original), encoding="utf-8")
         self.command("init")
-        self.command("record", payload=self.attempt(rating="easy"))
+        self.core_record(payload=self.attempt(rating="easy"))
         easy = json.loads(self.path.read_text(encoding="utf-8"))["review_queue"][0]["fsrs"]["card"]["due"]
         self.assertLess(again, easy)
         self.assertEqual(self.command("due", "--at", "2026-09-20T00:00:00+08:00")["items"], [])
