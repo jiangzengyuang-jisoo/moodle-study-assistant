@@ -27,6 +27,8 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ### Review and file-write simplification (Codex)
 
+- Publication notes: this sync includes teaching-progress save fixes (`74e589f`) and review simplification (`e689499`). See the [full update report](docs/UPDATE_REPORT_2026-11-12.en.md) for evidence, upgrade steps and remaining work. Preparing the report adds no runtime changes.
+
 - Remove legacy question selection and review-page implementations. `review.py due` uses the current preview workflow and `render` uses the unified page writer. The retired `record` command directs users to `daily.py attempt`, including when an older archive has no learning-loop flag.
 - Share atomic file writing across study state, library caches, material versions and pages. Keep existing locks, recovery, snapshot validation and study timezones.
 - Leave unchanged pages untouched and reuse rendered plan content during freshness checks; this reduces redundant work without claiming an overall speed improvement.

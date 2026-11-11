@@ -174,7 +174,7 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
-| [2026-11-12](CHANGELOG.en.md#2026-11-12) | Unify review and safe file writes; skip unchanged pages while preserving recovery and timezones |
+| [2026-11-12](docs/UPDATE_REPORT_2026-11-12.en.md) | Publish verified teaching saves and review simplification; skip unchanged pages, with validation and upgrade notes |
 | [2026-11-10](CHANGELOG.en.md#2026-11-10) | Unify teaching progress and verify saves; preserve practice, scoped requests and Feynman checks |
 | [2026-11-08](CHANGELOG.en.md#2026-11-08) | Publish audit fixes and downloadable Chinese/English beginner PDF tutorials |
 
