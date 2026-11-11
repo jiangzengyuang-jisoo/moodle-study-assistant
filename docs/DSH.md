@@ -84,7 +84,7 @@
 - `dsh_integration.py install` 的退出码即完成判定：`installed`/`unchanged`/`dry-run` 且 `configuration_ok=true` 时为 0；`conflict`/`skipped`/`error` 为非 0。检查冲突时先看人类可读输出或 `--json` 的 `mcp`/`skills`、`warnings` 与 `next_steps`，按提示修复后重跑，不要删除现有配置。
 - `client` 行只表示当前 DeepSeek 分支的 DSH profile 配置可用，同样不代表运行时已加载；是否真正加载需重启后在新聊天中实际确认（例如让助手列出 `moodle_study` 工具、实际调用 `study_check_chapter` 或 `moodle_list_courses`）。
 - 若 profile patch 无法解析或缺少 YAML 依赖，诊断只给 warning 并明确“未修改任何配置”，不会报成“配置正确”。
-- 已有同名 MCP 冲突或技能冲突时，按 `warnings`/`next_steps` 与上文处理（`--update-existing` 只更新 MCP 条目路径；技能冲突按 §2.1 手动合并）；`setup.ps1` 遇到这些情况会以非 0 退出且不打印 Setup complete。
+- 已有同名 MCP 冲突或技能冲突时，按 `warnings`/`next_steps` 与上文处理（`--update-existing` 只更新 MCP 条目路径；技能冲突按 §2.1 手动合并）；同名 `moodle_study` 条目出现多条时安装器不猜测、不覆盖，返回 `conflict` 并提示手动去重（`--update-existing` 同样拒绝猜测），当前项目 `skills/` 目录缺失返回 `error` 且零写入；已存在的生成配置段会重建并整体校验后才写入，不会只验剥离后的副本而误报 `unchanged`。`setup.ps1` 遇到未完成情况会复核状态并以非 0 退出且不打印 Setup complete。
 
 ### 2.4 重启后工具缺失或调用提示未登录
 
@@ -99,7 +99,7 @@
 
 以上恢复步骤依赖真实 Harness 重启与学校网络；离线测试覆盖的是启动、工具注册、结构化错误与同聊天懒恢复，不代表真实学校 SSO/MFA 已现场验收。
 
-插件试用版（`study_setup_*` 工具）的运行依赖损坏或安装中断时，让助手重新调用 `study_setup_runtime` 会重新检查解释器、pip 与依赖并只修缺失项，健康检查通过前不报告完成；健康检查每次只做一次合并本地探测，正常学习不会重复联网安装。该健康检查修复需下一个试用包重新打包后才进入插件包（当前 `0.6.0-trial.3` 未重建），详见 [TOOLS.md](TOOLS.md#插件试用版的运行依赖study_setup_runtime)。
+插件试用版（`study_setup_*` 工具）的运行依赖损坏或安装中断时，让助手重新调用 `study_setup_runtime` 会重新检查解释器、pip 与依赖，损坏的依赖会真正重新安装，重建运行环境后还会单独分级检查登录组件，健康检查通过前不报告完成；健康检查每次只做一次合并本地探测，正常学习不会重复联网安装。该恢复闭环修复已包含在 `0.6.0-trial.4` 试用包内（2026-11-12 重新打包），安装或升级到该包后生效；Host 侧 `moodle_study_status` 与 MCP 使用同一分级诊断。重登录进行中/刚完成时的连接代际竞态与缓存 API 误判、章节严格回执与当前保存连接的绑定也在本包修复。验证结论见 [CHANGELOG](../CHANGELOG.md) 的 2026-11-11 补漏条目；真实 Harness 重启与学校登录仍需现场验收。详见 [TOOLS.md](TOOLS.md#插件试用版的运行依赖study_setup_runtime)。
 
 ## 3. 聊天身份规则（与 Codex 一致）
 

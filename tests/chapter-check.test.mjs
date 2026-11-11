@@ -6,8 +6,9 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {
   CHAPTER_CHECK_SCHEMA, chapterIntent, chapterTokens, checkChapter, classifyItem, collectSectionItems,
-  materialSources, MODES, receiptPath, resolveBaseline, resolveCatalogScope, resolveChapterLocal,
-  resolveCoursePages, runChapterCheck, selectSections, summarize, verdictOf, writeReceipt,
+  connectionGeneration, materialSources, MODES, receiptPath, resolveBaseline, resolveCatalogScope,
+  resolveChapterLocal, resolveCoursePages, runChapterCheck, selectSections, summarize,
+  validateReceiptReuse, verdictOf, writeReceipt,
 } from '../tools/moodle/chapter-check.mjs';
 import {webserviceFileURL} from '../tools/moodle/course-files.mjs';
 
@@ -120,6 +121,13 @@ function fakeClient({userId = 7, baseUrl = BASE} = {}) {
 
 function tempRoot() {
   const root = mkdtempSync(join(tmpdir(), 'chapter-check-'));
+  // Every temporary profile gets stable synthetic connection files. Receipt
+  // reuse is bound to the saved config+credential generation, so tests that do
+  // not intend to change the login must keep these bytes unchanged.
+  mkdirSync(join(root, '.private'), {recursive: true});
+  writeFileSync(join(root, 'config.local.json'),
+    JSON.stringify({moodle_url: BASE, timezone: 'Asia/Hong_Kong'}, null, 2));
+  writeFileSync(join(root, '.private/moodle-token.dpapi'), Buffer.from('SYNTHETIC-ENCRYPTED-AUTHORIZATION'));
   return {root, cleanup: () => rmSync(root, {recursive: true, force: true})};
 }
 
@@ -501,7 +509,8 @@ test('quick chapter check reports changed chapter files and writes a scan receip
     assert.equal(receipt.verified.reason, 'mode_not_strict');
     assert(receipt.receipt_path && existsSync(receipt.receipt_path));
     const written = JSON.parse(readFileSync(receipt.receipt_path, 'utf8'));
-    assert.equal(written.schema, 2);
+    assert.equal(written.schema, 3);
+    assert.match(written.connection_generation, /^[0-9a-f]{64}$/);
     assert.equal(written.mode, 'quick');
     assert.deepEqual(written.account_scope, {site: BASE, user_id: 7});
     assert.equal(written.chat, null);
@@ -697,6 +706,65 @@ test('same chat strict receipt is reused without any network call', async () => 
   } finally {
     cleanup();
   }
+});
+
+test('a changed saved credential invalidates reuse and receipts store only the connection hash', async () => {
+  const {root, cleanup} = tempRoot();
+  try {
+    const topic5 = topic5Material();
+    writeStudyFile(root, topic5.relative_path, TOPIC5);
+    const state = stateFixture({materials: [topic5]});
+    const kit = harness({root, state});
+    const first = await kit.run();
+    assert.equal(first.schema, 3);
+    assert.equal(first.schema, CHAPTER_CHECK_SCHEMA);
+    assert.match(first.connection_generation, /^[0-9a-f]{64}$/);
+    const writtenText = readFileSync(first.receipt_path, 'utf8');
+    const written = JSON.parse(writtenText);
+    assert.equal(written.connection_generation, first.connection_generation);
+    // Only the hash is stored; neither the config values nor the credential
+    // bytes of the saved login may leak into the reusable receipt.
+    assert(!writtenText.includes('SYNTHETIC-ENCRYPTED-AUTHORIZATION'));
+    assert(!JSON.stringify(first).includes('SYNTHETIC-ENCRYPTED-AUTHORIZATION'));
+
+    const cached = await kit.run();
+    assert.equal(cached.reused, true);
+    assert.equal(cached.connection_generation, first.connection_generation);
+    assert.equal(kit.connections(), 1);
+
+    // A fresh browser login replaces only the saved credential: the local
+    // learning profile (still account 7) looks unchanged, so the connection
+    // generation is what must invalidate the old success receipt.
+    writeFileSync(join(root, '.private/moodle-token.dpapi'),
+      Buffer.from('SYNTHETIC-ENCRYPTED-AUTHORIZATION-B'));
+    assert.notEqual(connectionGeneration(root), first.connection_generation);
+    const rechecked = await kit.run();
+    assert.equal(rechecked.reused, undefined);
+    assert.equal(rechecked.network_started, true);
+    assert.equal(rechecked.verified.complete, true);
+    assert.equal(kit.connections(), 2);
+    assert.notEqual(rechecked.connection_generation, first.connection_generation);
+  } finally {
+    cleanup();
+  }
+});
+
+test('receipt reuse requires a readable and identical connection generation', () => {
+  const receipt = {
+    schema: CHAPTER_CHECK_SCHEMA, mode: 'strict', chat: {key: 'chat-key'},
+    connection_generation: 'a'.repeat(64), account_scope: {site: BASE, user_id: 7},
+    course: {course_id: 'moodle-1', moodle_courseids: [101]}, request: {section: 'Topic 5'},
+    scope: {module_ids: [], local_files: []}, verified: {complete: true},
+  };
+  const plan = {subject: 'moodle-1', pages: [], intent: {kind: 'topic', text: 'topic 5'}};
+  const decide = overrides => validateReceiptReuse({receipt, plan, state: stateFixture(),
+    chatKey: 'chat-key', mode: 'strict', ...overrides}).reason;
+  assert.equal(decide({connectionGeneration: 'b'.repeat(64)}), 'connection_changed');
+  assert.equal(decide({connectionGeneration: null}), 'account_unverified');
+  assert.equal(decide({receipt: {...receipt, connection_generation: null},
+    connectionGeneration: 'a'.repeat(64)}), 'account_unverified');
+  assert.equal(decide({receipt: {...receipt, schema: 2},
+    connectionGeneration: 'a'.repeat(64)}), 'no_receipt');
 });
 
 test('a new chat, a changed local file, a changed account and --force each invalidate reuse', async () => {

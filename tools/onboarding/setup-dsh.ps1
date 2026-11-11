@@ -56,6 +56,18 @@ function Get-DshPartStatus {
     return [string]$status.Value
 }
 
+function Get-DshValue {
+    param($Data, [string[]]$Path)
+    $current = $Data
+    foreach ($name in $Path) {
+        if ($null -eq $current) { return $null }
+        $node = $current.PSObject.Properties | Where-Object { $_.Name -eq $name } | Select-Object -First 1
+        if ($null -eq $node) { return $null }
+        $current = $node.Value
+    }
+    return $current
+}
+
 function Invoke-DshConfiguration {
     [CmdletBinding()]
     param(
@@ -96,12 +108,20 @@ function Invoke-DshConfiguration {
         return 0
     }
     Write-Host ('DSH configuration is NOT complete (install exit code ' + $installExit + '; configuration_ok=' + $configurationOk.ToString().ToLower() + '; MCP=' + $mcpStatus + '; skills=' + $skillsStatus + ').')
-    if ($mcpStatus -ne 'conflict' -and $skillsStatus -ne 'conflict') {
+    $mcpEntryCount = Get-DshValue -Data $status.Data -Path @('mcp', 'entry_count')
+    if ($skillsStatus -eq 'invalid') {
+        Write-Host 'Skills invalid: this project skills directory does not exist, so the skill configuration cannot load. Restore the complete project files (the skills/ directory) and rerun setup.'
+    }
+    if ($mcpStatus -ne 'conflict' -and $skillsStatus -ne 'conflict' -and $skillsStatus -ne 'invalid') {
         Write-Host 'Read the merge output above: the profile patch may be unparsable or the profile directory may be missing.'
         Write-Host 'Action required: repair the DSH profile or merge manually per docs/DSH.md, then rerun setup.'
     }
     if ($mcpStatus -eq 'conflict') {
-        Write-Host 'MCP conflict: an existing moodle_study MCP entry does not point at this project. If it is an older deployment, run tools/onboarding/dsh_integration.py install --update-existing to update only that entry; otherwise merge manually per docs/DSH.md.'
+        if ($null -ne $mcpEntryCount -and [int]$mcpEntryCount -gt 1) {
+            Write-Host ('MCP conflict: ' + [int]$mcpEntryCount + ' entries share serverName moodle_study, so the installer will not guess and --update-existing cannot choose one. Remove or merge the duplicates by hand per docs/DSH.md (keep only the entry that points at this project), then rerun setup.')
+        } else {
+            Write-Host 'MCP conflict: an existing moodle_study MCP entry does not point at this project. If it is an older deployment, run tools/onboarding/dsh_integration.py install --update-existing to update only that entry; otherwise merge manually per docs/DSH.md.'
+        }
     }
     if ($skillsStatus -eq 'conflict') {
         Write-Host 'Skills conflict: an existing skill-filesystem override does not include this project skills directory. Merge or remove the old override per docs/DSH.md so the current skills directory is included.'

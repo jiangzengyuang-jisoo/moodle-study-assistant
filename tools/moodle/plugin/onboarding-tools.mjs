@@ -19,7 +19,8 @@ import {
   coreRuntimeHealth,
   coreRuntimeSteps,
   engineEnv,
-  loginRuntimeReady,
+  loginHealthSummary,
+  loginRuntimeHealth,
   loginRuntimeSteps,
   nodeStep,
   pythonStep,
@@ -326,7 +327,10 @@ export function nextSteps(capabilities, evidence = null) {
 export async function collectStatus({ remote = gatewayOf(null), verifySchool = true } = {}) {
   const settings = readSettings() ?? {}
   const runtimeHealth = coreRuntimeHealth()
-  const local = localCapabilities(settings, runtimeHealth)
+  // Sign-in readiness is graded too: after a core rebuild Playwright is gone
+  // even though an old `login.installed` flag may still be on disk.
+  const loginHealth = loginRuntimeHealth()
+  const local = localCapabilities(settings, runtimeHealth, loginHealth)
   const state = local.dataDirExists ? readState(local.dataDir) : null
   const activeJob = runningJob()
   const failedJobs = ['setup-runtime', 'setup-login', 'setup-sync']
@@ -378,6 +382,8 @@ export async function collectStatus({ remote = gatewayOf(null), verifySchool = t
       runtimeStatus: local.runtimeStatus,
       runtimeHealth: local.runtimeHealth,
       runtimeReady: local.runtimeReady,
+      loginRuntimeStatus: local.loginRuntimeStatus,
+      loginRuntimeHealth: local.loginRuntimeHealth,
       loginRuntimeReady: local.loginRuntimeReady,
       python: runtimePython(),
       tokenPresent: local.tokenPresent,
@@ -636,11 +642,22 @@ export function connectHandler(args, context = {}) {
       recovery: advice.recovery,
     }
   }
+  // Sign-in readiness is graded (interpreter runs + playwright.sync_api imports
+  // + marker fingerprint), never derived from the bare login.installed flag.
+  const loginHealth = loginRuntimeHealth()
   const steps = []
-  if (!loginRuntimeReady()) {
-    const login = loginRuntimeSteps()
-    if (login.error) return { error: 'LOGIN_RUNTIME_FAILED', message: login.error }
-    steps.push(...login.steps)
+  let loginChain = null
+  if (!loginHealth.ready) {
+    loginChain = loginRuntimeSteps({ health: loginHealth })
+    if (loginChain.error) {
+      return {
+        error: 'LOGIN_RUNTIME_FAILED',
+        message: loginChain.error,
+        next_step: 'study_setup_runtime',
+        loginRuntime: loginHealthSummary(loginHealth),
+      }
+    }
+    steps.push(...loginChain.steps)
   }
   steps.push(...initSteps(settings))
   steps.push({
@@ -655,7 +672,9 @@ export function connectHandler(args, context = {}) {
     steps,
     logPath: join(supportDir(), 'logs', 'setup-login.log'),
     onSuccess: () => {
-      loginRuntimeSteps().markRuntime?.()
+      // Only refresh the sign-in marker when this job actually installed or
+      // re-verified the component; skipping a ready component keeps its marker.
+      loginChain?.markRuntime?.()
       writeSettings({ stage: 'connected', lastError: null })
       gatewayOf(context).invalidate()
       // Restart the MCP server so the new credential generation is loaded by
@@ -668,6 +687,7 @@ export function connectHandler(args, context = {}) {
   return {
     ok: true,
     job: jobSummary(job),
+    loginRuntime: loginHealthSummary(loginHealth),
     message:
       '正在准备学校登录：如果日志显示“请在弹出的学校网页完成登录”，请让学生在本机弹出的浏览器窗口里完成学校登录（可含验证码/双重验证）。登录成功后工具会自动重新连接（约几秒），然后可以继续选课。工具不会读取或保存学生密码。',
     next_step: 'list_courses',

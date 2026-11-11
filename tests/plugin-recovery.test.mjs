@@ -6,19 +6,55 @@
 // artifact files (collection snapshot, material-library report).
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
-const support = mkdtempSync(join(tmpdir(), 'moodle-plugin-recovery-'))
+// Never inherit the real Harness profile / chat identity or a stale diagnostic
+// seam from the environment: this suite only touches throwaway directories.
+for (const inherited of [
+  'DSH_PROFILE_DIR',
+  'DSH_PROFILE',
+  'DSH_SESSION_ID',
+  'STUDY_CHAT_ID',
+  'MOODLE_STUDY_CORE_IMPORT_OVERRIDE',
+  'MOODLE_STUDY_LOGIN_IMPORT_OVERRIDE',
+]) {
+  delete process.env[inherited]
+}
+delete process.env.DSH_HOME
+// `python -m venv` refuses an environment whose target is reached through an
+// 8.3 short name (the DSH sandbox %TEMP% may look like C:\Users\PETERJ~1\...):
+// prefer a long OS temp directory and fall back to the repository tmp/ one.
+function tempBase() {
+  const preferred = process.env.TEMP || process.env.TMP || tmpdir()
+  if (!/~\d+/.test(preferred)) {
+    try {
+      return realpathSync(mkdtempSync(join(realpathSync(preferred), 'moodle-plugin-base-')))
+    } catch {
+      // Fall back below.
+    }
+  }
+  const fallback = join(repoRoot, 'tmp', 'plugin-recovery-temp')
+  mkdirSync(fallback, { recursive: true })
+  return realpathSync(mkdtempSync(join(fallback, 'run-')))
+}
+
+const tmpBase = tempBase()
+process.env.TEMP = tmpBase
+process.env.TMP = tmpBase
+process.env.TMPDIR = tmpBase
+const dshHome = mkdtempSync(join(tmpBase, 'moodle-plugin-dsh-'))
+process.env.MOODLE_STUDY_DSH_HOME = dshHome
+const support = mkdtempSync(join(tmpBase, 'moodle-plugin-recovery-'))
 // Runtime readiness is graded (interpreter + pip + imports, never a file-only
 // marker), so these setup tests need a real private venv. Point the program dir
 // at a throwaway copy with an empty requirements-core.txt: the runtime chain
 // then has nothing to install from the network and the tests stay offline.
-const program = mkdtempSync(join(tmpdir(), 'moodle-plugin-program-'))
+const program = mkdtempSync(join(tmpBase, 'moodle-plugin-program-'))
 writeFileSync(join(program, 'requirements-core.txt'), '', 'utf8')
 const basePython =
   [
@@ -51,6 +87,8 @@ const { registerStudyTools } = await import('../tools/moodle/plugin/study-tools.
 after(() => {
   rmSync(support, { recursive: true, force: true, maxRetries: 3 })
   rmSync(program, { recursive: true, force: true, maxRetries: 3 })
+  rmSync(dshHome, { recursive: true, force: true, maxRetries: 3 })
+  rmSync(tmpBase, { recursive: true, force: true, maxRetries: 3 })
 })
 
 const ACCOUNT = { site: 'https://school.example', user_id: 12345 }

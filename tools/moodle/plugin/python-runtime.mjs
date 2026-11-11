@@ -32,9 +32,18 @@ import {
 
 // Bumped whenever the readiness contract or the probe itself changes, so a
 // marker written by an older plugin version is never silently trusted.
-export const CORE_REQUIREMENTS_VERSION = 2
+// Version 3 adds the graded sign-in (login) component health below and requires
+// a real reinstall to repair damaged core packages.
+export const CORE_REQUIREMENTS_VERSION = 3
+// Sign-in dependency fingerprint version. Old `login: {installed: true}` markers
+// written before this contract existed are deliberately treated as stale.
+export const LOGIN_REQUIREMENTS_VERSION = 1
 const CORE_PROBE_TIMEOUT_MS = 20000
 const CORE_PROBE_SENTINEL = 'MOODLE_STUDY_PROBE '
+const LOGIN_PROBE_SENTINEL = 'MOODLE_STUDY_PROBE '
+// Playwright's browser driver is only usable when the sync API imports; the
+// requirement line itself is `playwright==...`, which cannot express that.
+const LOGIN_DEFAULT_IMPORTS = ['playwright.sync_api']
 const CORE_RECOVERY_PYTHON_HINT =
   '关闭并重开 Harness 后重试；仍失败请修复/重装 DeepSeek Harness 自带的 Python，或设置 MOODLE_STUDY_BASE_PYTHON 指向可用的 Python 3.11+。不要删除学习档案（修复只动插件自己的 supportDir/venv 与 runtime.json，不碰学习资料和登录凭据）。'
 
@@ -177,42 +186,79 @@ function requirementImportName(line) {
   return lower.replace(/[.-]+/g, '_')
 }
 
+function readRequirementText(name) {
+  const path = requirements(name)
+  try {
+    return { path, text: readFileSync(path, 'utf8') }
+  } catch {
+    return { path, text: null }
+  }
+}
+
+function requirementImportsFromText(text) {
+  const imports = []
+  if (text === null) return imports
+  for (const rawLine of text.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+    // Strip an inline trailing comment (`==1.0  # pinned`), then skip blank and
+    // non-package option lines (-r, -c, --hash, ...).
+    const line = rawLine.split(/\s+#/)[0].trim()
+    if (!line || line.startsWith('#')) continue
+    if (line.startsWith('-')) continue
+    const name = requirementImportName(line)
+    if (name && !imports.includes(name)) imports.push(name)
+  }
+  return imports
+}
+
+function overrideImports(imports, envName) {
+  const override = String(process.env[envName] ?? '').trim()
+  if (!override) return { imports, overridden: false }
+  const overridden = []
+  for (const name of override.split(/[\s,]+/)) {
+    if (name && !overridden.includes(name)) overridden.push(name)
+  }
+  return { imports: overridden, overridden: true }
+}
+
+function requirementFingerprint(text) {
+  const normalized = text === null ? null : text.replace(/\r\n/g, '\n')
+  return normalized === null ? null : createHash('sha256').update(normalized, 'utf8').digest('hex')
+}
+
 // Read requirements-core.txt: dependency fingerprint plus the import names the
 // health probe must be able to import. MOODLE_STUDY_CORE_IMPORT_OVERRIDE is a
 // diagnostics/testing seam only (normal installs must leave it unset).
 export function coreRequirementsInfo() {
-  const path = requirements('requirements-core.txt')
-  let text = null
-  try {
-    text = readFileSync(path, 'utf8')
-  } catch {
-    text = null
-  }
-  const imports = []
-  if (text !== null) {
-    for (const rawLine of text.replace(/^\uFEFF/, '').split(/\r?\n/)) {
-      const line = rawLine.split(/\s+#/)[0].trim()
-      if (!line || line.startsWith('#')) continue
-      if (line.startsWith('-')) continue
-      const name = requirementImportName(line)
-      if (name && !imports.includes(name)) imports.push(name)
-    }
-  }
-  const override = String(process.env.MOODLE_STUDY_CORE_IMPORT_OVERRIDE ?? '').trim()
-  if (override) {
-    imports.length = 0
-    for (const name of override.split(/[\s,]+/)) {
-      if (name && !imports.includes(name)) imports.push(name)
-    }
-  }
-  const normalized = text === null ? null : text.replace(/\r\n/g, '\n')
+  const { path, text } = readRequirementText('requirements-core.txt')
+  const base = requirementImportsFromText(text)
+  const { imports, overridden } = overrideImports(base, 'MOODLE_STUDY_CORE_IMPORT_OVERRIDE')
   return {
     path,
     exists: text !== null,
     version: CORE_REQUIREMENTS_VERSION,
-    sha256: normalized === null ? null : createHash('sha256').update(normalized, 'utf8').digest('hex'),
+    sha256: requirementFingerprint(text),
     imports,
-    overriddenImports: Boolean(override),
+    overriddenImports: overridden,
+  }
+}
+
+// Read requirements-login.txt: the sign-in component marker fingerprint and the
+// imports the graded login health probe checks. The requirement line names the
+// `playwright` package but the real capability is `playwright.sync_api`.
+// MOODLE_STUDY_LOGIN_IMPORT_OVERRIDE is a diagnostics/testing seam only
+// (normal installs must leave it unset).
+export function loginRequirementsInfo() {
+  const { path, text } = readRequirementText('requirements-login.txt')
+  const derived = requirementImportsFromText(text).map((name) => (name === 'playwright' ? 'playwright.sync_api' : name))
+  if (!derived.length) derived.push(...LOGIN_DEFAULT_IMPORTS)
+  const { imports, overridden } = overrideImports(derived, 'MOODLE_STUDY_LOGIN_IMPORT_OVERRIDE')
+  return {
+    path,
+    exists: text !== null,
+    version: LOGIN_REQUIREMENTS_VERSION,
+    sha256: requirementFingerprint(text),
+    imports,
+    overriddenImports: overridden,
   }
 }
 
@@ -232,6 +278,33 @@ function markerState(requirementsInfo) {
     at: marker?.at ?? null,
     versionMatches,
     shaMatches,
+    matches: installed && versionMatches && shaMatches,
+  }
+}
+
+// Sign-in component marker. Playwright lives inside the same private venv as
+// the core engine, so a rebuilt venv silently removes it while an old
+// `login.installed` flag would still be on disk. The flag is only trusted when
+// the interpreter runs, `playwright.sync_api` imports, and the marker carries
+// the current sign-in dependency fingerprint.
+function loginMarkerState(requirementsInfo) {
+  const marker = readRuntime()?.login ?? null
+  const present = Boolean(marker && typeof marker === 'object')
+  const installed = Boolean(marker?.installed)
+  const versionMatches = present && marker.requirementsVersion === requirementsInfo.version
+  const shaMatches = present && requirementsInfo.sha256 !== null && marker.requirementsSha256 === requirementsInfo.sha256
+  return {
+    present,
+    installed,
+    requirementsVersion: marker?.requirementsVersion ?? null,
+    requirementsSha256: marker?.requirementsSha256 ?? null,
+    at: marker?.at ?? null,
+    verifiedAt: marker?.verifiedAt ?? null,
+    invalidatedAt: marker?.invalidatedAt ?? null,
+    invalidatedReason: marker?.invalidatedReason ?? marker?.reason ?? null,
+    versionMatches,
+    shaMatches,
+    // A legacy marker (installed flag only, no fingerprint) never matches.
     matches: installed && versionMatches && shaMatches,
   }
 }
@@ -468,6 +541,169 @@ export function runtimeHealthSummary(health) {
   }
 }
 
+// Sign-in probe: the private interpreter must run and import the sign-in
+// package (playwright.sync_api) without importing the whole browser stack.
+// Like the core probe it never installs anything and reports import failures
+// inside the JSON document.
+function loginProbeScript(imports) {
+  return [
+    'import json, sys',
+    `names = ${JSON.stringify(imports)}`,
+    'result = {',
+    '    "ok": True,',
+    '    "executable": sys.executable,',
+    '    "version": list(sys.version_info[:3]),',
+    '    "imports": {},',
+    '}',
+    'for name in names:',
+    '    try:',
+    '        __import__(name)',
+    '        result["imports"][name] = {"ok": True, "error": None}',
+    '    except BaseException as exc:',
+    '        result["imports"][name] = {"ok": False, "error": type(exc).__name__ + ": " + str(exc)}',
+    'print("' + LOGIN_PROBE_SENTINEL + '" + json.dumps(result))',
+  ].join('\n')
+}
+
+function probeLoginInterpreter(python, imports, timeoutMs) {
+  const cwd = isDirectory(supportDir()) ? supportDir() : programDir()
+  let result
+  try {
+    result = spawnSync(python, ['-c', loginProbeScript(imports)], {
+      cwd,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONIOENCODING: 'utf-8' },
+      encoding: 'utf8',
+      timeout: timeoutMs,
+      windowsHide: true,
+      maxBuffer: 8 * 1024 * 1024,
+    })
+  } catch (error) {
+    return { ok: false, timedOut: false, exitCode: null, reason: `无法启动解释器：${error?.message ?? error}`, missingImports: [] }
+  }
+  if (result.error) {
+    const code = result.error.code
+    const reason =
+      code === 'ETIMEDOUT'
+        ? `解释器探测超时（${Math.round(timeoutMs / 1000)} 秒内无结果）`
+        : code === 'ENOENT'
+          ? '解释器文件不存在'
+          : `无法启动解释器（${code ?? 'UNKNOWN'}）：${result.error.message}`
+    return { ok: false, timedOut: code === 'ETIMEDOUT', exitCode: null, reason, missingImports: [] }
+  }
+  const stdout = String(result.stdout ?? '')
+  const stderr = String(result.stderr ?? '').trim()
+  const sentinelLine = stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith(LOGIN_PROBE_SENTINEL))
+    .pop()
+  if (!sentinelLine) {
+    return {
+      ok: false,
+      timedOut: false,
+      exitCode: result.status,
+      reason: `解释器未返回预期登录探测结果（退出码 ${result.status}${stderr ? `：${stderr.slice(-300)}` : ''}）`,
+      missingImports: [],
+    }
+  }
+  let document
+  try {
+    document = JSON.parse(sentinelLine.slice(LOGIN_PROBE_SENTINEL.length))
+  } catch {
+    return { ok: false, timedOut: false, exitCode: result.status, reason: '解释器登录探测结果无法解析', missingImports: [] }
+  }
+  const importResults = document.imports && typeof document.imports === 'object' ? document.imports : {}
+  const missingImports = imports.filter((name) => importResults[name]?.ok !== true)
+  return {
+    ok: true,
+    timedOut: false,
+    exitCode: result.status,
+    reason: null,
+    version: Array.isArray(document.version) ? document.version.join('.') : null,
+    executable: typeof document.executable === 'string' ? document.executable : null,
+    dependenciesOk: missingImports.length === 0,
+    missingImports,
+    importErrors: Object.fromEntries(missingImports.map((name) => [name, importResults[name]?.error ?? '无法导入'])),
+  }
+}
+
+function loginHealthStatus(health, requirementsInfo) {
+  if (!health.pythonExists) return health.venvDirExists ? 'environment_incomplete' : 'not_installed'
+  if (!health.probe.ok) return 'interpreter_broken'
+  if (!requirementsInfo.exists) return 'requirements_missing'
+  if (!health.dependenciesOk) return 'dependencies_missing'
+  if (!health.marker.installed) return 'marker_missing'
+  if (!health.marker.matches) return 'marker_stale'
+  return 'ready'
+}
+
+// Graded sign-in component diagnosis: interpreter runnable + playwright.sync_api
+// importable + a login marker written for the current dependency fingerprint.
+// A marker with only `installed: true` (written by an older plugin version or
+// before a core rebuild) is stale, never ready.
+export function loginRuntimeHealth({ timeoutMs = CORE_PROBE_TIMEOUT_MS } = {}) {
+  const paths = venvPaths()
+  const requirementsInfo = loginRequirementsInfo()
+  const venvDirExists = isDirectory(paths.venv)
+  const python = runtimePythonPath()
+  const pythonExists = Boolean(python)
+  const health = {
+    venvDir: paths.venv,
+    venvDirExists,
+    python,
+    pythonExists,
+    pythonExecutable: false,
+    pythonVersion: null,
+    dependenciesOk: false,
+    missingImports: [],
+    importErrors: {},
+    probe: { ok: false, timedOut: false, exitCode: null, reason: null },
+    requirements: requirementsInfo,
+    marker: loginMarkerState(requirementsInfo),
+    status: null,
+    ready: false,
+    checkedAt: new Date().toISOString(),
+  }
+  if (pythonExists) {
+    const probe = probeLoginInterpreter(python, requirementsInfo.imports, timeoutMs)
+    health.pythonExecutable = probe.ok
+    health.pythonVersion = probe.version ?? null
+    health.dependenciesOk = probe.ok && probe.dependenciesOk
+    health.missingImports = probe.missingImports ?? []
+    health.importErrors = probe.importErrors ?? {}
+    health.probe = { ok: probe.ok, timedOut: probe.timedOut, exitCode: probe.exitCode, reason: probe.reason }
+  }
+  health.status = loginHealthStatus(health, requirementsInfo)
+  health.ready = health.status === 'ready'
+  return health
+}
+
+export function loginRuntimeReady() {
+  return loginRuntimeHealth().ready
+}
+
+// Compact sign-in diagnostics for tool payloads / logs.
+export function loginHealthSummary(health) {
+  if (!health) return null
+  return {
+    status: health.status,
+    statusText: runtimeStatusText(health),
+    ready: health.ready,
+    venvDirExists: health.venvDirExists,
+    pythonPresent: health.pythonExists,
+    pythonExecutable: health.pythonExecutable,
+    dependenciesOk: health.dependenciesOk,
+    missingImports: health.missingImports,
+    markerMatches: health.marker?.matches ?? false,
+    legacyMarker: Boolean(health.marker?.installed) && !health.marker?.matches,
+    invalidated: Boolean(health.marker?.present) && !health.marker?.installed,
+    requirementsVersion: health.requirements?.version ?? null,
+    requirementsSha256: health.requirements?.sha256 ?? null,
+    requirementsFile: health.requirements?.path ?? null,
+    checkedAt: health.checkedAt,
+  }
+}
+
 // Accurate recovery wording for the graded diagnosis (status level).
 export function runtimeRepairAdvice(health) {
   const status = typeof health === 'string' ? health : health?.status
@@ -540,11 +776,18 @@ function ensurePipStep(command) {
   }
 }
 
-function installCoreStep(command, requirementsFile) {
+function installCoreStep(command, requirementsFile, { forceReinstall = false } = {}) {
+  const args = ['-m', 'pip', 'install', '--no-cache-dir', '--disable-pip-version-check']
+  // A package can be registered as installed while its module is damaged or
+  // half-removed; plain `pip install -r` then answers "Requirement already
+  // satisfied" and verification fails forever. A real reinstall is the only
+  // repair path once the interpreter and pip are known to work.
+  if (forceReinstall) args.push('--force-reinstall')
+  args.push('-r', requirementsFile)
   return {
     label: '安装学习引擎依赖',
     command,
-    args: ['-m', 'pip', 'install', '--no-cache-dir', '--disable-pip-version-check', '-r', requirementsFile],
+    args,
     cwd: supportDir(),
   }
 }
@@ -671,7 +914,12 @@ export function coreRuntimeSteps({ markRuntime = true, health = null } = {}) {
     !current.dependenciesOk ||
     !current.marker.installed ||
     !current.marker.shaMatches
-  if (needsInstall) steps.push(installCoreStep(venvPython, requirementsInfo.path))
+  // Fresh/rebuild installs are a plain install (nothing is installed yet, so
+  // pip has nothing to skip). A repair of a *running* interpreter whose imports
+  // are broken must force a real reinstall, otherwise pip keeps answering
+  // "Requirement already satisfied" and the verify step never passes.
+  const forceReinstall = !needsRebuild && !current.dependenciesOk
+  if (needsInstall) steps.push(installCoreStep(venvPython, requirementsInfo.path, { forceReinstall }))
   steps.push(verifyCoreStep(venvPython, requirementsInfo.imports))
 
   const basePython = base?.command ?? current.marker?.basePython ?? null
@@ -681,47 +929,99 @@ export function coreRuntimeSteps({ markRuntime = true, health = null } = {}) {
     health: current,
     markRuntime: () => {
       if (!markRuntime) return
-      writeRuntime({ core: coreRuntimeRecord(basePython) })
+      const patch = { core: coreRuntimeRecord(basePython) }
+      if (needsRebuild) {
+        // The rebuilt venv no longer contains Playwright: never let the old
+        // `login.installed` flag survive a core rebuild, or connectHandler would
+        // skip installing the sign-in component.
+        patch.login = {
+          installed: false,
+          invalidatedAt: new Date().toISOString(),
+          invalidatedReason: 'core_rebuilt',
+        }
+      }
+      writeRuntime(patch)
     },
+  }
+}
+
+function installLoginStep(command, requirementsFile, { forceReinstall = false } = {}) {
+  const args = ['-m', 'pip', 'install', '--no-cache-dir', '--disable-pip-version-check']
+  if (forceReinstall) args.push('--force-reinstall')
+  args.push('-r', requirementsFile)
+  return {
+    label: '安装学校登录组件',
+    command,
+    args,
+    cwd: supportDir(),
+  }
+}
+
+function verifyLoginStep(command, imports) {
+  return {
+    label: '验证学校登录组件',
+    command,
+    args: ['-c', verificationScript(imports)],
+    cwd: supportDir(),
+  }
+}
+
+// The record written after a successful sign-in component install/verify. Only
+// installed + the current login dependency fingerprint makes it authoritative.
+export function loginRuntimeRecord() {
+  const requirementsInfo = loginRequirementsInfo()
+  const now = new Date().toISOString()
+  return {
+    installed: true,
+    requirementsVersion: requirementsInfo.version,
+    requirementsSha256: requirementsInfo.sha256,
+    requirementsFile: requirementsInfo.path,
+    dependencies: requirementsInfo.imports,
+    verifiedAt: now,
+    at: now,
   }
 }
 
 // Sign-in dependency steps (Playwright + driver, no browser download).
-export function loginRuntimeSteps() {
+// Derived from the graded login health so a damaged/legacy installation is
+// really reinstalled while a healthy-dependency/marker-only state is only
+// re-verified. The verify step always comes last.
+export function loginRuntimeSteps({ health = null, markRuntime = true, forceReinstall = null } = {}) {
+  const current = health ?? loginRuntimeHealth()
   const python = runtimePythonPath()
-  if (!python) return { error: '请先完成运行依赖安装', steps: [] }
+  if (!python) return { error: '请先完成运行依赖安装', steps: [], health: current }
+  if (!current.pythonExecutable) {
+    return {
+      error: '私有 Python 解释器无法运行，请先调用 study_setup_runtime 修复运行环境后再登录学校。',
+      steps: [],
+      health: current,
+    }
+  }
+  const requirementsInfo = current.requirements ?? loginRequirementsInfo()
+  if (!requirementsInfo.exists) {
+    return {
+      error: `插件包缺少依赖清单 ${requirementsInfo.path}，请重新安装 Moodle Study Assistant 插件后再登录学校。`,
+      steps: [],
+      health: current,
+    }
+  }
+  const steps = []
+  if (!current.dependenciesOk) {
+    // Repairing damaged imports: plain `pip install -r` answers "Requirement
+    // already satisfied" for a registered-but-broken package, so force it.
+    const force = forceReinstall ?? (current.marker.installed || !current.dependenciesOk)
+    steps.push(installLoginStep(python, requirementsInfo.path, { forceReinstall: force }))
+  }
+  steps.push(verifyLoginStep(python, requirementsInfo.imports))
   return {
     error: null,
-    steps: [
-      {
-        label: '安装学校登录组件',
-        command: python,
-        args: [
-          '-m',
-          'pip',
-          'install',
-          '--no-cache-dir',
-          '--disable-pip-version-check',
-          '-r',
-          requirements('requirements-login.txt'),
-        ],
-        cwd: supportDir(),
-      },
-      {
-        label: '验证学校登录组件',
-        command: python,
-        args: ['-c', 'from playwright.sync_api import sync_playwright'],
-        cwd: supportDir(),
-      },
-    ],
+    steps,
+    health: current,
     markRuntime: () => {
-      writeRuntime({ login: { installed: true, at: new Date().toISOString() } })
+      if (!markRuntime) return
+      writeRuntime({ login: loginRuntimeRecord() })
     },
   }
-}
-
-export function loginRuntimeReady() {
-  return Boolean(readRuntime().login?.installed)
 }
 
 // Environment shared by every engine child process.

@@ -91,6 +91,21 @@ function accountKey(account) {
   return `${site}|${userId}`
 }
 
+// Read requests pass the current account id in the request. Before the lazy
+// connection `client.userId` may still fall back to the account recorded in the
+// local profile, so the connected account must replace it: otherwise a re-login
+// as another account would send the previous (or unknown) user id and the
+// school could reject the read. Mirrors source-gateway.mjs exactly.
+function currentAccountParams(params, active) {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return params
+  const userId = active?.userId
+  if (!Number.isSafeInteger(userId) || userId <= 0) return params
+  const result = { ...params }
+  if (Object.hasOwn(result, 'userid')) result.userid = userId
+  if (Object.hasOwn(result, 'useridto')) result.useridto = userId
+  return result
+}
+
 // The account this data directory belongs to: recorded when courses were
 // selected, so guards still work while the school is unreachable.
 function readSavedAccount(dataDir) {
@@ -103,9 +118,12 @@ function readSavedAccount(dataDir) {
   return null
 }
 
-export function createRemoteGateway() {
+export function createRemoteGateway({ decrypt = decryptWindowsToken, connectClient = null } = {}) {
+  const openClient = connectClient ?? (async (config, token) => new ReadOnlyClient(config.moodle_url, token).connect())
   let client = null
   let generation = null
+  let connecting = null
+  let connectingGeneration = null
   let lastError = null
   let connectedAt = null
   let cachedStatus = { at: 0, value: null }
@@ -113,8 +131,7 @@ export function createRemoteGateway() {
   const settings = () => readSettings()
   const activeDataDir = () => settings()?.dataDir ?? null
 
-  function currentGeneration() {
-    const dataDir = activeDataDir()
+  function currentGeneration(dataDir = activeDataDir()) {
     if (!dataDir) return null
     const configBytes = (() => {
       try {
@@ -146,7 +163,10 @@ export function createRemoteGateway() {
     connectedAt = null
   }
 
-  async function connect({ force = false } = {}) {
+  // Validate the current data location and resolve the config used for one
+  // connection attempt. Every retry re-reads these files so a data-location or
+  // config change is never silently connected against the wrong folder.
+  function requiredSetup() {
     const dataDir = activeDataDir()
     if (!dataDir) {
       throw new RemoteError('LOCATION_REQUIRED', '还没有选择资料保存位置。请先调用 study_setup_status 完成首次设置；本地资料目录也可继续使用。', {
@@ -171,23 +191,73 @@ export function createRemoteGateway() {
         requiresLogin: true,
       })
     }
-    const fingerprint = currentGeneration()
-    if (!force && client && generation === fingerprint) return client
-    if (fingerprint !== generation) dropClient()
-    try {
+    return { dataDir, config }
+  }
+
+  function startConnect(dataDir, config, fingerprint) {
+    const run = (async () => {
       const credential = readFileSync(tokenPath(dataDir))
-      const token = decryptWindowsToken(credential)
-      const next = await new ReadOnlyClient(config.moodle_url, token).connect()
+      const token = decrypt(credential)
+      const next = await openClient(config, token)
+      if (!next || typeof next.call !== 'function') throw new Error('invalid connected client')
       client = next
       generation = fingerprint
       connectedAt = new Date().toISOString()
       lastError = null
       cachedStatus = { at: 0, value: null }
       return next
+    })()
+    connecting = run
+    connectingGeneration = fingerprint
+    const clear = () => {
+      if (connecting !== run) return
+      connecting = null
+      connectingGeneration = null
+    }
+    run.then(clear, clear)
+    return run
+  }
+
+  async function attemptConnect(dataDir, config, fingerprint) {
+    try {
+      return await startConnect(dataDir, config, fingerprint)
     } catch (error) {
       dropClient()
       lastError = toRemoteError(error)
       throw lastError
+    }
+  }
+
+  async function connect({ force = false } = {}) {
+    let attempts = 0
+    for (;;) {
+      // A session that was opened for an older saved config/credential must not
+      // be handed to a request that started after a new credential was saved:
+      // wait for the in-flight attempt, then compare the generation again.
+      while (connecting) {
+        const attemptGeneration = connectingGeneration
+        let failure = null
+        try { await connecting } catch (error) { failure = error }
+        if (!failure) continue
+        let current = null
+        try { current = currentGeneration() } catch { current = null }
+        if (current !== null && current === attemptGeneration) throw failure
+      }
+      const { dataDir, config } = requiredSetup()
+      const fingerprint = currentGeneration(dataDir)
+      if (!force && client && generation === fingerprint) return client
+      if (fingerprint !== generation) dropClient()
+      // Bounded rechecks: a credential saved while connecting is retried once
+      // with the new files, but unbounded churn must still terminate.
+      if (attempts >= 3) return attemptConnect(dataDir, config, fingerprint)
+      attempts += 1
+      try {
+        return await attemptConnect(dataDir, config, fingerprint)
+      } catch (error) {
+        let next = null
+        try { next = currentGeneration() } catch { next = null }
+        if (next === null || next === fingerprint) throw error
+      }
     }
   }
 
@@ -234,13 +304,46 @@ export function createRemoteGateway() {
   const gateway = {
     async call(method, params) {
       const active = await connect()
-      return active.call(method, params)
+      const usedGeneration = generation
+      try {
+        return await active.call(method, currentAccountParams(params, active))
+      } catch (error) {
+        // A re-login can complete while this request already holds the previous
+        // session. Retry this read-only call once with the newly saved
+        // credential; unchanged saved files keep the no-retry contract.
+        let changed = false
+        if (usedGeneration) {
+          let fingerprint = null
+          try { fingerprint = currentGeneration() } catch { fingerprint = null }
+          changed = Boolean(fingerprint) && fingerprint !== usedGeneration
+        }
+        if (!changed) throw error
+        dropClient()
+        const retried = await connect()
+        return retried.call(method, currentAccountParams(params, retried))
+      }
     },
     async connect(options) {
       return connect(options)
     },
     supports(wsfunction) {
-      return client ? client.supports(wsfunction) : true
+      if (!client) return true
+      // A cached API list belongs to the config/credential it was connected
+      // with. Once a new login has been saved, drop the stale client and report
+      // "optimistic" so the tool call reconnects instead of returning
+      // api_not_enabled forever. Unreadable files behave the same way.
+      let fingerprint = null
+      try { fingerprint = currentGeneration() } catch { fingerprint = null }
+      if (!fingerprint || fingerprint !== generation) {
+        dropClient()
+        return true
+      }
+      try {
+        return typeof client.supports === 'function' ? Boolean(client.supports(wsfunction)) : true
+      } catch {
+        dropClient()
+        return true
+      }
     },
     get baseUrl() {
       return readConfig(activeDataDir())?.moodle_url ?? null

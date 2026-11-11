@@ -186,11 +186,13 @@ export function logPath(name) {
 // tools stay usable when the school is unreachable, and remote tools are
 // checked lazily by the remote gateway.
 //
-// `runtimeHealth` is produced by python-runtime.mjs (a graded local probe) and
-// is passed in by the caller. Passing it explicitly keeps this module free of a
-// circular import, and a missing health document is treated conservatively:
-// the runtime is NOT ready just because files or an old marker exist.
-export function localCapabilities(settings = readSettings(), runtimeHealth = null) {
+// `runtimeHealth` and `loginHealth` are produced by python-runtime.mjs (graded
+// local probes) and are passed in by the caller. Passing them explicitly keeps
+// this module free of a circular import, and a missing health document is
+// treated conservatively: a component is NOT ready just because files or an old
+// marker exist. `loginHealth` is optional; when omitted the sign-in component is
+// reported as not ready.
+export function localCapabilities(settings = readSettings(), runtimeHealth = null, loginHealth = null) {
   const dataDir = settings?.dataDir ? resolve(settings.dataDir) : null
   let dataDirExists = false
   try {
@@ -205,6 +207,7 @@ export function localCapabilities(settings = readSettings(), runtimeHealth = nul
   const coreInstalled = Boolean(runtime.core?.installed)
   const health = runtimeHealth && typeof runtimeHealth === 'object' ? runtimeHealth : null
   const runtimeReady = Boolean(health?.ready)
+  const login = loginHealth && typeof loginHealth === 'object' ? loginHealth : null
   const tokenPresent = Boolean(dataDirExists && existsSync(tokenPath(dataDir)))
   const runtimeHealthSummary = health
     ? {
@@ -221,6 +224,20 @@ export function localCapabilities(settings = readSettings(), runtimeHealth = nul
         requirementsSha256: health.requirements?.sha256 ?? null,
       }
     : null
+  const loginRuntimeHealthSummary = login
+    ? {
+        status: login.status ?? null,
+        ready: Boolean(login.ready),
+        venvDirExists: Boolean(login.venvDirExists),
+        pythonPresent: Boolean(login.pythonExists),
+        pythonExecutable: Boolean(login.pythonExecutable),
+        dependenciesOk: Boolean(login.dependenciesOk),
+        missingImports: Array.isArray(login.missingImports) ? [...login.missingImports] : [],
+        markerMatches: Boolean(login.marker?.matches),
+        requirementsVersion: login.requirements?.version ?? null,
+        requirementsSha256: login.requirements?.sha256 ?? null,
+      }
+    : null
   return {
     dataDir,
     dataDirExists,
@@ -235,7 +252,12 @@ export function localCapabilities(settings = readSettings(), runtimeHealth = nul
     runtimeStatus: health?.status ?? 'unknown',
     runtimeHealth: runtimeHealthSummary,
     runtimeReady,
-    loginRuntimeReady: Boolean(runtime.login?.installed),
+    // Graded sign-in readiness (interpreter + playwright.sync_api + a marker
+    // written for the current login dependency fingerprint). Never derived from
+    // the bare `login.installed` flag.
+    loginRuntimeStatus: login?.status ?? 'unknown',
+    loginRuntimeHealth: loginRuntimeHealthSummary,
+    loginRuntimeReady: Boolean(login?.ready),
     tokenPresent,
     stateInitialized: Boolean(state),
     // Local study tools only need the data directory and a verified runtime.

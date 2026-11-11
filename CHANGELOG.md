@@ -17,7 +17,7 @@
 
 | 日期 | 这次主要改变了什么 |
 | --- | --- |
-| [2026-11-11](#2026-11-11) | 学习进度漏记与误报修复：总览、单科接续与记忆查询共用 `teaching_progress`，按实际发生时间选择接续；新增 `teaching-save` 保存入口，追加实际发生时间、聊天/轮次来源、真实原答并回读确认；已答、跳过、已展示答案不再作为当前待答。学生上线可用性修复：源码版 MCP 未登录也可启动并注册全部 16 个工具，登录后同聊天恢复且不需再次重启；安装器配置冲突零写入、非 0 退出、不误报 Setup complete；插件运行环境改为分级健康检查，缺 pip、旧成功标记失效或解释器损坏可安全重建并给出准确下一步 |
+| [2026-11-11](#2026-11-11) | 学习进度漏记与误报修复：总览、单科接续与记忆查询共用 `teaching_progress`，按实际发生时间选择接续；新增 `teaching-save` 保存入口，追加实际发生时间、聊天/轮次来源、真实原答并回读确认；已答、跳过、已展示答案不再作为当前待答。学生上线可用性修复：源码版 MCP 未登录也可启动并注册全部 16 个工具，登录后同聊天恢复且不需再次重启；安装器配置冲突零写入、非 0 退出、不误报 Setup complete；插件运行环境改为分级健康检查，缺 pip、旧成功标记失效或解释器损坏可安全重建并给出准确下一步；补漏：损坏依赖真正重装、重建 venv 后登录组件分级检查、安装器同名 MCP/skills 缺失/损坏生成段与 fallback 假成功、重登录后连接/API 缓存/账号参数恢复、冷启动章节回执绑定当前保存连接、host 兜底诊断一致；插件包重建为 0.6.0-trial.4 |
 | [2026-11-10](#2026-11-10) | 教学节奏与意图判断修复：按意图和教学阶段处理“继续/下一步/好/懂了/跳过/不会/换内容”，继续不自动跳过练习，跳过和直接答案只影响当前题；默认讲练交替，不连续讲完整章才首次检测；重要知识点后保留默认费曼解释，可合并内容、与练习穿插；推进前检查近期是否只有讲解没有作答 |
 | [2026-11-09](#2026-11-09) | DeepSeek Harness 插件 0.6.0-trial.2：设置/学习工具不再分两套，任一步中断后重启可从当前进度继续；断网时本地学习工具与教学记录仍可用，联网失败用新增 `study_reconnect` 重试（不需重新登录）；设置完成改为依据真实同步证据，空目录/部分同步逐门说明且重跑增量补齐。0.6.0-trial.3：完整资料同步还要求学校信息采集完整，采集失败即使课件已下载也不判定完成 |
 | [2026-11-08](#2026-11-08) | 发布审计修复：复习剩余容量与已绑定原答批改；章节核对精确定位、同聊天回执复用与阶段进度；教学意图路由与考试信息使用时机修复；章节讲解批量准备与 teaching-event 保存提速；DeepSeek Harness 插件试用版：可安装插件包、聊天内首次设置引导、教学技能与章节核对接入、个人资料与程序分离 |
@@ -55,6 +55,21 @@
 - 验证：本机离线回归 Node `node --test tests/*.test.mjs` **213 项通过、0 失败**（运行前需把 `TEMP`/`TMP` 指向仓库内可写目录，否则子进程写系统 `%TEMP%` 被拒，属执行环境限制）；Python `.venv\Scripts\python.exe -B -m unittest discover -s tests -p "test_*.py"` 全部 **118 项通过**。定向验证：插件运行环境恢复 8 项、插件恢复 19 项；DSH 安装器 43 项（含真实 CLI 子进程退出码，以及真实 PowerShell 子进程执行 `setup-dsh.ps1` 的成功/冲突最终提示）；MCP 启动、懒连接与章节上下文 18 项（含真实 stdio 子进程未登录握手、16 个工具、结构化错误、进程存活和优雅退出）。测试使用隔离临时目录与虚构配置/凭据，未读取真实 `.private`、真实学习档案或真实 DSH profile，未联网访问学校。
 - 未验证：真实学校 SSO/MFA 登录与失效会话重新登录、真实 Windows DPAPI 凭据损坏或更换账户、真实联网 pip 安装（测试用注入、空依赖清单或本地 wheel）未覆盖；未在真实 Harness 聊天中做“重启 → 未登录时工具可用 → 聊天内登录 → 同聊天恢复”的端到端验收。本次未重建插件包（`dist/`、`release/` 未改动）、未提升试用版本号、未发布，插件运行环境修复需下次重新打包才进入试用包；源码版更新代码后即生效。
 - 升级：源码版更新代码后重新运行 `setup.ps1`（或由助手执行 `dsh_integration.py install`）确认配置无冲突，再完整重启 DSH，回到项目聊天完成学校登录；若重启后仍看不到 Moodle 工具，再完整重启一次并确认工具列表，不要删除配置或重建档案。插件版安装下次试用包后，让助手重新调用 `study_setup_runtime` 做一次健康检查/修复；正常安装的依赖通常不需重装。
+
+### 学生上线可用性补漏：恢复闭环、安装器完整性与账号变化后的连接/回执
+
+- 背景：`8c4ec0b` 的上一轮补丁通过了 213 项 Node / 118 项 Python 测试，但审计用虚构账号、隔离目录和离线替身复现出恢复闭环仍有遗漏：损坏依赖反复修不好、重建环境后登录组件被旧标记跳过、安装器在若干“配置不完整”场景仍退出 0、Host 兜底诊断与 MCP 诊断互相矛盾、重新登录后的同聊天恢复不是所有情况都成立、冷启动章节回执可能绕过当前账号确认。本版逐项修复，并补上独立验证与本地插件包重建。
+- 修复一（损坏依赖真正重装）：当解释器与 pip 可用、但 `requirements-core.txt` 的依赖导入失败时，安装步骤改为 `pip install --force-reinstall -r requirements-core.txt`（首次安装与重建 venv 仍用普通安装）；验证步骤固定在最后，验证通过前不写成功标记。连续两次“破坏模块 → 修复”都用真实 venv / 真实 pip / 本地 wheel 验证。`CORE_REQUIREMENTS_VERSION` 升到 3，旧标记不会被直接信任。
+- 修复二（重建后登录组件分级检查）：旧 `runtime.json` 的 `login.installed` 只表示“装过”，venv 重建会把 Playwright 一起移走。新增分级登录健康检查：解释器可运行 + `playwright.sync_api` 可导入 + login 依赖指纹匹配才算 ready；旧 installed-only 标记判 stale；核心重建时作废旧 login 标记；损坏修复的安装步骤使用 `--force-reinstall`，`study_setup_status` 与 Host `moodle_study_status` 展示同一分级状态。
+- 修复三（安装器完整性）：同名 `moodle_study` MCP 条目超过一条时判为 `conflict`（非零退出、文件不变、不再“有一条匹配就算配置好”）；项目 `skills/` 目录不存在判为 `invalid`/`error`，零写入；`unchanged` 早返回只在未剥离生成段且完整原文件可解析时成立，损坏或陈旧的内部生成段会被剥离/重建并校验最终持久化文档（恰好一条指向当前项目的 MCP 条目 + 存在的 skills 目录）后才写入。`setup.ps1` 在缺少完成助手的回退分支也只检查退出码，现额外复核 `status --json` 的 `configuration_ok`，失败时不打印 Setup complete。真实 CLI 与真实 PowerShell 子进程均覆盖成功/失败对照。
+- 修复四（重新登录后的同聊天恢复）：源码版 `source-gateway.mjs` 与插件版 `plugin/remote.mjs` 的网关都会在等待在途连接后重新比较当前保存的 config + DPAPI 凭据 generation，绝不把旧账号的连接交给保存新凭据后开始的请求；`supports()` 发现凭据变化时丢弃旧 client 的“不支持此 API”缓存并触发重连；`call()` 只在失败时 generation 已变化才用新连接重放一次只读调用（保存内容未变时保持不自动重试）；重连后按已认证账号替换请求中的 `userid`/`useridto`，不再沿用学习档案里的旧账号或 null（独立验证发现的补充缺口）。
+- 修复五（冷启动章节回执绑定当前连接）：`CHAPTER_CHECK_SCHEMA` 升到 3，严格核对成功回执记录 `connection_generation`（解析后的 `config.local.json` 与 `.private` 凭据字节的 SHA-256，只存哈希）。复用回执必须同时满足：回执与当前保存连接 generation 均非空且相等；旧 schema、缺失或登录变化一律不复用。保存 B 账号凭据后新进程同聊天同章不会返回 A 的成功回执，联网后由学习档案账号守卫拒绝且不下载任何文件；失败尝试不改写旧回执。
+- 修复六（Host 兜底诊断一致）：`plugin/index.js` 的 `moodle_study_status` 改为动态加载与 MCP 相同的分级 `python-runtime.mjs` 探测，损坏解释器时 `runtimeReady=false`、`runtimeStatus=interpreter_broken`、下一步指向 `study_setup_runtime`，不再与 `study_setup_status` 结论矛盾；源码 checkout 与构建包两种目录布局都可用，探测失败保守按未就绪处理。
+- 验证：本机离线回归（完整权限执行，隔离临时目录与虚构数据，未读写真实 Harness profile、真实 `Study/`、真实 `.private`）：Node `node --test tests/*.test.mjs` **240 项通过、0 失败**；`tests/` Python **133 项 OK**；学习工具 Python **671 项 OK**。定向覆盖：运行时恢复 12、插件恢复 19、Host 状态 2、安装器 64（含真实 CLI 子进程退出码与真实 PowerShell fallback 对照）、网关/章节回执 75、MCP 启动与真实 stdio 子进程 11。另由独立验证按用户审计 6 项全离线复跑，**6/6 PASS**（含真实 CLI 安装器 5 场景、真实 setup.ps1 fallback、冷启动双进程回执、两网关竞态与 API 缓存恢复），验证中发现的插件网关账号参数缺口已修复并补测。
+- 插件包与本地产物：`0.6.0-trial.4` 的 `dist/` 已重建（3559 个文件、约 15.1 MB，个人数据审计通过）；`pack:plugin` 生成 `release/npm/dsh-moodle-study-0.6.0-trial.4.tgz`（3,190,465 字节 / 3558 个条目 / 92 个内置依赖包 / SHA-256 `cfd8fddd8ad2c48754dc135e6531d443c1c3bd08b024bea3d355545e502a9de7`）；解包后 `verify-plugin` **31/31** 通过（含真实 MCP 握手、隔离支持目录中用 DSH 自带 Python 真实联网安装核心 Python 依赖），`verify-study-tools` **8/8** 通过。更早的 trial.3 准备包不包含本轮修复。
+- 执行说明纠正：上一轮“全部隔离”的说法不准确——手工诊断曾继承 `DSH_PROFILE_DIR` 读到真实 Harness profile，`$HOME` 变量冲突也使一次合成文件目标偏离临时目录；相关残留位置本轮未继续访问或清理。本轮测试与独立验证显式清除 `DSH_PROFILE_DIR`/`DSH_PROFILE`/`DSH_HOME`/`DSH_SESSION_ID`/`STUDY_CHAT_ID` 或指向隔离目录；不宣称已证明上一轮残留完全干净。
+- 未验证：真实 Harness 桌面重启与真实 host 加载插件包、真实学校 SSO/MFA 登录与真实 Moodle API/权限、真实 Windows DPAPI 凭据更换、真实 Playwright 联网安装（登录组件用本地 wheel 与 import seam 验证行为）、完整首次使用端到端流程。已安装的旧插件副本仍是 trial.3；需按试用说明卸载旧包、安装 `0.6.0-trial.4` 并完整重启 Harness 后才生效，本轮不声称学生端已经在线切换。
+- 升级：源码版更新后重新运行 `setup.ps1`（或由助手执行 `dsh_integration.py install`）并完整重启 DSH；插件版卸载旧试用包、安装 `0.6.0-trial.4` 后重启。旧 schema2 章节回执升级后首次会重新严格核对一次；不迁移、不删除 `Study/`、`.private/` 或课程授权。
 
 ## 2026-11-10
 

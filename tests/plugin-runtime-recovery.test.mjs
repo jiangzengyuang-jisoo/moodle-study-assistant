@@ -18,6 +18,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -31,13 +32,19 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 
 function writableTempRoot() {
   const preferred = process.env.TEMP || process.env.TMP || tmpdir()
-  try {
-    return mkdtempSync(join(preferred, 'moodle-runtime-'))
-  } catch {
-    const fallback = join(repoRoot, 'tmp', 'runtime-recovery-temp')
-    mkdirSync(fallback, { recursive: true })
-    return mkdtempSync(join(fallback, 'run-'))
+  // `python -m venv` refuses an environment whose target is reached through an
+  // 8.3 short name (the DSH sandbox %TEMP% may look like C:\Users\PETERJ~1\...):
+  // fall back to the repository tmp/ directory, which is writable and long.
+  if (!/~\d+/.test(preferred)) {
+    try {
+      return realpathSync(mkdtempSync(join(realpathSync(preferred), 'moodle-runtime-')))
+    } catch {
+      // Fall back below.
+    }
   }
+  const fallback = join(repoRoot, 'tmp', 'runtime-recovery-temp')
+  mkdirSync(fallback, { recursive: true })
+  return realpathSync(mkdtempSync(join(fallback, 'run-')))
 }
 
 const tempRoot = writableTempRoot()
@@ -49,6 +56,19 @@ process.env.TMPDIR = tempRoot
 process.env.PIP_NO_INDEX = '1'
 process.env.PIP_NO_INPUT = '1'
 process.env.PIP_DISABLE_PIP_VERSION_CHECK = '1'
+// Never inherit the real Harness profile / chat identity: an isolated DSH home
+// keeps base-Python discovery and any accidental profile lookup inside tmp.
+for (const inherited of [
+  'DSH_PROFILE_DIR',
+  'DSH_PROFILE',
+  'DSH_SESSION_ID',
+  'STUDY_CHAT_ID',
+  'MOODLE_STUDY_LOGIN_IMPORT_OVERRIDE',
+]) {
+  delete process.env[inherited]
+}
+delete process.env.DSH_HOME
+process.env.MOODLE_STUDY_DSH_HOME = join(tempRoot, 'dsh-home')
 
 function findBasePython() {
   const candidates = [
@@ -74,9 +94,23 @@ const skipReason = basePython ? false : '需要可用的 Python 3.11+ 才能验�
 const runtime = await import('../tools/moodle/plugin/python-runtime.mjs')
 const onboarding = await import('../tools/moodle/plugin/onboarding-tools.mjs')
 const jobs = await import('../tools/moodle/plugin/jobs.mjs')
+const settingsModule = await import('../tools/moodle/plugin/settings.mjs')
 
-const { CORE_REQUIREMENTS_VERSION, coreRequirementsInfo, coreRuntimeHealth, coreRuntimeRecord } = runtime
+const {
+  CORE_REQUIREMENTS_VERSION,
+  LOGIN_REQUIREMENTS_VERSION,
+  coreRequirementsInfo,
+  coreRuntimeHealth,
+  coreRuntimeRecord,
+  coreRuntimeSteps,
+  loginRequirementsInfo,
+  loginRuntimeHealth,
+  loginRuntimeReady,
+  loginRuntimeRecord,
+  loginRuntimeSteps,
+} = runtime
 const { runtimeHandler } = onboarding
+const { localCapabilities, readSettings } = settingsModule
 
 after(() => {
   try {
@@ -100,9 +134,9 @@ function writeJson(path, value) {
 }
 
 // Isolated support/program/data dirs for one scenario. The program dir has an
-// empty (or custom) requirements-core.txt so the real chain runs without
-// downloading the study engine dependencies.
-function createCase({ requirements = '', importOverride = null } = {}) {
+// empty (or custom) requirements-core.txt / requirements-login.txt so the real
+// chain runs without downloading the study engine dependencies.
+function createCase({ requirements = '', importOverride = null, loginRequirements = '' } = {}) {
   const root = mkdtempSync(join(tempRoot, 'case-'))
   const support = join(root, 'support')
   const program = join(root, 'program')
@@ -113,6 +147,7 @@ function createCase({ requirements = '', importOverride = null } = {}) {
   mkdirSync(join(dataDir, 'Study', '_Inbox'), { recursive: true })
   mkdirSync(join(dataDir, '.private'), { recursive: true })
   writeFileSync(join(program, 'requirements-core.txt'), requirements, 'utf8')
+  writeFileSync(join(program, 'requirements-login.txt'), loginRequirements, 'utf8')
   writeJson(join(dataDir, 'config.local.json'), {
     moodle_url: 'https://school.example',
     timezone: 'Asia/Hong_Kong',
@@ -185,6 +220,32 @@ async function waitForJob(jobId, { timeoutMs = 180000 } = {}) {
   }
 }
 
+// Run one repair-chain step exactly as the job runner would (same command,
+// args, cwd and inherited offline env), but synchronously for assertions.
+function runStep(step) {
+  const result = spawnSync(step.command, step.args, {
+    cwd: step.cwd,
+    env: { ...process.env, ...(step.env ?? {}) },
+    encoding: 'utf8',
+    timeout: 240000,
+    windowsHide: true,
+    maxBuffer: 16 * 1024 * 1024,
+  })
+  return { ...result, ok: result.status === 0 }
+}
+
+// site-packages directory of the private venv (used to damage a module while
+// leaving its dist-info installed, which is what makes plain pip install skip).
+function pythonPurelib(python) {
+  const probe = spawnSync(
+    python,
+    ['-c', 'import sys, sysconfig; sys.stdout.write(sysconfig.get_paths()["purelib"])'],
+    { encoding: 'utf8', timeout: 60000, windowsHide: true, env: { ...process.env } },
+  )
+  assert.equal(probe.status, 0, `无法定位 venv site-packages：${probe.stderr || probe.error?.message}`)
+  return probe.stdout.trim()
+}
+
 const MAKE_WHEEL_PY = String.raw`
 import base64, hashlib, sys, zipfile
 wheel_path = sys.argv[1]
@@ -230,6 +291,13 @@ test('a fresh install builds a healthy runtime; later calls report alreadyReady 
   assert.equal(before.pythonExists, false)
   assert.equal(before.status, 'not_installed')
   assert.equal(before.ready, false)
+
+  // A fresh install (nothing in the venv yet) must stay a plain pip install:
+  // --force-reinstall is only for repairing a running interpreter's packages.
+  const freshChain = coreRuntimeSteps({ health: before })
+  const freshInstall = freshChain.steps.find((step) => step.label === '安装学习引擎依赖')
+  assert.ok(freshInstall, '首次安装缺少依赖安装步骤')
+  assert.ok(!freshInstall.args.includes('--force-reinstall'), '首次安装不应强制重装')
 
   const first = runtimeHandler({}, { remote: stubGateway() })
   assert.equal(first.ok, true)
@@ -278,6 +346,15 @@ test('a fresh install builds a healthy runtime; later calls report alreadyReady 
   assert.equal(status.capabilities.runtimeReady, true)
   assert.equal(status.local.runtimeStatus, 'ready')
   assert.equal(status.local.runtimeHealth.pipAvailable, true)
+  // Sign-in readiness is graded, never a bare marker flag: this fresh venv has
+  // no Playwright yet, so it must not claim the login component is ready.
+  assert.equal(status.local.loginRuntimeReady, false)
+  assert.equal(status.local.loginRuntimeStatus, 'dependencies_missing')
+  // A caller that does not pass a login health document gets the conservative
+  // answer instead of the old marker-derived one.
+  const conservative = localCapabilities(readSettings(), coreRuntimeHealth())
+  assert.equal(conservative.loginRuntimeReady, false, '未传登录分级健康时必须保守 false')
+  assert.equal(conservative.loginRuntimeStatus, 'unknown')
 })
 
 test('an interrupted creation without pip is repaired with offline ensurepip before installing', { skip: skipReason }, async () => {
@@ -331,6 +408,15 @@ test('a matching old marker with a missing dependency is not reported ready and 
   const result = runtimeHandler({}, { remote: stubGateway() })
   assert.notEqual(result.alreadyReady, true)
   assert.equal(result.runtime.status, 'dependencies_missing')
+  // With a working interpreter + pip, a missing import cannot be "fixed" by a
+  // plain install (pip may think the requirement is satisfied); the chain must
+  // ask for a real reinstall and keep verify last.
+  const chain = coreRuntimeSteps({ health: before })
+  const chainLabels = chain.steps.map((step) => step.label)
+  const installStep = chain.steps.find((step) => step.label === '安装学习引擎依赖')
+  assert.ok(installStep.args.includes('--force-reinstall'))
+  assert.ok(chainLabels.indexOf('安装学习引擎依赖') < chainLabels.indexOf('验证学习引擎依赖'))
+  assert.equal(chainLabels[chainLabels.length - 1], '验证学习引擎依赖')
   const done = await waitForJob(result.job.id)
   assert.equal(done.state, 'done', `依赖修复任务失败：${done.error}\n${String(done.log).slice(-3000)}`)
   assert.ok(done.steps.map((step) => step.label).includes('安装学习引擎依赖'))
@@ -344,6 +430,225 @@ test('a matching old marker with a missing dependency is not reported ready and 
   const again = runtimeHandler({}, { remote: stubGateway() })
   assert.equal(again.alreadyReady, true)
 })
+
+// A package whose dist-info is present but whose module is damaged is exactly
+// the case plain `pip install -r` cannot repair: pip answers "Requirement
+// already satisfied" and the verify step keeps failing. The repair chain must
+// issue a real reinstall, and the same damage/repair loop must work repeatedly.
+test('a damaged installed dependency is really reinstalled twice, not skipped as already satisfied', { skip: skipReason }, async () => {
+  const env = createCase()
+  copySeedVenv(env.support)
+  const wheelPath = buildStubWheel(env.root)
+  const requirement = `moodle-study-stubdep @ ${pathToFileURL(wheelPath).href}\n`
+  writeFileSync(join(env.program, 'requirements-core.txt'), requirement, 'utf8')
+  const python = venvPythonPath(env.support)
+  const initial = spawnSync(
+    python,
+    ['-m', 'pip', 'install', '--no-cache-dir', '--disable-pip-version-check', '-r', join(env.program, 'requirements-core.txt')],
+    { encoding: 'utf8', timeout: 180000, windowsHide: true, env: { ...process.env } },
+  )
+  assert.equal(initial.status, 0, `首次安装本地 wheel 失败：${initial.stderr || initial.error?.message}`)
+  writeCoreMarker(env)
+  assert.equal(coreRuntimeHealth().ready, true)
+
+  const modulePath = join(pythonPurelib(python), 'moodle_study_stubdep.py')
+  assert.ok(existsSync(modulePath), '本地 wheel 没有安装到 venv')
+
+  for (const round of [1, 2]) {
+    writeFileSync(modulePath, 'raise RuntimeError("synthetic damaged module")\n', 'utf8')
+    const before = coreRuntimeHealth()
+    assert.equal(before.status, 'dependencies_missing', `第 ${round} 次破坏后的诊断`)
+    assert.equal(before.dependenciesOk, false)
+    assert.equal(before.ready, false)
+    // The marker still claims a matching fingerprint: only the graded probe can
+    // tell that the installed dependency is now unusable.
+    assert.equal(before.marker.matches, true)
+
+    const chain = coreRuntimeSteps({ health: before })
+    const labels = chain.steps.map((step) => step.label)
+    const installStep = chain.steps.find((step) => step.label === '安装学习引擎依赖')
+    assert.ok(installStep, `第 ${round} 次修复缺少依赖安装步骤`)
+    assert.ok(
+      installStep.args.includes('--force-reinstall'),
+      `第 ${round} 次修复必须真正重装而不是依赖 already satisfied：${installStep.args.join(' ')}`,
+    )
+    assert.ok(labels.indexOf('安装学习引擎依赖') < labels.indexOf('验证学习引擎依赖'))
+    assert.equal(labels[labels.length - 1], '验证学习引擎依赖')
+
+    const result = runtimeHandler({}, { remote: stubGateway() })
+    assert.notEqual(result.alreadyReady, true)
+    const done = await waitForJob(result.job.id)
+    assert.equal(done.state, 'done', `第 ${round} 次依赖修复任务失败：${done.error}\n${String(done.log).slice(-3000)}`)
+
+    const importCheck = spawnSync(
+      python,
+      ['-c', 'import moodle_study_stubdep; assert moodle_study_stubdep.VALUE == 42'],
+      { encoding: 'utf8', timeout: 60000, windowsHide: true, env: { ...process.env } },
+    )
+    assert.equal(importCheck.status, 0, `第 ${round} 次修复后模块仍无法导入：${importCheck.stderr || importCheck.error?.message}`)
+    const after = coreRuntimeHealth()
+    assert.equal(after.status, 'ready', `第 ${round} 次修复后的健康检查`)
+    assert.equal(after.ready, true)
+    assert.equal(after.marker.matches, true)
+  }
+})
+
+// Defect B: a rebuilt venv no longer contains Playwright, but runtime.json still
+// has `login: {installed: true}` from before the rebuild. Login readiness must
+// be graded and the repair chain must really reinstall the sign-in component.
+test('a rebuilt venv makes an old login marker stale; the login repair reinstalls and verifies', { skip: skipReason }, async () => {
+  const env = createCase()
+  copySeedVenv(env.support)
+  writeCoreMarker(env)
+  // runtime.json still carries the pre-rebuild sign-in flag (installed only,
+  // like a marker written by an older plugin version).
+  writeJson(join(env.support, 'runtime.json'), {
+    core: coreRuntimeRecord(basePython),
+    login: { installed: true, at: '2026-11-01T00:00:00.000Z' },
+  })
+
+  let health = loginRuntimeHealth()
+  assert.equal(health.pythonExecutable, true)
+  assert.equal(health.dependenciesOk, false, '重建后的 venv 不含 Playwright')
+  assert.equal(health.marker.installed, true)
+  assert.equal(health.marker.matches, false, '旧 installed-only 登录标记必须判 stale')
+  assert.equal(health.status, 'dependencies_missing')
+  assert.equal(health.ready, false)
+  assert.equal(loginRuntimeReady(), false)
+
+  const wheelPath = buildStubWheel(env.root)
+  writeFileSync(
+    join(env.program, 'requirements-login.txt'),
+    `moodle-study-stubdep @ ${pathToFileURL(wheelPath).href}\n`,
+    'utf8',
+  )
+  process.env.MOODLE_STUDY_LOGIN_IMPORT_OVERRIDE = 'moodle_study_stubdep'
+  try {
+    health = loginRuntimeHealth()
+    assert.equal(health.status, 'dependencies_missing')
+    const chain = loginRuntimeSteps({ health })
+    assert.equal(chain.error, null)
+    assert.deepEqual(
+      chain.steps.map((step) => step.label),
+      ['安装学校登录组件', '验证学校登录组件'],
+    )
+    assert.ok(chain.steps[0].args.includes('--force-reinstall'), '损坏的登录组件修复必须强制重装')
+    for (const step of chain.steps) {
+      const run = runStep(step)
+      assert.equal(run.ok, true, `${step.label} 失败：${run.stderr || run.error?.message}`)
+    }
+
+    // Imports are healthy again, but the old marker still has no fingerprint:
+    // readiness stays false until the marker is rewritten for the current login
+    // dependency requirements (this is what makes connectHandler repair once and
+    // then stop repairing on the next call).
+    health = loginRuntimeHealth()
+    assert.equal(health.dependenciesOk, true)
+    assert.equal(health.status, 'marker_stale')
+    assert.equal(health.ready, false)
+    assert.equal(loginRuntimeReady(), false)
+
+    chain.markRuntime()
+    health = loginRuntimeHealth()
+    assert.equal(health.status, 'ready')
+    assert.equal(health.ready, true)
+    assert.equal(loginRuntimeReady(), true)
+    const marker = readRuntimeFile(env).login
+    const info = loginRequirementsInfo()
+    assert.equal(marker.installed, true)
+    assert.equal(marker.requirementsVersion, LOGIN_REQUIREMENTS_VERSION)
+    assert.equal(marker.requirementsSha256, info.sha256)
+  } finally {
+    delete process.env.MOODLE_STUDY_LOGIN_IMPORT_OVERRIDE
+  }
+})
+
+test('a legacy login marker with importable dependencies is stale and refreshed by verify only', { skip: skipReason }, () => {
+  const env = createCase()
+  copySeedVenv(env.support)
+  writeCoreMarker(env)
+  const wheelPath = buildStubWheel(env.root)
+  writeFileSync(
+    join(env.program, 'requirements-login.txt'),
+    `moodle-study-stubdep @ ${pathToFileURL(wheelPath).href}\n`,
+    'utf8',
+  )
+  process.env.MOODLE_STUDY_LOGIN_IMPORT_OVERRIDE = 'moodle_study_stubdep'
+  try {
+    const python = venvPythonPath(env.support)
+    const install = spawnSync(
+      python,
+      ['-m', 'pip', 'install', '--no-cache-dir', '--disable-pip-version-check', '-r', join(env.program, 'requirements-login.txt')],
+      { encoding: 'utf8', timeout: 180000, windowsHide: true, env: { ...process.env } },
+    )
+    assert.equal(install.status, 0, `安装登录测试依赖失败：${install.stderr || install.error?.message}`)
+    writeJson(join(env.support, 'runtime.json'), {
+      core: coreRuntimeRecord(basePython),
+      login: { installed: true, at: '2026-11-01T00:00:00.000Z' },
+    })
+
+    const health = loginRuntimeHealth()
+    assert.equal(health.dependenciesOk, true)
+    assert.equal(health.marker.installed, true)
+    assert.equal(health.marker.matches, false)
+    assert.equal(health.status, 'marker_stale')
+    assert.equal(health.ready, false)
+    assert.equal(loginRuntimeReady(), false)
+
+    const chain = loginRuntimeSteps({ health })
+    assert.equal(chain.error, null)
+    assert.deepEqual(
+      chain.steps.map((step) => step.label),
+      ['验证学校登录组件'],
+      '依赖可导入时只需重新验证并刷新记录，不应重复下载',
+    )
+    const verify = runStep(chain.steps[0])
+    assert.equal(verify.ok, true, `验证失败：${verify.stderr}`)
+    assert.equal(loginRuntimeReady(), false, '仅验证不会凭旧标记变 ready')
+    chain.markRuntime()
+    assert.equal(loginRuntimeReady(), true)
+  } finally {
+    delete process.env.MOODLE_STUDY_LOGIN_IMPORT_OVERRIDE
+  }
+})
+
+// Defect B: a successful core rebuild leaves the old sign-in marker pointing at
+// a Playwright copy that is gone with the old venv, so it must be invalidated.
+test('a core rebuild invalidates the old login marker instead of keeping it authoritative', { skip: skipReason }, async () => {
+  const env = createCase()
+  copySeedVenv(env.support)
+  const loginInfo = loginRequirementsInfo()
+  writeJson(join(env.support, 'runtime.json'), {
+    core: coreRuntimeRecord(basePython),
+    login: {
+      installed: true,
+      requirementsVersion: loginInfo.version,
+      requirementsSha256: loginInfo.sha256,
+      at: '2026-11-01T00:00:00.000Z',
+    },
+  })
+  writeFileSync(venvPythonPath(env.support), 'not-a-real-executable', 'utf8')
+
+  const before = coreRuntimeHealth()
+  assert.equal(before.status, 'interpreter_broken')
+  const result = runtimeHandler({}, { remote: stubGateway() })
+  const done = await waitForJob(result.job.id)
+  assert.equal(done.state, 'done', `重建任务失败：${done.error}\n${String(done.log).slice(-3000)}`)
+
+  const marker = readRuntimeFile(env)
+  assert.equal(marker.login.installed, false, '核心重建后必须作废旧登录标记')
+  assert.equal(marker.login.invalidatedReason, 'core_rebuilt')
+  const loginHealth = loginRuntimeHealth()
+  assert.equal(loginHealth.marker.installed, false)
+  assert.equal(loginHealth.ready, false)
+  assert.equal(loginRuntimeReady(), false)
+
+  const chain = loginRuntimeSteps({ health: loginHealth })
+  assert.equal(chain.error, null)
+  assert.ok(chain.steps[0].args.includes('--force-reinstall'), '重建后的登录组件安装仍应按修复路径强制重装')
+  assert.equal(chain.steps[chain.steps.length - 1].label, '验证学校登录组件')
+})
+
 
 test('a corrupted interpreter is rebuilt safely and the broken environment is kept for diagnosis', { skip: skipReason }, async () => {
   const env = createCase()

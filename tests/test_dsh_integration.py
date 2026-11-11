@@ -11,10 +11,15 @@ credentials and no real study records. Covered contract areas:
 * real installer CLI contract (subprocess): installed/unchanged/dry-run with
   configuration_ok true exit 0, while conflict/skipped/error exit non-zero with
   actionable hints and an untouched profile when a conflict blocks the merge;
+* no false success: duplicated same-name MCP entries are a conflict, a missing
+  project ``skills/`` directory is invalid and blocks the write, and stale or
+  damaged generated blocks are repaired (never reported unchanged while the
+  persisted status would still be invalid);
 * the extracted PowerShell setup helper (real Windows PowerShell subprocess):
   completion covers both the moodle_study MCP entry and the skills directory,
-  prints the restart/login/runtime-verification reminder on success and never
-  prints "Setup complete" for an incomplete configuration.
+  prints the restart/login/runtime-verification reminder on success, never
+  prints "Setup complete" for an incomplete configuration, and gives manual
+  deduplication / project-file recovery hints for the new failure classes.
 """
 import copy
 import importlib.util
@@ -24,8 +29,8 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
+import uuid
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +44,33 @@ spec.loader.exec_module(dsh)
 
 MAIN = 'session-43e6211a-9a48-4334-8b13-821896b1829c'
 INTERNAL = '37daf969-abb2-4b9e-923e-02ede86ed164'
+
+
+class IsolatedDirectory:
+    """Temporary test root created with the default inherited permissions.
+
+    ``tempfile`` creates directories with mode 0o700. Under the restricted
+    Windows sandbox token used while developing this repository, such a
+    directory does not carry the sandbox write grant, so fixture files cannot
+    be created inside it and cleanup fails. Creating the directory like any
+    other file keeps the inherited permissions; cleanup stays explicit.
+    """
+
+    def __init__(self, prefix, parent):
+        directory = Path(parent)
+        directory.mkdir(parents=True, exist_ok=True)
+        for _ in range(100):
+            candidate = directory / (prefix + uuid.uuid4().hex[:10])
+            try:
+                candidate.mkdir()
+            except FileExistsError:
+                continue
+            self.name = str(candidate)
+            return
+        raise RuntimeError('无法创建隔离测试目录：' + str(directory))
+
+    def cleanup(self):
+        shutil.rmtree(self.name, ignore_errors=True)
 
 
 class ChatIdentityTests(unittest.TestCase):
@@ -77,7 +109,7 @@ def _yaml_load(text):
 class DshProfileTests(unittest.TestCase):
     def setUp(self):
         (ROOT / 'tmp').mkdir(exist_ok=True)
-        self.temp = tempfile.TemporaryDirectory(prefix='dsh 测试 ', dir=ROOT / 'tmp')
+        self.temp = IsolatedDirectory('dsh 测试 ', ROOT / 'tmp')
         self.addCleanup(self.temp.cleanup)
         base = Path(self.temp.name)
         self.root = base / 'deployment'
@@ -192,6 +224,127 @@ class DshProfileTests(unittest.TestCase):
         self.assertEqual('missing', status['mcp']['status'])
         self.assertEqual('missing', status['skills']['status'])
         self.assertFalse(status['configuration_ok'])
+
+    def test_duplicate_same_name_mcp_entries_are_a_conflict(self):
+        # Two entries share serverName moodle_study (one this project, one an
+        # older deployment). The installer must not silently pick one, so the
+        # profile is a conflict and nothing is written.
+        self._write(self._mcp_entry_text(self.root / 'tools/moodle/run.mjs')
+                    + self._mcp_entry_text())
+        status = dsh.inspect(self.root, self.env)
+        self.assertEqual('conflict', status['mcp']['status'])
+        self.assertEqual(2, status['mcp']['entry_count'])
+        self.assertTrue(status['mcp']['duplicate'])
+        self.assertFalse(status['configuration_ok'])
+        before = self.patch.read_bytes()
+        result = dsh.install(self.root, self.env)
+        self.assertEqual('conflict', result['status'])
+        self.assertFalse(result['configuration_ok'])
+        self.assertEqual('conflict', result['mcp']['status'])
+        self.assertEqual(before, self.patch.read_bytes())
+        self.assertIsNone(result['backup'])
+        warnings = '\n'.join(result['warnings'])
+        self.assertIn('2', warnings)
+        self.assertIn('同名', warnings)
+        steps = '\n'.join(result['next_steps'])
+        self.assertIn('手动', steps)
+        self.assertIn('去重', steps)
+
+    def test_update_existing_cannot_deduplicate_same_name_mcp(self):
+        self._write(self._mcp_entry_text(self.root / 'tools/moodle/run.mjs')
+                    + self._mcp_entry_text())
+        before = self.patch.read_bytes()
+        result = dsh.install(self.root, self.env, update_existing=True)
+        self.assertEqual('conflict', result['status'])
+        self.assertFalse(result['configuration_ok'])
+        warnings = '\n'.join(result['warnings'])
+        self.assertIn('无法唯一定位', warnings)
+        self.assertEqual(before, self.patch.read_bytes())
+
+    def test_missing_skills_directory_is_invalid_and_never_written(self):
+        shutil.rmtree(self.root / 'skills')
+        self._write('# keep me\n[]\n')
+        status = dsh.inspect(self.root, self.env)
+        self.assertEqual('invalid', status['skills']['status'])
+        self.assertFalse(status['configuration_ok'])
+        before = self.patch.read_bytes()
+        result = dsh.install(self.root, self.env)
+        self.assertEqual('error', result['status'])
+        self.assertFalse(result['configuration_ok'])
+        self.assertEqual('invalid', result['skills']['status'])
+        self.assertEqual(before, self.patch.read_bytes())
+        self.assertIsNone(result['backup'])
+        steps = '\n'.join(result['next_steps'])
+        self.assertIn('skills', steps)
+        self.assertIn('不要删除', steps)
+
+    def _broken_generated_block(self):
+        return dsh.BEGIN + '\n- insert: [unclosed\n' + dsh.END + '\n'
+
+    def test_install_repairs_invalid_generated_block(self):
+        # Correct manual entries plus a damaged generated block: the complete
+        # original file is invalid, but the generated block is ours to rebuild.
+        self._write('# user comment\n'
+                    + self._mcp_entry_text(self.root / 'tools/moodle/run.mjs')
+                    + self._existing_skills_text()
+                    + self._broken_generated_block())
+        self.assertEqual('invalid', dsh.inspect(self.root, self.env)['patch_parse'])
+        result = dsh.install(self.root, self.env)
+        self.assertNotEqual('unchanged', result['status'])
+        self.assertEqual('installed', result['status'])
+        self.assertTrue(result['configuration_ok'])
+        self.assertTrue(result['validated'])
+        text = self.patch.read_text(encoding='utf-8')
+        self.assertIn('# user comment', text)
+        self.assertNotIn(dsh.BEGIN, text)
+        status = dsh.inspect(self.root, self.env)
+        self.assertEqual('ok', status['patch_parse'])
+        self.assertTrue(status['configuration_ok'])
+        self.assertEqual(1, status['mcp']['entry_count'])
+        second = dsh.install(self.root, self.env)
+        self.assertEqual('unchanged', second['status'])
+        self.assertEqual(text, self.patch.read_text(encoding='utf-8'))
+
+    def test_install_repairs_stale_generated_block_without_manual_entries(self):
+        # A valid generated block from an older deployment is stale, not a
+        # reason to report unchanged: rebuild it for the current project.
+        self._write(dsh._render_block(self.other))
+        result = dsh.install(self.root, self.env)
+        self.assertEqual('installed', result['status'])
+        self.assertTrue(result['configuration_ok'])
+        text = self.patch.read_text(encoding='utf-8')
+        self.assertNotIn((self.other / 'tools/moodle/run.mjs').as_posix(), text)
+        self.assertIn((self.root / 'tools/moodle/run.mjs').as_posix(), text)
+        status = dsh.inspect(self.root, self.env)
+        self.assertTrue(status['configuration_ok'])
+        self.assertEqual(1, status['mcp']['entry_count'])
+        self.assertEqual(1, status['skills']['override_count'])
+        second = dsh.install(self.root, self.env)
+        self.assertEqual('unchanged', second['status'])
+        self.assertEqual(text, self.patch.read_text(encoding='utf-8'))
+
+    def test_install_repairs_stale_valid_generated_block_without_duplicates(self):
+        # Correct manual entries plus a still-valid generated block that points
+        # at an older deployment: the full file parses, yet writing it would
+        # leave a duplicate moodle_study entry, so install must rebuild it.
+        self._write('# user comment\n'
+                    + self._mcp_entry_text(self.root / 'tools/moodle/run.mjs')
+                    + self._existing_skills_text()
+                    + dsh._render_block(self.other))
+        self.assertEqual('ok', dsh.inspect(self.root, self.env)['patch_parse'])
+        result = dsh.install(self.root, self.env)
+        self.assertNotEqual('unchanged', result['status'])
+        self.assertEqual('installed', result['status'])
+        self.assertTrue(result['configuration_ok'])
+        text = self.patch.read_text(encoding='utf-8')
+        self.assertIn('# user comment', text)
+        self.assertNotIn(dsh.BEGIN, text)
+        self.assertNotIn((self.other / 'tools/moodle/run.mjs').as_posix(), text)
+        self.assertEqual(1, len(dsh._mcp_entries(dsh._load_document(text))))
+        status = dsh.inspect(self.root, self.env)
+        self.assertTrue(status['configuration_ok'])
+        self.assertEqual(1, status['mcp']['entry_count'])
+        self.assertEqual(1, status['skills']['override_count'])
 
     def test_parse_failure_keeps_original_file(self):
         original = 'x: [unclosed\n'
@@ -394,7 +547,7 @@ class DshProfileTests(unittest.TestCase):
 class SessionCliIdentityTests(unittest.TestCase):
     def setUp(self):
         (ROOT / 'tmp').mkdir(exist_ok=True)
-        self.temp = tempfile.TemporaryDirectory(prefix='会话 测试 ', dir=ROOT / 'tmp')
+        self.temp = IsolatedDirectory('会话 测试 ', ROOT / 'tmp')
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
 
@@ -440,9 +593,10 @@ POWERSHELL = (shutil.which('pwsh') or shutil.which('powershell')
 
 def _clean_env(extra=None):
     """Environment with no real DSH home/profile or chat identity inherited."""
-    env = {**os.environ, **(extra or {})}
-    for key in ('DSH_PROFILE_DIR', 'DSH_PROFILE', 'DSH_SESSION_ID', 'STUDY_CHAT_ID'):
+    env = dict(os.environ)
+    for key in ('DSH_PROFILE_DIR', 'DSH_PROFILE', 'DSH_SESSION_ID', 'STUDY_CHAT_ID', 'DSH_HOME'):
         env.pop(key, None)
+    env.update(extra or {})
     env['PYTHONDONTWRITEBYTECODE'] = '1'
     return env
 
@@ -452,7 +606,7 @@ class InstallerCliContractTests(unittest.TestCase):
 
     def setUp(self):
         (ROOT / 'tmp').mkdir(exist_ok=True)
-        self.temp = tempfile.TemporaryDirectory(prefix='安装器 CLI 测试 ', dir=ROOT / 'tmp')
+        self.temp = IsolatedDirectory('安装器 CLI 测试 ', ROOT / 'tmp')
         self.addCleanup(self.temp.cleanup)
         base = Path(self.temp.name)
         self.root = base / 'deployment'
@@ -615,6 +769,104 @@ class InstallerCliContractTests(unittest.TestCase):
         self.assertEqual(before, self.patch.read_bytes())
         self.assertIn('不要删除现有配置', '\n'.join(payload['next_steps']))
 
+    def test_duplicate_same_name_mcp_is_conflict_nonzero_and_keeps_the_file(self):
+        self._write(self._correct_mcp_entry() + self._mcp_entry())
+        before = self.patch.read_bytes()
+        finished, payload = self._run_json()
+        self.assertEqual(1, finished.returncode, finished.stdout + finished.stderr)
+        self.assertEqual('conflict', payload['status'])
+        self.assertFalse(payload['configuration_ok'])
+        self.assertEqual('conflict', payload['mcp']['status'])
+        self.assertEqual(2, payload['mcp']['entry_count'])
+        warnings = '\n'.join(payload['warnings'])
+        self.assertIn('同名', warnings)
+        self.assertIn('2', warnings)
+        self.assertEqual(before, self.patch.read_bytes())
+        # --update-existing must not guess between the two entries; it points at
+        # manual deduplication instead of rewriting one of them.
+        again, again_payload = self._run_json('--update-existing')
+        self.assertEqual(1, again.returncode, again.stdout + again.stderr)
+        self.assertEqual('conflict', again_payload['status'])
+        self.assertFalse(again_payload['configuration_ok'])
+        self.assertIn('无法唯一定位', '\n'.join(again_payload['warnings']))
+        self.assertIn('手动', '\n'.join(again_payload['next_steps']))
+        self.assertEqual(before, self.patch.read_bytes())
+        status, status_payload = self._run_status_json()
+        self.assertEqual(0, status.returncode)  # status stays informational
+        self.assertFalse(status_payload['configuration_ok'])
+        self.assertEqual('conflict', status_payload['mcp']['status'])
+
+    def test_missing_skills_directory_never_reports_false_success(self):
+        shutil.rmtree(self.root / 'skills')
+        self._write('[]\n')
+        before = self.patch.read_bytes()
+        finished, payload = self._run_json()
+        self.assertEqual(1, finished.returncode, finished.stdout + finished.stderr)
+        self.assertEqual('error', payload['status'])
+        self.assertNotEqual('installed', payload['status'])
+        self.assertFalse(payload['configuration_ok'])
+        self.assertEqual('invalid', payload['skills']['status'])
+        self.assertIn('skills', '\n'.join(payload['next_steps']))
+        self.assertEqual(before, self.patch.read_bytes())
+        self.assertIsNone(payload['backup'])
+        human = self._run()
+        self.assertEqual(1, human.returncode)
+        self.assertNotIn('DSH 配置：installed', human.stdout)
+        self.assertNotIn('configuration_ok：true', human.stdout)
+        self.assertIn('DSH 配置未完成', human.stdout)
+        self.assertEqual(before, self.patch.read_bytes())
+        status, status_payload = self._run_status_json()
+        self.assertEqual(0, status.returncode)
+        self.assertFalse(status_payload['configuration_ok'])
+        self.assertEqual('invalid', status_payload['skills']['status'])
+
+    def test_manual_correct_config_with_invalid_generated_block_is_repaired(self):
+        manual = self._correct_mcp_entry() + self._skills_entry(self.root / 'skills')
+        self._write('# user comment kept\n' + manual
+                    + dsh.BEGIN + '\n- insert: [unclosed\n' + dsh.END + '\n')
+        finished, payload = self._run_json()
+        self.assertEqual(0, finished.returncode, finished.stdout + finished.stderr)
+        self.assertNotEqual('unchanged', payload['status'])
+        self.assertEqual('installed', payload['status'])
+        self.assertTrue(payload['configuration_ok'])
+        text = self.patch.read_text(encoding='utf-8')
+        self.assertIn('# user comment kept', text)
+        self.assertNotIn(dsh.BEGIN, text)
+        self.assertEqual(1, len(dsh._mcp_entries(dsh._load_document(text))))
+        status, status_payload = self._run_status_json()
+        self.assertEqual(0, status.returncode)
+        self.assertEqual('ok', status_payload['patch_parse'])
+        self.assertTrue(status_payload['configuration_ok'])
+        self.assertEqual(1, status_payload['mcp']['entry_count'])
+        again, again_payload = self._run_json()
+        self.assertEqual(0, again.returncode, again.stdout + again.stderr)
+        self.assertEqual('unchanged', again_payload['status'])
+        self.assertTrue(again_payload['configuration_ok'])
+        self.assertEqual(text, self.patch.read_text(encoding='utf-8'))
+
+    def test_manual_correct_config_with_stale_valid_generated_block_has_no_duplicates(self):
+        manual = self._correct_mcp_entry() + self._skills_entry(self.root / 'skills')
+        self._write('# user comment kept\n' + manual + dsh._render_block(self.other))
+        status, status_payload = self._run_status_json()
+        self.assertEqual(0, status.returncode)
+        self.assertEqual('ok', status_payload['patch_parse'])
+        self.assertFalse(status_payload['configuration_ok'])
+        finished, payload = self._run_json()
+        self.assertEqual(0, finished.returncode, finished.stdout + finished.stderr)
+        self.assertNotEqual('unchanged', payload['status'])
+        self.assertTrue(payload['configuration_ok'])
+        text = self.patch.read_text(encoding='utf-8')
+        self.assertIn('# user comment kept', text)
+        self.assertNotIn(dsh.BEGIN, text)
+        self.assertNotIn((self.other / 'tools/moodle/run.mjs').as_posix(), text)
+        self.assertNotIn((self.other / 'skills').as_posix(), text)
+        self.assertEqual(1, len(dsh._mcp_entries(dsh._load_document(text))))
+        status, status_payload = self._run_status_json()
+        self.assertEqual(0, status.returncode)
+        self.assertTrue(status_payload['configuration_ok'])
+        self.assertEqual(1, status_payload['mcp']['entry_count'])
+        self.assertEqual('configured', status_payload['skills']['status'])
+
     def test_dry_run_exits_zero_without_writing(self):
         finished, payload = self._run_json('--dry-run')
         self.assertEqual(0, finished.returncode, finished.stdout + finished.stderr)
@@ -643,7 +895,7 @@ class SetupDshHelperTests(unittest.TestCase):
 
     def setUp(self):
         (ROOT / 'tmp').mkdir(exist_ok=True)
-        self.temp = tempfile.TemporaryDirectory(prefix='setup 助手 测试 ', dir=ROOT / 'tmp')
+        self.temp = IsolatedDirectory('setup 助手 测试 ', ROOT / 'tmp')
         self.addCleanup(self.temp.cleanup)
         base = Path(self.temp.name)
         self.other = base / 'old-deployment'
@@ -720,6 +972,62 @@ class SetupDshHelperTests(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn('NOT complete', result.stdout)
         self.assertIn('Do not delete the existing configuration', result.stdout)
+        self.assertNotIn('Setup complete', result.stdout)
+        self.assertEqual(before, self.patch.read_bytes())
+
+    def test_duplicate_same_name_mcp_gets_manual_dedupe_hint(self):
+        self._write(self._mcp_entry(ROOT / 'tools/moodle/run.mjs', ROOT)
+                    + self._mcp_entry(ROOT / 'tools/moodle/run.mjs', ROOT)
+                    + self._skills_entry(ROOT / 'skills'))
+        before = self.patch.read_bytes()
+        result = self._run()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('NOT complete', result.stdout)
+        self.assertIn('MCP conflict', result.stdout)
+        self.assertIn('share serverName moodle_study', result.stdout)
+        self.assertIn('by hand', result.stdout)
+        self.assertNotIn('Setup complete', result.stdout)
+        self.assertEqual(before, self.patch.read_bytes())
+
+    def _synthetic_project(self, with_skills=True):
+        project = Path(self.temp.name) / 'synthetic-deployment'
+        (project / 'tools/onboarding').mkdir(parents=True)
+        (project / 'tools/study').mkdir(parents=True)
+        (project / 'tools/moodle').mkdir(parents=True)
+        shutil.copyfile(ROOT / 'tools/onboarding/dsh_integration.py',
+                        project / 'tools/onboarding/dsh_integration.py')
+        shutil.copyfile(ROOT / 'tools/study/chat_identity.py',
+                        project / 'tools/study/chat_identity.py')
+        (project / 'tools/moodle/run.mjs').write_text('// synthetic\n', encoding='utf-8')
+        if with_skills:
+            (project / 'skills/self-study-tutor').mkdir(parents=True)
+        return project
+
+    def _run_project(self, project):
+        driver = Path(self.temp.name) / 'driver-synthetic.ps1'
+        driver.write_text('\n'.join([
+            "$ErrorActionPreference = 'Stop'",
+            ". '" + SETUP_HELPER.as_posix().replace("'", "''") + "'",
+            "$code = Invoke-DshConfiguration -Root '"
+            + project.as_posix().replace("'", "''")
+            + "' -PythonExecutable '" + str(PYTHON).replace("'", "''") + "'",
+            'exit $code',
+            '',
+        ]), encoding='utf-8-sig')
+        return subprocess.run(
+            [str(POWERSHELL), '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(driver)],
+            cwd=str(ROOT), env=self.env, capture_output=True, text=True,
+            encoding='utf-8', errors='replace', timeout=180)
+
+    def test_missing_project_skills_directory_gets_actionable_invalid_hint(self):
+        project = self._synthetic_project(with_skills=False)
+        self._write('[]\n')
+        before = self.patch.read_bytes()
+        result = self._run_project(project)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('NOT complete', result.stdout)
+        self.assertIn('Skills invalid', result.stdout)
+        self.assertIn('Restore the complete project files', result.stdout)
         self.assertNotIn('Setup complete', result.stdout)
         self.assertEqual(before, self.patch.read_bytes())
 

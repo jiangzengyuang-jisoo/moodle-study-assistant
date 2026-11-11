@@ -291,6 +291,143 @@ test('login written while the MCP server is running is picked up without a resta
 });
 
 // ---------------------------------------------------------------------------
+// Re-login while a connection is already in flight / an API-support answer is
+// cached: the next request must use the newly saved credential, not the old
+// session's identity or API list. All connections are synthetic and offline.
+// ---------------------------------------------------------------------------
+
+test('a credential saved while the first lazy connection is in flight is used by the next request', async () => {
+  const root = dataRoot('race');
+  writeConfig(root);
+  writeCredential(root, 'SYNTHETIC-TOKEN-OLD');
+  const connections = [];
+  let connectCalls = 0;
+  let releaseFirst;
+  const firstGate = new Promise(resolve => { releaseFirst = resolve; });
+  let signalFirstStarted;
+  const firstStarted = new Promise(resolve => { signalFirstStarted = resolve; });
+  const gateway = createSourceGateway({
+    root,
+    decrypt: bytes => `decrypted:${bytes.toString('utf8')}`,
+    connectClient: async (config, token) => {
+      const index = ++connectCalls;
+      if (index === 1) {
+        // Stall the old-credential connection until the test saves a new login.
+        signalFirstStarted();
+        await firstGate;
+      }
+      const client = fakeClient({site: config.moodle_url, userId: index === 1 ? 7 : 88,
+        marker: index === 1 ? 'old-connection' : 'new-connection'});
+      connections.push({token, userId: client.userId, client});
+      return client;
+    },
+  });
+
+  const firstRequest = gateway.call('core_enrol_get_users_courses', {});
+  await firstStarted;
+  assert.equal(connections.length, 0, 'the first connection must still be in flight');
+  // The browser login completes while the old connection is still connecting.
+  writeCredential(root, 'SYNTHETIC-TOKEN-NEW');
+  const secondRequest = gateway.call('core_enrol_get_users_courses', {});
+  releaseFirst();
+  const first = await firstRequest;
+  const second = await secondRequest;
+
+  assert.equal(JSON.stringify(first).includes('old-connection'), true);
+  assert.equal(JSON.stringify(second).includes('new-connection'), true);
+  assert.equal(connections.length, 2);
+  assert.equal(connections[0].token, 'decrypted:SYNTHETIC-TOKEN-OLD');
+  assert.equal(connections[0].userId, 7);
+  assert.equal(connections[1].token, 'decrypted:SYNTHETIC-TOKEN-NEW');
+  assert.equal(connections[1].userId, 88);
+  assert.equal(gateway.userId, 88);
+});
+
+test('a credential replacement clears a cached "API not supported" answer so read queries reconnect', async () => {
+  const root = dataRoot('supports');
+  writeConfig(root);
+  writeCredential(root, 'SYNTHETIC-TOKEN-OLD');
+  const connections = [];
+  const apiCalls = [];
+  const gateway = createSourceGateway({
+    root,
+    decrypt: bytes => `decrypted:${bytes.toString('utf8')}`,
+    connectClient: async (config, token) => {
+      const index = connections.length;
+      const client = {
+        baseUrl: config.moodle_url,
+        userId: index === 0 ? 7 : 88,
+        siteName: 'Synthetic school',
+        // The old session did not advertise these APIs; a real re-login into a
+        // session that does must not stay blocked by that cached answer.
+        supports: () => index !== 0,
+        async call(method, params) {
+          apiCalls.push({index, method, params: {...params}});
+          if (method === 'gradereport_user_get_grade_items') return {usergrades: [{userid: 88, gradeitems: []}]};
+          if (method === 'message_popup_get_popup_notifications') return {notifications: [{id: 21}], unreadcount: 1};
+          if (method.startsWith('core_calendar_get_action_events_by_')) return {events: [], lastid: 0};
+          return {};
+        },
+      };
+      connections.push({token, userId: client.userId});
+      return client;
+    },
+  });
+
+  // Prime the first session together with its "API not supported" answers.
+  await gateway.connect();
+  assert.equal(gateway.supports('gradereport_user_get_grade_items'), false);
+  assert.equal(gateway.connected, true);
+
+  const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+  const server = await serve(gateway, serverTransport);
+  const client = new Client({name: 'mcp-supports-recovery', version: '1.0.0'});
+  try {
+    await client.connect(clientTransport);
+    // Before the re-login the cached answer is what the tools see.
+    for (const [name, args] of [['moodle_get_grades', {courseId: 101}],
+      ['moodle_get_notifications', {}], ['moodle_get_calendar_events', {courseId: 101}]]) {
+      const cached = toolPayload(await client.callTool({name, arguments: args}));
+      assert.equal(cached.complete, false);
+      assert.equal(cached.reason, 'api_not_enabled');
+    }
+    assert.equal(connections.length, 1);
+
+    writeCredential(root, 'SYNTHETIC-TOKEN-NEW');
+    // The cached session is dropped; the probe is optimistic so the tool call
+    // can reconnect instead of returning api_not_enabled forever.
+    assert.equal(gateway.supports('gradereport_user_get_grade_items'), true);
+    assert.equal(gateway.connected, false);
+
+    const response = await client.callTool({name: 'moodle_get_grades', arguments: {courseId: 101}});
+    assert.equal(response.isError, undefined, toolText(response));
+    const grades = toolPayload(response);
+    assert.equal(grades.complete, true);
+    assert.deepEqual(grades.report.usergrades, [{userid: 88, gradeitems: []}]);
+    assert.equal(connections.length, 2);
+    assert.equal(connections[1].token, 'decrypted:SYNTHETIC-TOKEN-NEW');
+    const gradeCall = apiCalls.find(entry => entry.method === 'gradereport_user_get_grade_items');
+    assert.equal(gradeCall?.index, 1);
+    assert.equal(gradeCall?.params.userid, 88);
+
+    // Notifications and calendar now use the same fresh session.
+    const notifications = toolPayload(await client.callTool({name: 'moodle_get_notifications', arguments: {}}));
+    assert.equal(notifications.complete, true);
+    assert.deepEqual(notifications.notifications, [{id: 21}]);
+    const notificationCall = apiCalls.find(entry => entry.method === 'message_popup_get_popup_notifications');
+    assert.equal(notificationCall?.index, 1);
+    assert.equal(notificationCall?.params.useridto, 88);
+    const calendar = toolPayload(await client.callTool({name: 'moodle_get_calendar_events',
+      arguments: {courseId: 101, timeFrom: 0, timeTo: 100}}));
+    assert.equal(calendar.complete, true);
+    assert.equal(connections.length, 2);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Lazy gateway unit tests (injected credential/decrypt/connect: no DPAPI, no network).
 // ---------------------------------------------------------------------------
 

@@ -16,7 +16,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const packageDir = dirname(fileURLToPath(import.meta.url))
 const resourceDir = join(packageDir, 'resources')
@@ -34,6 +34,21 @@ function readPackageVersion() {
   } catch {
     return '0.0.0'
   }
+}
+
+// Program files are read-only tooling shipped next to (inside the built plugin
+// package) or above (source checkout) the plugin directory:
+//   1. an explicit MOODLE_STUDY_PROGRAM_DIR override (tests/diagnostics),
+//   2. `<plugin package>/program` for an installed build,
+//   3. the parent directory for the source checkout (<repo>/plugin -> <repo>).
+// The fallback keeps the recovery tool working when the plugin is loaded from a
+// source checkout instead of an installed package.
+function resolveProgramDir() {
+  const override = process.env.MOODLE_STUDY_PROGRAM_DIR
+  if (override) return resolve(override)
+  const bundled = join(packageDir, 'program')
+  if (existsSync(bundled)) return bundled
+  return dirname(packageDir)
 }
 
 function resolveSupportDir(config) {
@@ -87,9 +102,70 @@ function readText(path, fallback = '') {
   }
 }
 
+// The graded runtime module lives inside the program root. Installed packages
+// and source checkouts carry it under the same relative path, so locate it from
+// the configured program dir first and fall back to the two known layouts. This
+// keeps diagnostics working even when an explicit MOODLE_STUDY_PROGRAM_DIR
+// (tests, synthetic fixtures) only provides the dependency manifests.
+function locateRuntimeModule(programDir) {
+  const candidates = [
+    join(programDir, 'tools', 'moodle', 'plugin', 'python-runtime.mjs'),
+    join(packageDir, 'program', 'tools', 'moodle', 'plugin', 'python-runtime.mjs'),
+    join(dirname(packageDir), 'tools', 'moodle', 'plugin', 'python-runtime.mjs'),
+  ]
+  return candidates.find((candidate) => existsSync(candidate)) ?? null
+}
+
+// Graded local diagnosis for the recovery tool. It loads the same
+// python-runtime.mjs module the MCP server uses, so `moodle_study_status`
+// cannot disagree with `study_setup_status` about a broken interpreter or a
+// missing sign-in component. The probe resolves its paths from the environment,
+// so the plugin instance's support/program directories are aligned for the
+// duration of the probe and restored afterwards. Any load/probe failure is
+// reported conservatively as not ready.
+async function probeRuntimeHealth({ supportDir: probeSupportDir, programDir: probeProgramDir }) {
+  const unavailable = {
+    runtimeReady: false,
+    runtimeStatus: 'probe_failed',
+    runtimeHealth: null,
+    loginReady: false,
+    loginRuntimeStatus: 'unknown',
+    probeError: null,
+  }
+  const modulePath = locateRuntimeModule(probeProgramDir)
+  if (!modulePath) {
+    return { ...unavailable, probeError: `plugin runtime module not found under ${probeProgramDir}` }
+  }
+  const previousSupport = process.env.MOODLE_STUDY_SUPPORT_DIR
+  const previousProgram = process.env.MOODLE_STUDY_PROGRAM_DIR
+  try {
+    process.env.MOODLE_STUDY_SUPPORT_DIR = probeSupportDir
+    process.env.MOODLE_STUDY_PROGRAM_DIR = probeProgramDir
+    const runtimeModule = await import(pathToFileURL(modulePath).href)
+    const coreHealth = runtimeModule.coreRuntimeHealth()
+    const loginHealth = typeof runtimeModule.loginRuntimeHealth === 'function' ? runtimeModule.loginRuntimeHealth() : null
+    return {
+      runtimeReady: Boolean(coreHealth?.ready),
+      runtimeStatus: coreHealth?.status ?? 'unknown',
+      runtimeHealth:
+        typeof runtimeModule.runtimeHealthSummary === 'function' ? runtimeModule.runtimeHealthSummary(coreHealth) : null,
+      loginReady: Boolean(loginHealth?.ready),
+      loginRuntimeStatus: loginHealth?.status ?? 'unknown',
+      probeError: null,
+    }
+  } catch (error) {
+    return { ...unavailable, probeError: String(error?.message ?? error) }
+  } finally {
+    if (previousSupport === undefined) delete process.env.MOODLE_STUDY_SUPPORT_DIR
+    else process.env.MOODLE_STUDY_SUPPORT_DIR = previousSupport
+    if (previousProgram === undefined) delete process.env.MOODLE_STUDY_PROGRAM_DIR
+    else process.env.MOODLE_STUDY_PROGRAM_DIR = previousProgram
+  }
+}
+
 export function apply(ctx, config) {
   const supportDir = resolveSupportDir(config)
-  const programDir = join(packageDir, 'program')
+  const programDir = resolveProgramDir()
   const version = readPackageVersion()
 
   try {
@@ -161,7 +237,12 @@ export function apply(ctx, config) {
     },
     async execute() {
       const runtime = readRuntimeFile(supportDir)
-      const pythonPresent = existsSync(join(supportDir, 'venv', 'Scripts', 'python.exe'))
+      const pythonPresent =
+        existsSync(join(supportDir, 'venv', 'Scripts', 'python.exe')) ||
+        existsSync(join(supportDir, 'venv', 'bin', 'python'))
+      // Never derive readiness from files or the old marker: probe the private
+      // interpreter, imports and fingerprints through the graded module.
+      const graded = await probeRuntimeHealth({ supportDir, programDir })
       const result = {
         pluginVersion: version,
         supportDir,
@@ -171,10 +252,21 @@ export function apply(ctx, config) {
         dataDir: null,
         dataDirExists: null,
         pythonPresent,
-        runtimeReady: pythonPresent && Boolean(runtime.core?.installed),
+        coreInstalled: Boolean(runtime.core?.installed),
+        runtimeReady: graded.runtimeReady,
+        runtimeStatus: graded.runtimeStatus,
+        runtimeHealth: graded.runtimeHealth,
+        loginReady: graded.loginReady,
+        loginRuntimeStatus: graded.loginRuntimeStatus,
         tokenPresent: null,
         nextStep: null,
         recovery: [],
+      }
+      if (graded.probeError) {
+        result.probeError = graded.probeError
+        result.recovery.push(
+          '无法加载插件的运行环境诊断模块，运行环境按“未就绪”处理；如果 MCP 工具也不可用，请重新安装本插件（个人学习资料会保留）。',
+        )
       }
       const settings = result.settings
       if (!settings?.dataDir) {
@@ -191,7 +283,11 @@ export function apply(ctx, config) {
       result.tokenPresent = existsSync(join(settings.dataDir, '.private', 'moodle-token.dpapi'))
       if (!result.runtimeReady) {
         result.nextStep = 'install_runtime'
-        result.recovery.push('运行依赖尚未安装或安装中断；调用 MCP 工具 study_setup_runtime 可继续安装，已完成的步骤会跳过。')
+        result.recovery.push(
+          graded.runtimeStatus === 'interpreter_broken'
+            ? '私有 Python 解释器已损坏：调用 MCP 工具 study_setup_runtime 会重建运行环境（已下载资料与登录凭据不受影响）。'
+            : '运行依赖尚未安装、安装中断或依赖无法导入；调用 MCP 工具 study_setup_runtime 可继续安装/修复，健康检查通过前不会报告已完成。',
+        )
       } else if (!result.tokenPresent) {
         result.nextStep = 'connect_school'
         result.recovery.push('还没有连接学校账号；调用 study_connect_school，并在弹出的学校网页由本人完成登录。已下载的本地资料仍可学习。')

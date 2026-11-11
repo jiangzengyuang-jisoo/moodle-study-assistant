@@ -174,6 +174,7 @@ export function createSourceGateway({
   let client = null;
   let generation = null;
   let connecting = null;
+  let connectingGeneration = null;
 
   function drop() {
     client = null;
@@ -216,26 +217,91 @@ export function createSourceGateway({
     }
   }
 
-  async function connect({force = false} = {}) {
-    let current;
-    try { current = snapshot(); }
-    catch (error) { drop(); throw error; }
-    if (!force && client && generation === current.expected) return client;
-    // One connection attempt at a time: concurrent tool calls must not open two
-    // school sessions for the same saved credential.
-    if (connecting) return connecting;
-    const run = performConnect(current.config, current.credential, current.expected);
+  function startConnect(config, credential, expected) {
+    const run = performConnect(config, credential, expected);
     connecting = run;
-    try { return await run; }
-    finally { if (connecting === run) connecting = null; }
+    connectingGeneration = expected;
+    const clear = () => {
+      if (connecting !== run) return;
+      connecting = null;
+      connectingGeneration = null;
+    };
+    run.then(clear, clear);
+    return run;
+  }
+
+  async function connect({force = false} = {}) {
+    let attempts = 0;
+    for (;;) {
+      // A connection that was opened for an older saved credential must never be
+      // handed to a request that started after a new credential was saved. Wait
+      // for the in-flight attempt, then compare the generation again: a request
+      // that still sees its own generation joins that single attempt, while a
+      // request that sees a newer one opens a new session with the new files.
+      while (connecting) {
+        const attemptGeneration = connectingGeneration;
+        let failure = null;
+        try { await connecting; }
+        catch (error) { failure = error; }
+        if (!failure) continue;
+        // The failed attempt belongs to one saved generation. Report the same
+        // failure while that generation is still current instead of opening a
+        // second session per waiting caller; a changed generation is retried.
+        let current;
+        try { current = snapshot(); }
+        catch { throw failure; }
+        if (current.expected === attemptGeneration) throw failure;
+      }
+      const current = (() => {
+        try { return snapshot(); }
+        catch (error) { drop(); throw error; }
+      })();
+      if (!force && client && generation === current.expected) return client;
+      // Bounded rechecks: credential churn during connection is rare and must
+      // not loop forever, but one recheck after an in-flight credential change
+      // is the required recovery path.
+      if (attempts >= 3) return startConnect(current.config, current.credential, current.expected);
+      attempts += 1;
+      try {
+        return await startConnect(current.config, current.credential, current.expected);
+      } catch (error) {
+        // A failure belongs to the credential that was saved when the attempt
+        // started. Only a generation change makes it meaningful to try once more
+        // with the newly saved credential.
+        let next;
+        try { next = snapshot(); }
+        catch { throw error; }
+        if (next.expected === current.expected) throw error;
+      }
+    }
   }
 
   return {
     async call(method, params = {}) {
       const active = await connect();
+      const usedGeneration = generation;
       try { return await active.call(method, currentAccountParams(params, active)); }
       catch (error) {
         const normalized = toSourceError(error);
+        // Re-login can complete while this request already holds the previous
+        // connection. Retry this read-only call once with the newly saved
+        // credential; when the saved generation did not change, keep the
+        // existing no-automatic-retry contract.
+        let changed = false;
+        if (usedGeneration !== null) {
+          try { changed = snapshot().expected !== usedGeneration; }
+          catch { changed = false; }
+        }
+        if (changed) {
+          drop();
+          const retried = await connect();
+          try { return await retried.call(method, currentAccountParams(params, retried)); }
+          catch (retryError) {
+            const retriedNormalized = toSourceError(retryError);
+            if (RETRY_WITH_FRESH_CONNECTION.has(retriedNormalized.code)) drop();
+            throw retriedNormalized;
+          }
+        }
         if (RETRY_WITH_FRESH_CONNECTION.has(normalized.code)) drop();
         throw normalized;
       }
@@ -243,8 +309,17 @@ export function createSourceGateway({
     connect,
     supports(wsfunction) {
       if (!client) return true; // optimistic before the first lazy connection
+      // The cached client may answer for a config/credential that has already
+      // been replaced (e.g. a fresh browser login). Never trust its API list
+      // across generations: drop it and report "optimistic" so the tool call
+      // reconnects with the current files. Unreadable files behave the same way
+      // instead of throwing from a capability probe.
+      let current;
+      try { current = snapshot(); }
+      catch { drop(); return true; }
+      if (generation !== current.expected) { drop(); return true; }
       try { return typeof client.supports === 'function' ? Boolean(client.supports(wsfunction)) : true; }
-      catch { return true; }
+      catch { drop(); return true; }
     },
     get baseUrl() {
       try { return readSourceConfig(workspace).moodle_url; }

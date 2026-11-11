@@ -19,14 +19,21 @@ failed validation leaves the original file untouched.
 The reported status distinguishes "configuration is correct" from "the running
 client has loaded it": only a restarted client can prove runtime loading.
 
-``install`` reports one of: ``installed`` (entries merged; both the MCP entry and
-the skills directory are configured), ``unchanged`` (already correct; nothing
-written), ``conflict`` (an existing entry conflicts with this project; nothing is
-written) or ``skipped``/``error`` (no complete result). Every result carries
+``install`` reports one of: ``installed`` (entries merged or repaired; both the
+MCP entry and the skills directory are configured), ``unchanged`` (already
+correct and fully validated; nothing written), ``conflict`` (an existing entry
+conflicts with this project, including two entries sharing the ``moodle_study``
+serverName; nothing written), ``error`` (e.g. this project's ``skills/``
+directory is missing) or ``skipped`` (no complete result). Every result carries
 ``configuration_ok`` covering both parts plus the per-part ``mcp``/``skills``
-status and actionable ``warnings``/``next_steps``. The CLI exits 0 only for a
-successful and fully configured merge; conflicts exit non-zero so an installer
-cannot report a false success.
+status and actionable ``warnings``/``next_steps``. When a previously generated
+block is found, install rebuilds or removes it and validates the complete
+persisted document instead of trusting the stripped copy; it never reports
+``unchanged`` for a document that still parses to a duplicated or missing
+entry. The CLI exits 0 only for a successful and fully configured merge;
+conflicts and errors exit non-zero so an installer cannot report a false
+success. ``--update-existing`` refuses to guess when several same-name entries
+exist and points at manual deduplication instead.
 """
 
 import argparse
@@ -208,14 +215,21 @@ def _entry_path_matches(config, project):
 def _mcp_status(data, project):
     configs = _mcp_entries(data)
     matching = [config for config in configs if _entry_path_matches(config, project)]
-    commands = {str(config.get('command')) for config in configs if config.get('command')}
     status = {
         'status': 'missing',
         'entry_count': len(configs),
         'path_matches': bool(matching),
         'command_available': False,
+        'duplicate': len(configs) > 1,
         'warnings': [],
     }
+    if status['duplicate']:
+        # Never silently pick or overwrite one of several same-name servers.
+        status['status'] = 'conflict'
+        status['warnings'].append(
+            '发现 %d 条同名 moodle_study MCP 配置；同一 serverName 不唯一，'
+            '不会自动选择或覆盖任何一条。' % len(configs))
+        return status
     if matching:
         status['status'] = 'configured'
         status['command_available'] = any(_command_available(str(config.get('command') or '')) for config in matching)
@@ -252,8 +266,7 @@ def _skill_status(data, project):
     overrides = [item['config'] for item in entries if isinstance(item.get('config'), dict)]
     status = {'status': 'missing', 'override_count': len(entries),
               'expected_dir': expected.as_posix(), 'warnings': []}
-    if not expected.is_dir():
-        status['warnings'].append('当前项目的 skills 目录不存在。')
+    includes_expected = False
     for config in overrides:
         dirs = config.get('customSkillDirs')
         if not isinstance(dirs, list):
@@ -263,10 +276,26 @@ def _skill_status(data, project):
                 continue
             try:
                 if Path(value).expanduser().resolve() == expected:
-                    status['status'] = 'configured'
-                    return status
+                    includes_expected = True
+                    break
             except (OSError, ValueError):
                 continue
+        if includes_expected:
+            break
+    if not expected.is_dir():
+        # A configuration that points at a missing directory can never load the
+        # bundled skill: report it as invalid, not configured, and never build a
+        # profile entry around it.
+        status['status'] = 'invalid'
+        status['warnings'].append('当前项目的 skills 目录不存在：' + expected.as_posix()
+                                  + '；技能无法加载，不能报告配置成功。')
+        if includes_expected:
+            status['warnings'].append('现有 skill-filesystem 配置指向了不存在的目录；'
+                                      '恢复完整项目文件后才会生效。')
+        return status
+    if includes_expected:
+        status['status'] = 'configured'
+        return status
     if entries:
         status['status'] = 'conflict'
         status['warnings'].append('已有 skill-filesystem 覆盖但未包含当前项目 skills 目录；不会覆盖，也不会重复添加。')
@@ -440,6 +469,24 @@ def _render_block(project, add_mcp=True, add_skills=True, plain=False):
         lines.append(END)
     return '\n'.join(lines) + '\n'
 
+def _validate_final_document(data, project, label='最终配置'):
+    """Validate the document that would actually be persisted.
+
+    Completion requires exactly one moodle_study MCP entry that points at this
+    project and a skills override whose directory exists. Anything else is an
+    error; callers must not report success for a document that fails this.
+    """
+    mcp = _mcp_status(data, project)
+    skills = _skill_status(data, project)
+    if mcp.get('status') != 'configured' or int(mcp.get('entry_count') or 0) != 1:
+        raise PatchError('%s的 MCP 配置不唯一或未指向当前项目（status=%s，条目数=%s）；未做任何修改。'
+                         % (label, mcp.get('status'), mcp.get('entry_count')))
+    if skills.get('status') != 'configured':
+        raise PatchError('%s的技能目录配置不完整（status=%s）；未做任何修改。'
+                         % (label, skills.get('status')))
+    return mcp, skills
+
+
 def _compose(base_text, project, add_mcp, add_skills):
     """Compose and fully validate the final document; never writes anything."""
     base_text, _ = _strip_generated(base_text)
@@ -452,6 +499,7 @@ def _compose(base_text, project, add_mcp, add_skills):
         final_data = _load_document(new_text, '更新现有条目后的 profile patch')
         if final_data != base_data:
             raise PatchError('更新现有条目后的 profile 结构与预期不一致，未做任何修改。')
+        _validate_final_document(final_data, project, '更新现有条目后的 profile patch')
         return new_text, base_data, []
     block = _render_block(project, add_mcp=add_mcp, add_skills=add_skills)
     generated = _load_document(block, '生成的配置段')
@@ -467,11 +515,7 @@ def _compose(base_text, project, add_mcp, add_skills):
     expected = base_data + generated
     if final_data != expected:
         raise PatchError('合并后的 profile 结构与预期不一致，未做任何修改。')
-    if add_mcp:
-        if [config for config in _mcp_entries(final_data) if _entry_path_matches(config, project)] == []:
-            raise PatchError('合并后仍未发现指向当前项目的 MCP 条目，未做任何修改。')
-    if add_skills and _skill_status(final_data, project)['status'] != 'configured':
-        raise PatchError('合并后仍未发现当前项目的技能目录配置，未做任何修改。')
+    _validate_final_document(final_data, project, '合并后的 profile patch')
     return new_text, base_data, generated
 
 
@@ -565,6 +609,9 @@ def _adopt_existing_mcp(base_text, base_data, project):
     current = (Path(project) / 'tools/moodle/run.mjs').resolve()
     entries = _mcp_entries(base_data)
     if len(entries) != 1:
+        if entries:
+            return base_text, 0, ('发现 %d 条同名 moodle_study MCP 条目，--update-existing 无法唯一定位；'
+                                  '请手动去重后重试' % len(entries))
         return base_text, 0, '无法唯一定位现有的 moodle_study MCP 条目'
     args = entries[0].get('args')
     if not isinstance(args, list) or len(args) < 2 or str(args[1]) != 'mcp':
@@ -629,9 +676,14 @@ def _next_steps_for_conflict(mcp_part, skills_part):
     """Actionable repairs for a conflicting profile; never asks for a delete."""
     steps = []
     if mcp_part.get('status') == 'conflict':
-        steps.append('MCP 冲突：现有 moodle_study MCP 条目未指向当前项目。确认它是旧部署后运行'
-                     ' & .venv/Scripts/python.exe tools/onboarding/dsh_integration.py install --update-existing '
-                     '（只更新该条目的 run.mjs 路径）；否则按 docs/DSH.md 手动合并。')
+        if mcp_part.get('duplicate'):
+            steps.append('MCP 重复：profile 中有 %d 条同名 moodle_study MCP 条目，无法唯一确定使用哪一条；'
+                         '--update-existing 也无法唯一定位。请按 docs/DSH.md 手动去重：只保留一条指向当前项目的'
+                         '条目，删除或改掉旧部署的重复条目后重试。' % int(mcp_part.get('entry_count') or 0))
+        else:
+            steps.append('MCP 冲突：现有 moodle_study MCP 条目未指向当前项目。确认它是旧部署后运行'
+                         ' & .venv/Scripts/python.exe tools/onboarding/dsh_integration.py install --update-existing '
+                         '（只更新该条目的 run.mjs 路径）；否则按 docs/DSH.md 手动合并。')
     if skills_part.get('status') == 'conflict':
         steps.append('技能冲突：现有 skill-filesystem 覆盖未包含当前项目 skills 目录。'
                      '按 docs/DSH.md 合并或移除旧覆盖（把当前项目 skills 目录加入 customSkillDirs）后重试。')
@@ -644,10 +696,12 @@ def install(project=None, env=None, dry_run=False, update_existing=False):
 
     ``configuration_ok`` describes the resulting persisted configuration (for
     ``dry-run``, the configuration the shown content would produce). An existing
-    conflicting entry stops the merge before any write: nothing is overwritten
-    and the original file is kept. Only ``installed``/``unchanged``/``dry-run``
-    with ``configuration_ok`` true are complete; ``conflict``, ``skipped`` and
-    ``error`` are not.
+    conflicting entry (including duplicated same-name MCP entries) or a missing
+    project ``skills/`` directory stops the merge before any write: nothing is
+    overwritten and the original file is kept. A previously generated block is
+    rebuilt or removed so the persisted document is validated as a whole. Only
+    ``installed``/``unchanged``/``dry-run`` with ``configuration_ok`` true are
+    complete; ``conflict``, ``skipped`` and ``error`` are not.
     """
     environment = os.environ if env is None else env
     root = Path(project or ROOT).resolve()
@@ -687,7 +741,7 @@ def install(project=None, env=None, dry_run=False, update_existing=False):
     had_bom = patch.exists() and patch.read_bytes().startswith(b'\xef\xbb\xbf')
 
     try:
-        base_text, _ = _strip_generated(original)
+        base_text, had_block = _strip_generated(original)
         base_data = _load_document(base_text, '现有 profile patch')
         mcp_part = _mcp_status(base_data, root)
         skills_part = _skill_status(base_data, root)
@@ -716,22 +770,33 @@ def install(project=None, env=None, dry_run=False, update_existing=False):
                                + '。请按下一步提示修复后重试。',
                         next_steps=_next_steps_for_conflict(mcp_part, skills_part))
             return base
+        if skills_part.get('status') == 'invalid':
+            # Writing an entry that points at a missing directory would only
+            # produce a false success followed by an invalid status.
+            base.update(status='error',
+                        reason='未写入任何内容（原文件保持不变）：当前项目的 skills 目录不存在（'
+                               + str(skills_part.get('expected_dir', '')) + '），技能无法加载。',
+                        next_steps=['恢复完整的项目文件（当前项目缺少 skills/ 目录），然后重新运行安装。',
+                                    '不要删除现有配置；项目文件恢复后 MCP 与技能目录都需要重新验证。'])
+            return base
         add_mcp = mcp_part.get('status') == 'missing'
         add_skills = skills_part.get('status') == 'missing'
         if not add_mcp:
             base['warnings'].append('已有指向当前项目的 moodle_study MCP 条目；未重复添加。')
         if not add_skills:
             base['warnings'].append('已有包含当前项目 skills 目录的 skill-filesystem 配置；未重复添加。')
-        if not add_mcp and not add_skills and not adopted:
+        if not add_mcp and not add_skills and not adopted and not had_block:
+            # Only a profile without a stripped generated block can be judged
+            # from the original document alone: it parsed completely and its
+            # persisted semantics are uniquely configured.
             base.update(status='unchanged', configuration_ok=True,
                         reason='现有配置已满足要求（MCP 与技能目录均已配置），未修改文件。')
             return base
         new_text, composed_base, generated = _compose(base_text, root, add_mcp=add_mcp, add_skills=add_skills)
         final_data = _load_document(new_text, '合并后的 profile patch')
-        final_mcp = _mcp_status(final_data, root)
-        final_skills = _skill_status(final_data, root)
-        if final_mcp.get('status') != 'configured' or final_skills.get('status') != 'configured':
-            raise PatchError('合并后的配置仍未同时覆盖 MCP 与技能目录，保留原文件。')
+        if final_data != composed_base + generated:
+            raise PatchError('合并后的 profile 结构与预期不一致，未做任何修改。')
+        final_mcp, final_skills = _validate_final_document(final_data, root, '合并后的 profile patch')
         base['mcp'] = final_mcp
         base['skills'] = final_skills
     except PatchError as error:
@@ -739,13 +804,17 @@ def install(project=None, env=None, dry_run=False, update_existing=False):
                     next_steps=['按错误信息修复 DSH profile 或按 docs/DSH.md 手动合并后重试；不要删除现有配置。'])
         return base
 
+    changed = not patch.exists() or new_text.rstrip('\n') != original.rstrip('\n')
     base['mcp_added'] = add_mcp
     base['skills_added'] = add_skills
     base['updated_existing'] = bool(adopted)
     base['restart_required'] = True
     base['configuration_ok'] = True
-    if patch.exists() and new_text.rstrip('\n') == original.rstrip('\n'):
-        base.update(status='unchanged', reason='现有配置与生成内容一致，未修改文件。')
+    if had_block and changed:
+        base['warnings'].append('检测到旧的生成配置段；已重建或移除，避免重复/陈旧的 MCP 与技能配置，其他条目保留。')
+    if not changed:
+        base.update(status='unchanged',
+                    reason='现有配置与应写入内容逐字一致，且完整文档校验通过，未修改文件。')
         return base
     if dry_run:
         base.update(status='dry-run', validated=True, content=new_text)
@@ -757,12 +826,19 @@ def install(project=None, env=None, dry_run=False, update_existing=False):
             base['backup'] = backup.as_posix()
         temporary = patch.with_name(patch.name + '.tmp')
         temporary.write_text(('\ufeff' if had_bom else '') + new_text, encoding='utf-8', newline='\n')
-        # Validate the exact bytes that will replace the original file.
+        # Validate the exact bytes that will replace the original file: the full
+        # persisted document must have exactly one matching MCP entry and a
+        # skills directory that exists, and configuration_ok must hold.
         written = temporary.read_text(encoding='utf-8-sig')
+        if written.rstrip('\n') != new_text.rstrip('\n'):
+            raise PatchError('临时目标文件内容与已校验内容不一致，保留原文件。')
         final_data = _load_document(written, '临时目标文件')
         if final_data != (composed_base + generated):
             raise PatchError('临时目标文件的复核结构与预期不一致，保留原文件。')
+        persisted_mcp, persisted_skills = _validate_final_document(final_data, root, '临时目标文件')
         os.replace(temporary, patch)
+        base['mcp'] = persisted_mcp
+        base['skills'] = persisted_skills
         base['validated'] = True
     except (OSError, PatchError) as error:
         try:

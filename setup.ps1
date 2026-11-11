@@ -42,11 +42,31 @@ if ($clientTarget.client -eq 'deepseek') {
         . $dshHelper
         $dshExit = Invoke-DshConfiguration -Root $PSScriptRoot
     } else {
-        # A partial copy of the project may not ship the completion helper yet;
-        # keep the historical exit-code check so the merge result is honoured.
-        Write-Host 'DSH completion helper not found; checking the configuration merge exit code only.'
+        # A partial copy of the project may not ship the completion helper yet.
+        # The install exit code alone is not enough: verify the persisted
+        # configuration structurally with `status --json` and require
+        # configuration_ok = true before reporting success.
+        Write-Host 'DSH completion helper not found; verifying install and status --json.'
         & '.venv/Scripts/python.exe' tools/onboarding/dsh_integration.py install
         $dshExit = $LASTEXITCODE
+        if ($dshExit -eq 0) {
+            $statusRaw = & '.venv/Scripts/python.exe' -B tools/onboarding/dsh_integration.py status --json
+            $statusText = (@($statusRaw) | ForEach-Object { [string]$_ }) -join "`n"
+            $statusData = $null
+            if ($statusText.Trim()) {
+                try { $statusData = $statusText | ConvertFrom-Json } catch { $statusData = $null }
+            }
+            $configurationOk = $false
+            if ($null -ne $statusData) {
+                $okNode = $statusData.PSObject.Properties | Where-Object { $_.Name -eq 'configuration_ok' } | Select-Object -First 1
+                if ($null -ne $okNode) { $configurationOk = [bool]$okNode.Value }
+            }
+            if (-not $configurationOk) {
+                Write-Host 'DSH fallback verification failed: install exited 0 but `status --json` did not report configuration_ok=true.'
+                Write-Host 'The DeepSeek Harness configuration (MCP + skills) is NOT verified; do not delete the existing configuration.'
+                $dshExit = 1
+            }
+        }
     }
     if ($dshExit -ne 0) {
         Write-Host 'Setup did not complete: the DeepSeek Harness configuration (MCP + skills) is NOT verified.'

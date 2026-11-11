@@ -1,6 +1,6 @@
 # 市场条目文案（LISTING）
 
-本文件是插件在 DSH 社区索引/市场中的展示文案草稿，供发布者复制到索引条目、插件详情页或发布公告。**当前没有发布，也没有上架**；社区目录尚未上线（预计地址见 [README.md](README.md)，发布步骤见 [PUBLISH_PLAN.md](PUBLISH_PLAN.md)）。当前对应试用版本：`0.6.0-trial.3`。定位：**社区维护、Windows 试用版、非 DeepSeek 官方收录**。
+本文件是插件在 DSH 社区索引/市场中的展示文案草稿，供发布者复制到索引条目、插件详情页或发布公告。**当前没有发布，也没有上架**；社区目录尚未上线（预计地址见 [README.md](README.md)，发布步骤见 [PUBLISH_PLAN.md](PUBLISH_PLAN.md)）。当前对应试用版本：`0.6.0-trial.4`。定位：**社区维护、Windows 试用版、非 DeepSeek 官方收录**。
 
 ## 标题
 
@@ -86,7 +86,7 @@ The first run is guided: choose a data location → install the runtime dependen
 
 - `author`：当前为 `jiangzengyuang-jisoo`（`docs/market/index.json` 已填写，不再是占位）；发布前由维护者确认该名称可以公开。
 - `homepage` / `repository`：`https://github.com/jiangzengyuang-jisoo/moodle-study-assistant`（准备阶段核实仓库为 public），`repository.directory` 为 `plugin`；发布前复查可公开访问。
-- 版本与状态：社区目录条目版本 `0.6.0-trial.3`，npm 计划使用 `trial` tag；当前**未发布**，状态见 [README.md](README.md)。
+- 版本与状态：社区目录条目版本 `0.6.0-trial.4`，npm 计划使用 `trial` tag；当前**未发布**，状态见 [README.md](README.md)。
 - 许可证：MIT（见根目录 `LICENSE`）；第三方组件声明见 `THIRD_PARTY_NOTICES.md`。
 
 ## 相关文件

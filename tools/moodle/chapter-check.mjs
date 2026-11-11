@@ -33,7 +33,7 @@ import {
   authorizationReport, emptyTextSources, enumerateCourse, nowISO, planPage, readJSON, selectedPages,
 } from './course-library.mjs';
 
-export const CHAPTER_CHECK_SCHEMA = 2;
+export const CHAPTER_CHECK_SCHEMA = 3;
 export const MODES = Object.freeze({quick: 'quick', strict: 'strict'});
 export const STATUS = Object.freeze({
   unchanged: 'unchanged', changed: 'changed', no_baseline: 'no_baseline', error: 'error', skipped: 'skipped',
@@ -937,6 +937,25 @@ export function resolveCatalogScope({enumeratedPages, section, modules = null}) 
 // Reuse validation and local hashing (no network).
 // ---------------------------------------------------------------------------
 
+// Fingerprint of the saved school connection: the parsed config plus the
+// protected credential bytes. Receipts record only this hash (never the config
+// values or credential), so a restarted process can prove that a receipt was
+// produced for the account that is currently saved even while the local
+// learning profile (only updated after an account-bound action) still records
+// an older account. Any unreadable/invalid file yields null, which callers
+// treat as "cannot verify" and therefore never reuse.
+export function connectionGeneration(root) {
+  try {
+    const config = JSON.parse(readFileSync(join(resolve(root), 'config.local.json'), 'utf8').replace(/^\uFEFF/, ''));
+    if (!config || typeof config !== 'object' || Array.isArray(config)) return null;
+    const credential = readFileSync(join(resolve(root), '.private/moodle-token.dpapi'));
+    if (!credential.length) return null;
+    return createHash('sha256').update(JSON.stringify(config)).update('\0').update(credential).digest('hex');
+  } catch {
+    return null;
+  }
+}
+
 function hashScopeLocalFiles(root, localFiles) {
   const rows = [];
   for (const file of localFiles ?? []) {
@@ -964,7 +983,7 @@ function accountEvidence(state, root) {
 // Decide whether the previous strict receipt can be echoed or extended.
 // Returns {kind:'reuse'|'incremental'|'none', reason, message, newModuleIds}.
 export function validateReceiptReuse({receipt, plan, state, root = null, chatKey = null, mode = 'strict',
-  coursePages = null}) {
+  coursePages = null, connectionGeneration = null}) {
   const no = reason => ({kind: 'none', reason, message: reuseMessage(reason)});
   if (!chatKey) return no('no_chat_key');
   if (!receipt || receipt.schema !== CHAPTER_CHECK_SCHEMA) return no('no_receipt');
@@ -972,6 +991,14 @@ export function validateReceiptReuse({receipt, plan, state, root = null, chatKey
   if (mode !== MODES.strict) return no('mode_not_strict');
   if (receipt.chat?.key !== String(chatKey)) return no('chat_changed');
   if (!receipt.course || !receipt.account_scope) return no('no_receipt');
+  // A receipt belongs to the exact saved connection (config + protected
+  // credential) that produced it. Both sides must be readable and identical;
+  // an old schema, a missing hash or a changed saved login is never reused.
+  const receiptConnection = typeof receipt.connection_generation === 'string'
+    ? receipt.connection_generation : '';
+  const currentConnection = typeof connectionGeneration === 'string' ? connectionGeneration : '';
+  if (!receiptConnection || !currentConnection) return no('account_unverified');
+  if (receiptConnection !== currentConnection) return no('connection_changed');
   const subject = plan.subject;
   if (receipt.course.course_id !== subject) return no('course_changed');
   const pages = coursePages ?? plan.pages;
@@ -1043,7 +1070,8 @@ function reuseMessage(reason) {
     course_changed: '课程变化，上次回执不能复用',
     course_pages_changed: '课程页面范围变化，上次回执不能复用',
     scope_changed: '资料范围变化，上次回执不能复用',
-    account_unverified: '无法从本地档案确认学校账号；需要重新联网核对',
+    connection_changed: '保存的学校连接或授权已变化，上次回执失效；需要重新联网核对',
+    account_unverified: '无法确认当前保存的学校连接与学习档案账号一致；需要重新联网核对',
     account_changed: '学校账号变化，上次回执失效',
     authorization_changed: '课程资料授权变化，上次回执失效',
     local_file_changed: '本地文件内容变化，上次回执失效',
@@ -1083,7 +1111,8 @@ function scopeForReceipt(scope, localFiles) {
   };
 }
 
-function ambiguityReceipt({mode, resolved, request, account = null, persist = true, root, now = nowISO}) {
+function ambiguityReceipt({mode, resolved, request, account = null, persist = true, root, now = nowISO,
+  connectionGeneration = null}) {
   const candidates = (resolved.candidates ?? []).slice(0, MAX_CANDIDATES);
   const receipt = {
     schema: CHAPTER_CHECK_SCHEMA,
@@ -1091,6 +1120,7 @@ function ambiguityReceipt({mode, resolved, request, account = null, persist = tr
     checked_at: now(),
     mode,
     ambiguous: true,
+    connection_generation: typeof connectionGeneration === 'string' ? connectionGeneration : null,
     account_scope: account ? {site: account.site, user_id: account.user_id} : null,
     course: {
       course_id: resolved.subject,
@@ -1137,11 +1167,16 @@ export async function checkChapter({
   client, root, state, course, section = null, modules = null, mode = 'strict',
   scope = null, carry = null, chatKey = null, maxBytes = MAX_BYTES, persist = true,
   now = nowISO, fetchFile = fetchCourseFile, enumerate = enumerateCourse, ledgerPath = null,
-  progress = () => {},
+  progress = () => {}, connectionGeneration: passedGeneration = undefined,
 } = {}) {
   if (!client || typeof client.call !== 'function') throw new Error('需要已连接的 Moodle 只读客户端');
   if (!MODES[mode]) throw new Error('核对强度只能是 quick 或 strict');
   if (!section && !modules) throw new Error('请提供章节名称/编号，或用 --module 指定模块');
+  // The receipt records the same saved-connection generation the caller used to
+  // decide reuse, so a cold-started process can tell whether the saved login
+  // still matches the receipt that is about to be written.
+  const receiptGeneration = passedGeneration === undefined
+    ? connectionGeneration(root) : passedGeneration;
   // The baseline comes from this profile's library ledger/materials, which are
   // keyed by numeric course/module IDs. Another school or account may reuse the
   // same numbers for different files, so refuse before enumerating or hashing.
@@ -1171,7 +1206,7 @@ export async function checkChapter({
     chapterScope = resolveChapterLocal({state, root, course: resolved.subject, section, modules,
       coursePages: resolved.pages});
     if (chapterScope.status === 'ambiguous') {
-      return ambiguityReceipt({mode, resolved: chapterScope, request, account, persist, root, now});
+      return ambiguityReceipt({mode, resolved: chapterScope, request, account, persist, root, now, connectionGeneration: receiptGeneration});
     }
   }
   if (chapterScope.status === 'ambiguous') {
@@ -1200,7 +1235,7 @@ export async function checkChapter({
     progress('本地资料索引没有给出本章模块；改为按课程目录的章节名/模块名严格匹配');
     chapterScope = resolveCatalogScope({enumeratedPages, section, modules: null});
     if (chapterScope.status === 'ambiguous') {
-      return ambiguityReceipt({mode, resolved: chapterScope, request, account, persist, root, now});
+      return ambiguityReceipt({mode, resolved: chapterScope, request, account, persist, root, now, connectionGeneration: receiptGeneration});
     }
     if (chapterScope.status === 'none') {
       const detail = available.length ? `；可用的章节：${available.join('、')}` : '';
@@ -1336,6 +1371,7 @@ export async function checkChapter({
     checked_at: now(),
     mode,
     chat: chatKey ? {key: String(chatKey)} : null,
+    connection_generation: receiptGeneration,
     // The baseline is only meaningful for the account that recorded it.
     account_scope: {site: account.site, user_id: account.user_id},
     course: {
@@ -1415,6 +1451,10 @@ export async function runChapterCheck({
   if (!course) throw new Error('请提供课程 ID；章节核对只查这一门课');
   if (!section && !modules) throw new Error('请提供章节名称/编号，或用 --module 指定模块');
   const state = loadState();
+  // One saved-connection generation for both the reuse decision and the receipt
+  // that is eventually written. A cold-started process therefore cannot echo a
+  // receipt that was produced under a different saved config/credential.
+  const currentConnection = connectionGeneration(root);
   progress('解析本章范围（优先本地资料索引与来源映射）');
   const plan = resolveChapterLocal({state, root, course, section, modules});
   const label = requestLabel(section, modules);
@@ -1422,7 +1462,7 @@ export async function runChapterCheck({
   const previous = readReceiptFile(cachePath);
   if (!force && previous) {
     const decision = validateReceiptReuse({receipt: previous, plan, state, root, chatKey, mode,
-      coursePages: plan.pages});
+      coursePages: plan.pages, connectionGeneration: currentConnection});
     if (decision.kind === 'reuse') {
       progress(decision.message);
       return cloneReuse(previous, {reason: decision.reason, message: decision.message, now});
@@ -1434,7 +1474,8 @@ export async function runChapterCheck({
       const receipt = await checkChapter({client, root, state, course, section, modules, mode, scope: plan,
         carry: {receipt: previous, moduleIds: previous.scope.module_ids ?? [],
           rows: previous.files ?? [], sections: previous.sections ?? [], run_id: previous.run_id},
-        chatKey, persist, now, fetchFile, enumerate, ledgerPath, progress});
+        chatKey, persist, now, fetchFile, enumerate, ledgerPath, progress,
+        connectionGeneration: currentConnection});
       return {...receipt, network_started: true};
     }
     progress(decision.message);
@@ -1445,13 +1486,13 @@ export async function runChapterCheck({
     progress('本章匹配不唯一；返回候选与原因，不扩大范围、不联网');
     return {...ambiguityReceipt({mode, resolved: plan, request: {section,
       modules: modules ? [...new Set(modules.map(Number).filter(Number.isInteger))].sort((a, b) => a - b) : null,
-      label}, account: null, persist, root, now}), network_started: false};
+      label}, account: null, persist, root, now, connectionGeneration: currentConnection}), network_started: false};
   }
   if (!connect) throw new Error('章节核对需要已连接的 Moodle 只读客户端');
   progress('连接学校只读接口（不会启动完整采集，也不会写学校状态）');
   const client = await connect();
   const receipt = await checkChapter({client, root, state, course, section, modules, mode,
     scope: plan.status === 'resolved' ? plan : null, chatKey, persist, now, fetchFile, enumerate,
-    ledgerPath, progress});
+    ledgerPath, progress, connectionGeneration: currentConnection});
   return {...receipt, network_started: true};
 }

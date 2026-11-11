@@ -42,7 +42,7 @@ MCP 暴露原有 15 个课程、作业、测验、论坛、日历、成绩、通
 
 返回 `STUDY_MCP_RESTART_REQUIRED` 时先重新加载 Moodle 服务，不申请 shell 提权；学校/账号/授权/范围等固定错误按其原因处理，不能把缓存失败或普通错误当作核对成功。
 
-回执沿用现有 `verdict`、`verified.complete`、`scope`、`reused`、`network_started` 等含义。相同原聊天、学校账号、课程/资料范围及本地内容未变时可复用严格回执；新增范围只补核对新增资料，错误和未完成不能冒充成功。MCP 服务不保证继承主聊天身份，所以每次明确提供 `chat_id`；只在本地保存其摘要。
+回执沿用现有 `verdict`、`verified.complete`、`scope`、`reused`、`network_started` 等含义。回执记录保存的学校连接指纹（`connection_generation`：配置与加密凭据的哈希）；相同原聊天、当前保存的学校连接、课程/资料范围及本地内容未变时才可复用严格回执，重新登录、换账号或凭据变化后旧回执失效、需要重新联网核对。新增范围只补核对新增资料，错误和未完成不能冒充成功。MCP 服务不保证继承主聊天身份，所以每次明确提供 `chat_id`；只在本地保存其摘要。
 
 工具缺失/未加载或服务启动、传输故障才退回同范围 `study.cmd --chat "原始用户聊天ID" chapter-check --course COURSE101 --section "Topic 5" --mode strict`；不因学校拒绝、账号/课程授权不符、参数错误或客户端审批拒绝而换路径。不并发运行或在两条路径间循环；仅后备 CLI 遇到受限执行解密错误才申请一次单次授权，详见 [DSH 恢复流程](DSH.md#章节核对默认使用-moodle-工具)。用户自定义审批策略仍然生效，不修改全局权限。
 
@@ -259,13 +259,13 @@ Get-Content -Raw -Encoding UTF8 'tmp/teaching-event.json' | .\study.cmd --chat "
 & '.venv/Scripts/python.exe' tools/study/chat_identity.py
 ```
 
-`install` 以**实际 YAML 结构**处理 profile patch（依赖 PyYAML，由 setup 安装）：注释不算配置，合法的空列表 `[]` 会被正常归一化；写入前完整解析并校验合并结果，解析或校验失败时保留原文件不替换；用 `# >>> ... >>>` 标记段幂等更新，重复运行只改本段。`install` 返回 `installed`/`unchanged`/`dry-run`/`conflict`/`skipped`/`error` 状态，并带同时覆盖 MCP 与技能目录的 `configuration_ok`、分项 `mcp`/`skills`、`warnings` 与可操作 `next_steps`；退出码 0 只用于“成功且两部分都配置正确”（`installed`/`unchanged`/`dry-run` 且 `configuration_ok=true`）。同名 `moodle_study` MCP 指向旧项目、或用户自定义 `skill-filesystem` 覆盖缺当前项目 `skills/` 目录时返回 `conflict`：不写入任何内容、原文件不变、退出非 0。确认旧条目是本项目旧部署时，可用 `install --update-existing` 只更新该条目的 `run.mjs` 路径；技能冲突按 [DSH.md](DSH.md) 合并或移除旧覆盖；不要删除现有配置重试。配置正确时重复运行返回 `unchanged` 并退出 0。`status --json`/`install --json` 的 `configuration_ok` 只表示配置结构正确（同时覆盖 MCP 与技能目录），`runtime_loaded` 恒为 `unverified`——配置检测不等于运行成功，必须重启 DSH 后在新聊天实际确认。修改后需重启 DSH 才加载。`study.cmd`/`session.py` 的 `--chat` 可省略：按“显式 `--chat` → 环境变量 `STUDY_CHAT_ID`（与本人约定的会话名）→ DSH 主聊天 `DSH_SESSION_ID`”解析；DSH 内部子会话的裸 UUID 会被拒绝，子任务必须显式传主聊天 ID 并加 `--subtask`。完整说明见 [DSH.md](DSH.md)。
+`install` 以**实际 YAML 结构**处理 profile patch（依赖 PyYAML，由 setup 安装）：注释不算配置，合法的空列表 `[]` 会被正常归一化；写入前完整解析并校验合并结果，解析或校验失败时保留原文件不替换；用 `# >>> ... >>>` 标记段幂等更新，重复运行只改本段。`install` 返回 `installed`/`unchanged`/`dry-run`/`conflict`/`skipped`/`error` 状态，并带同时覆盖 MCP 与技能目录的 `configuration_ok`、分项 `mcp`/`skills`、`warnings` 与可操作 `next_steps`；退出码 0 只用于“成功且两部分都配置正确”（`installed`/`unchanged`/`dry-run` 且 `configuration_ok=true`）。同名 `moodle_study` MCP 指向旧项目、出现多条同名条目、或用户自定义 `skill-filesystem` 覆盖缺当前项目 `skills/` 目录时返回 `conflict`：不写入任何内容、原文件不变、退出非 0；当前项目 `skills/` 目录本身缺失时返回 `error`（同样零写入），不会生成指向不存在目录的配置。确认旧条目是本项目旧部署时，可用 `install --update-existing` 只更新该条目的 `run.mjs` 路径（同名条目不止一条时拒绝猜测，按提示手动去重）；技能冲突按 [DSH.md](DSH.md) 合并或移除旧覆盖；不要删除现有配置重试。已存在的生成配置段会重建并校验完整持久化文档后才写入（恰好一条指向当前项目的 MCP 条目 + 存在的技能目录），不会因剥离后的副本看似正确而误报 `unchanged` 或完成。配置正确时重复运行返回 `unchanged` 并退出 0。`status --json`/`install --json` 的 `configuration_ok` 只表示配置结构正确（同时覆盖 MCP 与技能目录），`runtime_loaded` 恒为 `unverified`——配置检测不等于运行成功，必须重启 DSH 后在新聊天实际确认。修改后需重启 DSH 才加载。`study.cmd`/`session.py` 的 `--chat` 可省略：按“显式 `--chat` → 环境变量 `STUDY_CHAT_ID`（与本人约定的会话名）→ DSH 主聊天 `DSH_SESSION_ID`”解析；DSH 内部子会话的裸 UUID 会被拒绝，子任务必须显式传主聊天 ID 并加 `--subtask`。完整说明见 [DSH.md](DSH.md)。
 
 在受限 shell（例如 DSH 自己的沙箱）里，`node --test`、部分 Python `tempfile` 测试，以及需要 Node 子进程、DPAPI 解密或网络下载的 `courses` 完整初始化和 `library-sync`，可能因管道/临时目录/进程权限失败；这不代表实现错误。助手应先按 Harness 实际提供的审批机制请求执行同一具体操作，并在当前聊天继续；不把打开 CMD 作为默认解决方法，不自行关闭安全限制。确实无法由宿主执行时才报告具体阻碍，并说明可选的手动备用方式。
 
 ### 插件试用版的运行依赖（study_setup_runtime）
 
-`study_setup_runtime` 是插件设置阶段运行依赖的**重新验证/修复入口**（仓库源码 2026-11-11 起；当前 `0.6.0-trial.3` 插件包未重建，仍是旧逻辑）。重新调用不会只信旧 `runtime.json` 标记：会分级本地检查 venv 目录、解释器能否运行并返回预期探测、pip 是否可用、`requirements-core.txt` 每个依赖能否导入，只有依赖清单版本与 SHA-256 指纹匹配才视为 ready。修复只做缺失项：创建中断缺 pip 先用离线 `ensurepip --upgrade`；解释器损坏时把旧 venv 改名 `venv.broken-<时间>` 保留诊断后重建；依赖或标记过期则重新安装并验证。健康检查通过前不报告完成，失败返回准确下一步（关闭重开 Harness / 修复或重装自带 Python / 设置 `MOODLE_STUDY_BASE_PYTHON` / 不要删除学习档案），下次调用重新尝试。`study_setup_status` 的 `runtimeStatus`/`runtimeHealth` 展示同一诊断；健康检查每次只做一次合并本地探测，正常学习不会重复联网安装。
+`study_setup_runtime` 是插件设置阶段运行依赖的**重新验证/修复入口**（2026-11-11 起的仓库源码与 `0.6.0-trial.4` 试用包均为此逻辑；`0.6.0-trial.3` 及更早的包仍是旧逻辑）。重新调用不会只信旧 `runtime.json` 标记：会分级本地检查 venv 目录、解释器能否运行并返回预期探测、pip 是否可用、`requirements-core.txt` 每个依赖能否导入，只有依赖清单版本与 SHA-256 指纹匹配才视为 ready；依赖文件存在但导入失败或指纹不符时会**真正重新安装**（`--force-reinstall`），不会只补“缺失”后误报完成。登录组件（Playwright）单独分级检查：解释器可运行、`playwright.sync_api` 可导入、登录依赖指纹匹配才视为已安装；重建 venv 会移除登录组件，旧 `login.installed` 标记不再单独作数。修复尽量只动缺失或损坏的部分：创建中断缺 pip 先用离线 `ensurepip --upgrade`；解释器损坏时把旧 venv 改名 `venv.broken-<时间>` 保留诊断后重建；依赖或标记过期则重新安装并验证。健康检查通过前不报告完成，失败返回准确下一步（关闭重开 Harness / 修复或重装自带 Python / 设置 `MOODLE_STUDY_BASE_PYTHON` / 不要删除学习档案），下次调用重新尝试。`study_setup_status` 的 `runtimeStatus`/`runtimeHealth` 展示同一诊断；插件 Host 侧 `moodle_study_status` 也加载同一分级诊断模块，不靠 venv 文件是否存在推断。健康检查每次只做一次合并本地探测，正常学习不会重复联网安装；安装或升级到 `0.6.0-trial.4` 后生效。
 
 ## 验证与发布
 
