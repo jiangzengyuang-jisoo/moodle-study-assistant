@@ -6,6 +6,8 @@ import sys
 import tempfile
 import unittest
 
+import review
+
 HERE = Path(__file__).resolve().parent
 
 
@@ -27,6 +29,7 @@ class ReviewTests(unittest.TestCase):
             "revision": 4, "settings": {"brief_send_authorized": False},
             "integrations": {"moodle": {"status": "connected"}},
             "courses": [{"id": "MATH-DEMO", "mastered": []}],
+            "materials": [{"id": "TEST", "course_id": "MATH-DEMO", "version_status": "current"}],
             "tasks": [{"id": "A1", "status": "Completed"}],
             "mistakes": [{"id": "M1", "course_id": "MATH-DEMO", "entry_type": "question",
                           "display_title": "极限", "check_question": "求极限"}],
@@ -39,7 +42,24 @@ class ReviewTests(unittest.TestCase):
                  "priority": "Normal", "due_date": "2030-01-01", "prompt": "未来项目"},
             ], "activity_log": [],
         }
+        self.original["review_queue"][0]["practice_variants"] = [{
+            "id": "V1", "prompt": "不看答案，求极限", "answer_check": ["隐藏答案"],
+            "verified": True, "estimated_minutes": 5,
+            "source": {"material_id": "TEST", "pages": [1], "detail": "临时测试题源"}}]
         self.path.write_text(json.dumps(self.original), encoding="utf-8")
+
+    def record_payload(self, payload, ok=True):
+        # Retained FSRS primitive; production writes must use daily.py attempt.
+        before = self.path.read_bytes()
+        state = json.loads(before)
+        if not ok:
+            with self.assertRaises((ValueError, KeyError, TypeError)):
+                review.record(state, payload)
+            return
+        result = review.record(state, payload)
+        if result["status"] != "duplicate":
+            review.save(self.path, state, before)
+        return result
 
     def command(self, *args, payload=None, ok=True):
         result, data = call("review.py", "--state", self.path, *args, payload=payload)
@@ -63,8 +83,8 @@ class ReviewTests(unittest.TestCase):
             self.assertEqual(state[key], self.original[key])
         after = self.path.read_bytes()
         preview = self.command("due", "--at", "2026-09-21T20:00:00+08:00", "--minutes", "5")
-        self.assertEqual([item["id"] for item in preview["items"]], ["R1"])
-        self.assertEqual(preview["estimated_minutes"], 5)
+        self.assertEqual([item["review_id"] for item in preview["items"]], ["R1"])
+        self.assertEqual(preview["items"][0]["estimated_minutes"], 5)
         self.assertNotIn("隐藏答案", json.dumps(preview, ensure_ascii=False))
         self.assertEqual(self.path.read_bytes(), after)
         self.assertEqual(self.command("due", "--minutes", "4")["items"], [])
@@ -73,7 +93,7 @@ class ReviewTests(unittest.TestCase):
 
     def test_record_persists_real_evidence_hk_date_and_deduplicates(self):
         self.command("init")
-        self.command("record", payload=self.attempt())
+        self.record_payload(self.attempt())
         state = json.loads(self.path.read_text(encoding="utf-8"))
         item = state["review_queue"][0]
         self.assertEqual(item["due_date"], "2026-09-20")
@@ -84,35 +104,51 @@ class ReviewTests(unittest.TestCase):
             self.assertEqual(state[key], self.original[key])
         self.assertEqual(state["integrations"]["moodle"], self.original["integrations"]["moodle"])
         after = self.path.read_bytes()
-        self.assertEqual(self.command("record", payload=self.attempt())["status"], "duplicate")
+        self.assertEqual(self.record_payload(self.attempt())["status"], "duplicate")
         self.assertEqual(self.path.read_bytes(), after)
-        self.command("record", payload=self.attempt(answer="不同答案"), ok=False)
+        self.record_payload(self.attempt(answer="不同答案"), ok=False)
         self.assertEqual(self.path.read_bytes(), after)
         self.assertTrue(self.path.with_name("state.previous.json").exists())
-        self.assertIn("2026-09-20", self.path.with_name("Review Queue.md").read_text(encoding="utf-8"))
 
     def test_rejects_assisted_empty_or_out_of_order_attempt_without_writing(self):
         self.command("init")
         before = self.path.read_bytes()
         for changes in ({"independent": False}, {"evidence": ""}, {"rating": "mastered"},
                         {"reviewed_at": "2026-09-21T20:00:00"}, {"review_id": "missing"}):
-            self.command("record", payload=self.attempt(**changes), ok=False)
+            self.record_payload(self.attempt(**changes), ok=False)
             self.assertEqual(self.path.read_bytes(), before)
-        self.command("record", payload=self.attempt())
+        self.record_payload(self.attempt())
         before = self.path.read_bytes()
-        self.command("record", payload=self.attempt(attempt_id="older", reviewed_at="2026-09-18T12:00:00+08:00"), ok=False)
+        self.record_payload(self.attempt(attempt_id="older", reviewed_at="2026-09-18T12:00:00+08:00"), ok=False)
         self.assertEqual(self.path.read_bytes(), before)
 
     def test_failed_recall_is_sooner_than_easy_and_due_filter_uses_time(self):
         self.command("init")
-        self.command("record", payload=self.attempt(rating="again"))
+        self.record_payload(self.attempt(rating="again"))
         again = json.loads(self.path.read_text(encoding="utf-8"))["review_queue"][0]["fsrs"]["card"]["due"]
         self.path.write_text(json.dumps(self.original), encoding="utf-8")
         self.command("init")
-        self.command("record", payload=self.attempt(rating="easy"))
+        self.record_payload(self.attempt(rating="easy"))
         easy = json.loads(self.path.read_text(encoding="utf-8"))["review_queue"][0]["fsrs"]["card"]["due"]
         self.assertLess(again, easy)
         self.assertEqual(self.command("due", "--at", "2026-09-20T00:00:00+08:00")["items"], [])
+
+    def test_retired_record_never_writes_even_without_loop_flag(self):
+        before = self.path.read_bytes()
+        result, _ = call("review.py", "--state", self.path, "record", payload=self.attempt())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("daily.py attempt", result.stderr)
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_old_archive_without_verified_variants_is_not_reset_or_exposed(self):
+        self.original["review_queue"][0].pop("practice_variants")
+        self.path.write_text(json.dumps(self.original), encoding="utf-8")
+        before = self.path.read_bytes()
+        result = self.command("due", "--at", "2026-09-21T20:00:00+08:00")
+        self.assertEqual(result["items"], [])
+        self.assertTrue(result["needs_preparation"])
+        self.assertNotIn("隐藏答案", json.dumps(result, ensure_ascii=False))
+        self.assertEqual(before, self.path.read_bytes())
 
 
 class MathTests(unittest.TestCase):

@@ -9,10 +9,9 @@ import study_time
 from datetime import date, datetime, timedelta, timezone
 import json
 import math
-import os
 from pathlib import Path
 import re
-import tempfile
+from state_io import atomic_text
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_STATE = ROOT / "Study" / "_System" / "state.json"
@@ -512,10 +511,11 @@ def render_views(state, now=None):
 
 
 @study_time.state_timezone
-def check_freshness(state, views, now=None):
+def check_freshness(state, views, now=None, *, expected=None):
     """Check date/source revision and content, including same-day end-time rollover."""
     now = local_now(now)
-    expected = render_views(state, now)
+    if expected is None:
+        expected = render_views(state, now)
     issues = []
     for name in VIEW_NAMES:
         content = views.get(name)
@@ -535,20 +535,8 @@ def check_freshness(state, views, now=None):
 
 
 def write_views(views, output_dir):
-    directory = Path(output_dir)
-    directory.mkdir(parents=True, exist_ok=True)
     for name, text in views.items():
-        destination = directory / name
-        if destination.exists() and destination.read_text(encoding="utf-8-sig") == text:
-            continue
-        fd, temporary = tempfile.mkstemp(prefix=".plan-", suffix=".tmp", dir=directory)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-                handle.write(text)
-            os.replace(temporary, destination)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+        atomic_text(Path(output_dir) / name, text, skip_unchanged=True)
 
 
 def main():

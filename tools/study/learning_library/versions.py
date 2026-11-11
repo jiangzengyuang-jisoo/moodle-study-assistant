@@ -1,5 +1,5 @@
 """Transactional material versions; state IDs always keep their original evidence."""
-from state_io import locked
+from state_io import locked, atomic_bytes
 import copy
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -7,7 +7,6 @@ import json
 import os
 from pathlib import Path
 import re
-import tempfile
 from urllib.parse import unquote, urlparse
 import uuid
 
@@ -106,22 +105,7 @@ def _note_edits(study, old, archived, previous=()):
 
 
 def _write(path, value):
-    # Do not import the scheduler (and its FSRS dependency) into library startup.
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = value.encode("utf-8") if isinstance(value, str) else value
-    if path.suffix == ".json":
-        json.loads(data.decode("utf-8-sig"))
-    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(fd, "wb") as stream:
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+    atomic_bytes(path, value.encode('utf-8') if isinstance(value, str) else value)
 
 
 @locked

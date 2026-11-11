@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import daily
 import review
@@ -277,6 +278,15 @@ class DailyIntegrationTests(unittest.TestCase):
         daily.execute(self.path, "run", self.now, minutes=0)
         self.assertEqual(self.read()["review_sessions"][0]["budget_minutes"], 0)
         self.assertFalse(any(x["status"] == "pending" for x in self.read()["review_sessions"][0]["items"]))
+
+    def test_unchanged_views_keep_timestamps_and_check_reuses_plan_generation(self):
+        daily.execute(self.path, "run", self.now)
+        stamps = {p: p.stat().st_mtime_ns for p in self.path.parent.glob("*.md")}
+        daily.execute(self.path, "render", self.now)
+        self.assertEqual(stamps, {p: p.stat().st_mtime_ns for p in stamps})
+        with patch.object(daily.planning, "render_views", wraps=daily.planning.render_views) as render:
+            self.assertTrue(daily.execute(self.path, "check", self.now)["fresh"])
+            self.assertEqual(render.call_count, 1)
 
     def test_legacy_cli_cannot_bypass_answer_exposure_checks(self):
         state = self.read()

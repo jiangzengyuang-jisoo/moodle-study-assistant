@@ -262,18 +262,30 @@ def validate_draft(current, draft):
             course['evidence_bindings'] = bound['evidence_bindings']
 
 
-def atomic(path, value):
+def atomic_bytes(path, content, *, skip_unchanged=False):
     path = Path(path)
+    if path.suffix == '.json':
+        json.loads(content.decode('utf-8-sig'))
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + '\n'
+    if skip_unchanged and path.exists() and path.read_bytes() == content:
+        return False
     fd, name = tempfile.mkstemp(prefix=path.name + '.', suffix='.tmp', dir=path.parent)
     try:
-        with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as stream:
-            stream.write(data); stream.flush(); os.fsync(stream.fileno())
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(content); stream.flush(); os.fsync(stream.fileno())
         os.replace(name, path)
     finally:
         if os.path.exists(name):
             os.unlink(name)
+    return True
+
+
+def atomic_text(path, content, *, skip_unchanged=False):
+    return atomic_bytes(path, content.encode('utf-8'), skip_unchanged=skip_unchanged)
+
+
+def atomic(path, value):
+    atomic_text(path, json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + '\n')
 
 
 @locked

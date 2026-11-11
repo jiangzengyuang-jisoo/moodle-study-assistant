@@ -92,7 +92,7 @@ def write_views(state, state_path, now):
             raise ValueError("生成期间学习状态已变化，请重新运行 daily.py run")
         destination = view_path(state_path, name)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        review.atomic_text(destination, text)
+        state_io.atomic_text(destination, text, skip_unchanged=True)
     if state_path.read_bytes() != expected:
         raise ValueError("学习状态已变化，当前视图需重新生成")
     sync_mock_notebooks(state, state_path)
@@ -126,7 +126,7 @@ def sync_mock_notebooks(state, state_path, check=False):
             content = pattern.sub(lambda match: block, old) if found else old.rstrip() + "\n\n" + block + "\n"
             if content != old:
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                review.atomic_text(destination, content)
+                state_io.atomic_text(destination, content, skip_unchanged=True)
     return issues
 
 
@@ -167,7 +167,7 @@ def _execute_loaded(state, state_path, original, command, now, minutes, course, 
         views = {name: view_path(state_path, name).read_text(encoding="utf-8")
                  if view_path(state_path, name).exists() else ""
                  for name in expected}
-        result = planning.check_freshness(state, views, now)
+        result = planning.check_freshness(state, views, now, expected=expected)
         for name, text in expected.items():
             if name not in planning.VIEW_NAMES and views[name].replace("\r\n", "\n") != text:
                 result["issues"].append(name + ": stale_or_missing")

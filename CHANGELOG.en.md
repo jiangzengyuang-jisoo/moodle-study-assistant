@@ -8,6 +8,7 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 | Date | Main changes |
 | --- | --- |
+| [2026-11-12](#2026-11-12) | Consolidate review and file writes; skip unchanged pages |
 | [2026-11-10](#2026-11-10) | Unify progress and verify saves; preserve practice and Feynman checks after important concepts |
 | [2026-11-08](#2026-11-08) | Publish audit fixes for remaining study capacity and bound-answer grading |
 | [2026-11-07](#2026-11-07) | Fix remaining-time limits and grading-state saves; preserve archived evidence and review options, with scoped queries and chapter recovery |
@@ -21,6 +22,16 @@ Existing users should first read the [upgrade steps that preserve learning recor
 | [2026-10-16](#2026-10-16) | Built-in self-study tutor with graded hints, Feynman explanations, transfer practice, and independent checks |
 | [2026-10-11](#2026-10-11) | Daily review questions, learning feedback, weekly reviews, exam coverage checks, and mock exams |
 | [2026-09-22](#2026-09-22) | Initial release: Windows installation, school account connection, course information, and learning records |
+
+## 2026-11-12
+
+### Review and file-write simplification (Codex)
+
+- Remove legacy question selection and review-page implementations. `review.py due` uses the current preview workflow and `render` uses the unified page writer. The retired `record` command directs users to `daily.py attempt`, including when an older archive has no learning-loop flag.
+- Share atomic file writing across study state, library caches, material versions and pages. Keep existing locks, recovery, snapshot validation and study timezones.
+- Leave unchanged pages untouched and reuse rendered plan content during freshness checks; this reduces redundant work without claiming an overall speed improvement.
+- Upgrade: keep your existing learning archive. Old answers and FSRS history remain intact; sources or verified variants that are missing are reported as needing preparation, not replaced with legacy prompts. See [tool instructions](docs/TOOLS.md).
+- Validation: 573 study-tool tests, 92 Python onboarding/entry tests and 130 Node tests passed. Rerun with project-local temporary directories to avoid system temporary-directory permission restrictions. Tests use synthetic data and temporary directories; no live school login or download was performed. No DeepSeek branch changes.
 
 ## 2026-11-10
 

@@ -75,7 +75,7 @@ node tools/moodle/run.mjs download 123 --authorized
 
 展示提示或解答时，以 `daily.py answer-shown` 记录 `session_id`、`review_id`、`variant_id` 和实际 `evidence`，可选 `shown_at`。这是曝光记录，不是虚构一次作答；下一次独立检查换新变式。
 
-统一学习流程启用后，旧 `review.py record` 拒绝绕过题包和曝光校验的直接写入。`review.py due --minutes 15` 可作只读预览。不要绕过 `daily.py` 直接调用内部函数给真实状态评级。
+旧 `review.py record` 已退役，无论旧档案是否含启用标志，都请改用 `daily.py attempt` 关联具体题目并核对答案曝光。`review.py due --minutes 15` 始终使用当前选题流程作只读预览，`render` 使用统一页面入口。没有核验过的新题或有效课件来源时显示待准备，不把旧提示当新题，不重置历史。升级无需重建档案；不要绕过 `daily.py` 直接调用内部函数给真实状态评级。
 
 ### 保存学习反馈
 
@@ -145,3 +145,5 @@ npm test
 
 
 考试来源写入与统一聊天入口共用快照校验。已有较新轮次、范围改变或快照被修改时，旧的 `exam-sync/exam-profile` 会拒绝保存；重读最新独立快照并核读后再提交，不使用旧草稿回退已核验要求。
+
+页面内容未变化时不替换文件；新鲜度检查复用本次生成的计划内容。安全文件写入由 `state_io.py` 共用实现，现有会话恢复、状态锁、快照核验和学习时区继续适用。

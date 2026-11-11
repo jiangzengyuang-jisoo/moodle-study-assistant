@@ -12,9 +12,9 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import unicodedata
+from state_io import atomic_text
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_STATE = ROOT / 'Study/_System/state.json'
@@ -55,19 +55,7 @@ def read_json(path):
 
 
 def atomic_json(path, data):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, name = tempfile.mkstemp(prefix=path.name+'.', suffix='.tmp', dir=path.parent)
-    try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        read_json(name)
-        os.replace(name, path)
-    finally:
-        if os.path.exists(name):
-            os.unlink(name)
+    atomic_text(path, json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False))
 
 
 def digest(path):
