@@ -12,7 +12,7 @@
 | npm 包名 | `dsh-moodle-study` |
 | 发布版本 | `0.6.0-trial.4`（已发布的版本号不可修改、不可覆盖） |
 | npm tag | `trial`（**不使用 `latest`**，不把试用版标成稳定版） |
-| 发布物 | `release/npm/dsh-moodle-study-0.6.0-trial.4.tgz`（2026-11-12 由 `pack:plugin` 生成并在隔离目录解包复核）：**3,190,465 字节（约 3.04 MB）、3558 个条目、92 个内置依赖包**，SHA-256 `cfd8fddd8ad2c48754dc135e6531d443c1c3bd08b024bea3d355545e502a9de7`。第一阶段 trial.3 准备产物为历史记录（3,163,254 字节 / 3556 条目 / SHA-256 `6a1f6f57…`），不能用于 trial.4。发布前只做哈希复核；若源码或打包内容再变化，必须重新运行 `pack:plugin` 并重新复核 |
+| 发布物 | `release/npm/dsh-moodle-study-0.6.0-trial.4.tgz`（2026-11-12 由 `pack:plugin` 生成并在隔离目录解包复核）：**3,190,497 字节（约 3.04 MB）、3558 个条目、92 个内置依赖包**，SHA-256 `50db3cb649bc7d56190411d91639a501d478f1d8e91bf33d1141c0a3ac775e87`。第一阶段 trial.3 准备产物为历史记录（3,163,254 字节 / 3556 条目 / SHA-256 `6a1f6f57…`），不能用于 trial.4。发布前只做哈希复核；若源码或打包内容再变化，必须重新运行 `pack:plugin` 并重新复核 |
 | 源码仓库 | `https://github.com/jiangzengyuang-jisoo/moodle-study-assistant`（public，默认分支 `codex`） |
 | Pages 分支 | 独立 orphan 分支 `gh-pages`（不覆盖 `codex`/`deepseek`/`main`） |
 | Pages 站点文件 | 恰好 3 个：`index.json`、`index.html`、`icons/icon.svg` |
@@ -57,7 +57,7 @@ gh repo view jiangzengyuang-jisoo/moodle-study-assistant --json visibility,defau
 ### 1.3 产物与内容
 
 - [ ] `git status --short` 没有意外改动；确认从哪个提交构建并记入 §5：`git rev-parse HEAD`。
-- [ ] `release/npm` 中的 tarball 必须为本轮按 `0.6.0-trial.4` 生成并经独立复核的**冻结字节**；发布时直接使用该文件，不重新打包。本轮产物：`release/npm/dsh-moodle-study-0.6.0-trial.4.tgz`（3,190,465 字节 / 3558 条目 / 92 个内置依赖包 / SHA-256 `cfd8fddd8ad2c48754dc135e6531d443c1c3bd08b024bea3d355545e502a9de7`）；已在隔离目录解包，包内版本与修复文件核对通过，`verify-plugin` 对该解包产物 **31/31** 通过。第一阶段 trial.3 产物（SHA-256 `6a1f6f57…`）只是历史记录，不能用于 trial.4 发布。
+- [ ] `release/npm` 中的 tarball 必须为本轮按 `0.6.0-trial.4` 生成并经独立复核的**冻结字节**；发布时直接使用该文件，不重新打包。本轮产物：`release/npm/dsh-moodle-study-0.6.0-trial.4.tgz`（3,190,497 字节 / 3558 条目 / 92 个内置依赖包 / SHA-256 `50db3cb649bc7d56190411d91639a501d478f1d8e91bf33d1141c0a3ac775e87`）；已在隔离目录解包，包内版本与修复文件核对通过，`verify-plugin` 对该解包产物 **31/31** 通过。第一阶段 trial.3 产物（SHA-256 `6a1f6f57…`）只是历史记录，不能用于 trial.4 发布。
 - [ ] `docs/market/pages/index.html`、`docs/market/index.json` 与 `docs/market/PUBLISH_PLAN.md` 为本次准备版本；`index.json` 的 `author` 为 `jiangzengyuang-jisoo`，`versions[0]` 为 `0.6.0-trial.4`。
 - [ ] 许可证（MIT）与 `THIRD_PARTY_NOTICES.md` 未变化；包内无个人数据（构建/打包脚本已审计）。
 
@@ -84,12 +84,12 @@ $publishedAt
 
 ### 2.1 核对冻结的 tarball（本地，无公开影响）
 
-**`0.6.0-trial.4` 的 tarball 已于 2026-11-12 生成并在隔离目录解包复核**；发布前只做哈希/大小/条目数复核，不要重新打包（重新构建会刷新 `builtAt`，SHA-256 必然变化）。本轮记录：3,190,465 字节 / 3558 条目 / 92 个内置依赖包 / SHA-256 `cfd8fddd8ad2c48754dc135e6531d443c1c3bd08b024bea3d355545e502a9de7`；解包后 `verify-plugin` 31/31 通过。第一阶段 trial.3 准备产物为历史记录，不能用于 trial.4。
+**`0.6.0-trial.4` 的 tarball 已于 2026-11-12 生成并在隔离目录解包复核**；发布前只做哈希/大小/条目数复核，不要重新打包（重新构建会刷新 `builtAt`，SHA-256 必然变化）。本轮记录：3,190,497 字节 / 3558 条目 / 92 个内置依赖包 / SHA-256 `50db3cb649bc7d56190411d91639a501d478f1d8e91bf33d1141c0a3ac775e87`；解包后 `verify-plugin` 31/31 通过。第一阶段 trial.3 准备产物为历史记录，不能用于 trial.4。
 
 ```powershell
 $tgz = 'release\npm\dsh-moodle-study-0.6.0-trial.4.tgz'
 Get-FileHash $tgz -Algorithm SHA256
-# 期望：cfd8fddd8ad2c48754dc135e6531d443c1c3bd08b024bea3d355545e502a9de7
+# 期望：50db3cb649bc7d56190411d91639a501d478f1d8e91bf33d1141c0a3ac775e87
 (Get-Item $tgz).Length            # 期望：3190203
 (& tar -tzf $tgz | Measure-Object).Count   # 期望：3558
 ```
@@ -344,8 +344,8 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 
 | 项目 | 记录 |
 | --- | --- |
-| 准备/构建提交 SHA | 待填写（本轮修复提交的 SHA） |
-| pack：version / entries / size / sha256 | `0.6.0-trial.4` / 3558 / 3,190,465 bytes / `cfd8fddd8ad2c48754dc135e6531d443c1c3bd08b024bea3d355545e502a9de7`（2026-11-12） |
+| 准备/构建提交 SHA | `89fdbcb8df7e626ae218d669839f3bbf5d25bad3`（tarball 的 `build-info.builtFromCommit`；文档记录提交另见 git log） |
+| pack：version / entries / size / sha256 | `0.6.0-trial.4` / 3558 / 3,190,497 bytes / `50db3cb649bc7d56190411d91639a501d478f1d8e91bf33d1141c0a3ac775e87`（2026-11-12） |
 | npm publish 时间（HKT / UTC） | |
 | `npm view` 验证结果（version / integrity / dist-tags） | |
 | `gh-pages` commit SHA | |
@@ -372,7 +372,7 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 - `node tools/release/build-market-site.mjs --published-at <时间>`：临时生成 `release/pages/` 的 3 个文件（index.json / index.html / icons/icon.svg）；验证后已清理该临时产物，正式发布时重新生成。
 - `tools/release/validate-market-index.mjs` 使用 Harness 自带 `parseMarketIndex` 校验：`docs/market/index.json` 与生成的 `release/pages/index.json` 均返回 `"ok": true`，相对图标解析为预计 Pages URL。
 - `docs/market/index.json` 的版本、作者、repository、icon 字段与 `0.6.0-trial.4` 一致；`npm view dsh-moodle-study` 在准备阶段返回 404（名称未被公开占用）。
-- `pack-plugin.mjs`、`build-market-site.mjs`、`validate-market-index.mjs` 均存在并在仓库内；`release/npm/dsh-moodle-study-0.6.0-trial.4.tgz` 已生成（3,190,465 字节 / 3558 条目 / 92 个内置依赖包 / SHA-256 `cfd8fddd…`），解包后 `verify-plugin` **31/31** 通过；第一阶段的 trial.3 产物（3,163,254 字节 / 3556 条目 / SHA-256 `6a1f6f57…`）仅作历史记录。`npm`/`git`/`gh`/`curl.exe` 在本机可用。
+- `pack-plugin.mjs`、`build-market-site.mjs`、`validate-market-index.mjs` 均存在并在仓库内；`release/npm/dsh-moodle-study-0.6.0-trial.4.tgz` 已生成（3,190,497 字节 / 3558 条目 / 92 个内置依赖包 / SHA-256 `50db3cb6…`），解包后 `verify-plugin` **31/31** 通过；第一阶段的 trial.3 产物（3,163,254 字节 / 3556 条目 / SHA-256 `6a1f6f57…`）仅作历史记录。`npm`/`git`/`gh`/`curl.exe` 在本机可用。
 
 **未验证（必须完成后才能对外说明）**
 

@@ -41,7 +41,7 @@
 ### 2.1 构建与打包产物
 
 - **插件包**：由 `tools/release/build-plugin.mjs` 构建到 `dist/moodle-study-assistant/`。构建脚本从 MCP 入口的 6 个直接运行时包出发，解析并内置**完整 Node 依赖闭包（当前 92 个包，无原生二进制）**，并扩写产物 `package.json` 的 `dependencies`/`bundleDependencies`，安装时不需要再下载 npm 依赖。`0.6.0-trial.4` 重新构建（2026-11-12）实测构建目录 **3559 个文件、15.1 MB**（含随包依赖闭包；`dist` 内的 tarball 不计入），个人数据、敏感路径与原生二进制审计通过；第一阶段 trial.3 构建为历史记录（3557 个文件、15.0 MB）。
-- **npm tarball**：由 `tools/release/pack-plugin.mjs`（`npm run pack:plugin`）在构建后执行 `npm pack` 并审计打包后的字节，复制到 `release/npm/`。当前准备版本 `0.6.0-trial.4` 已生成 `release/npm/dsh-moodle-study-0.6.0-trial.4.tgz`：**3,190,465 字节（约 3.04 MB）、3558 个条目、92 个内置依赖包**，SHA-256 `cfd8fddd8ad2c48754dc135e6531d443c1c3bd08b024bea3d355545e502a9de7`；已在隔离目录解包并运行 `verify-plugin`（31/31 通过）。发布前复核哈希即可；若源码或打包内容再变化，必须重新运行 `npm run pack:plugin` 并重新复核，不能用 trial.3 的旧字节或哈希代替。第一阶段 trial.3 准备产物为历史记录：3,163,254 字节（约 3.02 MB）、3556 个条目、SHA-256 `6a1f6f57…`。审计会校验**完整依赖闭包**（不是硬编码 6 个包）：每个 vendored 包都必须在 `bundleDependencies` 中声明。
+- **npm tarball**：由 `tools/release/pack-plugin.mjs`（`npm run pack:plugin`）在构建后执行 `npm pack` 并审计打包后的字节，复制到 `release/npm/`。当前准备版本 `0.6.0-trial.4` 已生成 `release/npm/dsh-moodle-study-0.6.0-trial.4.tgz`：**3,190,497 字节（约 3.04 MB）、3558 个条目、92 个内置依赖包**，SHA-256 `50db3cb649bc7d56190411d91639a501d478f1d8e91bf33d1141c0a3ac775e87`；已在隔离目录解包并运行 `verify-plugin`（31/31 通过）。发布前复核哈希即可；若源码或打包内容再变化，必须重新运行 `npm run pack:plugin` 并重新复核，不能用 trial.3 的旧字节或哈希代替。第一阶段 trial.3 准备产物为历史记录：3,163,254 字节（约 3.02 MB）、3556 个条目、SHA-256 `6a1f6f57…`。审计会校验**完整依赖闭包**（不是硬编码 6 个包）：每个 vendored 包都必须在 `bundleDependencies` 中声明。
 - **Pages 站点**：由 `tools/release/build-market-site.mjs`（`npm run build:market-site -- --published-at <Unix 秒>`）从 [index.json](index.json)、[pages/index.html](pages/index.html)、`plugin/icon.svg` 生成 `release/pages/`，恰好 3 个文件。`release/` 在 `.gitignore` 中，是本地产物，不提交到代码分支；部署走 `gh-pages`。
 
 ### 2.2 npm registry（确定路线）
@@ -50,7 +50,7 @@
 | --- | --- |
 | 包名 / 版本 | `dsh-moodle-study` / `0.6.0-trial.4` |
 | npm tag | `trial`（`publishConfig.tag` 与发布命令都显式指定；**不加 `latest`**） |
-| 发布物 | `release/npm/dsh-moodle-study-0.6.0-trial.4.tgz`（3,190,465 字节 / 3558 条目 / 92 个内置依赖包 / SHA-256 `cfd8fddd…`；已解包复核，`verify-plugin` 31/31 通过） |
+| 发布物 | `release/npm/dsh-moodle-study-0.6.0-trial.4.tgz`（3,190,497 字节 / 3558 条目 / 92 个内置依赖包 / SHA-256 `50db3cb6…`；已解包复核，`verify-plugin` 31/31 通过） |
 | 发布命令 | `npm publish .\release\npm\dsh-moodle-study-0.6.0-trial.4.tgz --tag trial --access public`（见 [PUBLISH_PLAN.md](PUBLISH_PLAN.md) §2） |
 | 学生安装 | 通过社区目录 `Discover` 安装（本方案首选）；或 `Add plugin` 填 `dsh-moodle-study@0.6.0-trial.4` |
 | 升级方式 | 在 `Plugins` 页卸载旧版、安装新版；个人资料目录与运行支持目录默认保留。registry 来源若显示 `Versions`/`Update` 入口，以实际 UI 为准（本阶段未验证） |
@@ -143,7 +143,7 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 ## 6. 未验证与限制
 
 - **准备阶段已实际运行（本地，无公开影响）**：临时运行 `build-market-site.mjs` 成功生成 3 个站点文件，并用 Harness 自带校验器对源索引与生成的站点索引验证通过（验证后已清理临时 `release/pages`，正式发布时重新生成）；`git ls-remote` 确认远端无 `gh-pages` 分支；`npm view dsh-moodle-study` 返回 404（名称未被公开占用）。
-- **打包产物**：`release/npm/dsh-moodle-study-0.6.0-trial.4.tgz` 已生成（3,190,465 字节 / 3558 条目 / 92 个内置依赖包 / SHA-256 `cfd8fddd8ad2c48754dc135e6531d443c1c3bd08b024bea3d355545e502a9de7`），隔离解包后 `verify-plugin` 31/31 通过；第一阶段 trial.3 准备产物（3,163,254 字节 / 3556 条目 / SHA-256 `6a1f6f57…`）仅作历史记录。
+- **打包产物**：`release/npm/dsh-moodle-study-0.6.0-trial.4.tgz` 已生成（3,190,497 字节 / 3558 条目 / 92 个内置依赖包 / SHA-256 `50db3cb649bc7d56190411d91639a501d478f1d8e91bf33d1141c0a3ac775e87`），隔离解包后 `verify-plugin` 31/31 通过；第一阶段 trial.3 准备产物（3,163,254 字节 / 3556 条目 / SHA-256 `6a1f6f57…`）仅作历史记录。
 - **未验证**：npm 发布本身与 registry 下载安装；推送 `gh-pages`、启用 Pages、Pages 构建/HTTPS 生效；从 `Discover` 添加索引到安装的完整链路；DeepSeek Harness 桌面 UI 鼠标点击安装的走查与截图；真实学校 SSO/MFA 登录与真实课程同步；其他学校、其他电脑、其他 Windows 账户。
 - 预计目录/页面 URL **尚未上线**，任何文档都不得写成已可用；发布后需以线上实测结果更新本文档。
 - DSH 为 0.2.2-rc.1，插件安装/市场机制可能随版本变化；发布前应以当前随包 README 与校验器重新核对。
