@@ -1,6 +1,6 @@
 {
   "name": "dsh-moodle-study",
-  "version": "0.6.0-trial.5",
+  "version": "0.6.0-trial.6",
   "description": "Moodle study assistant for DeepSeek Harness: connect a school Moodle account and study course chapters from downloaded materials. Windows community trial.",
   "type": "module",
   "license": "MIT",

@@ -1,34 +1,53 @@
 # Moodle 学习助手插件试用版发布说明
 
-- 发布对象：DeepSeek Harness 插件包 **`dsh-moodle-study@0.6.0-trial.5`**（当前发布候选包；前一准备版本 `0.6.0-trial.4` 未公开发布）
-- 日期：2026-11-12（香港时间；`0.6.0-trial.5` 为发布前审计修复后重建；`0.6.0-trial.4` 为同日补充审查修复后重建；`0.6.0-trial.3` 准备版本为 2026-11-09；`0.6.0-trial.1` 为 2026-11-08）
-- 状态：**试用版**。尚未发布到 npm，也未进入任何市场索引；本说明描述的是仓库内的可安装产物，不表示已经公开发布或上架。`0.6.0-trial.5` 已按发布前审计修复重建，更早的准备包不包含本轮修复。
-- 验证结论：`0.6.0-trial.5` 的 4 项发布前审计问题已修复，并通过离线测试与隔离解包验证（`verify-plugin` 36/36、`verify-study-tools` 12/12，`npm audit` 0 漏洞）；`0.6.0-trial.4` 的真实 DeepSeek Harness 插件安装、真实学校连接与真实增量同步、插件内教学保存、完整重启接续与升降级数据保留验收记录见 §1.1，**不能当作 `0.6.0-trial.5` 的重测结果**。真实学校 SSO/MFA 页面登录与桌面 UI 鼠标点击安装仍未验证（见 §1.1）。
+- 发布对象：DeepSeek Harness 插件包 **`dsh-moodle-study@0.6.0-trial.6`**（当前本地发布候选包，2026-11-13 重建；尚未发布；前一准备版本 `0.6.0-trial.5` 未公开发布）
+- 日期：2026-11-13（香港时间；`0.6.0-trial.6` 为把 2026-11-12 源码维护修复纳入插件包后重建；`0.6.0-trial.5` 为 2026-11-12 发布前审计修复后重建；`0.6.0-trial.4` 为同日补充审查修复后重建；`0.6.0-trial.3` 准备版本为 2026-11-09；`0.6.0-trial.1` 为 2026-11-08）
+- 状态：**试用版**。尚未发布到 npm，也未进入任何市场索引；本轮按约定未把候选包安装到当前 DeepSeek Harness。本说明描述的是仓库内的可安装产物，不表示已经公开发布、上架或通过真实 Harness 安装验收。更早的准备包不包含本轮纳入的源码维护修复。
+- 验证结论：`0.6.0-trial.6` 把 2026-11-12 源码维护修复（旧复习写入口退役、公共原子写入与不变页面不重写、CLI 参数前置校验）纳入插件包，并通过离线回归、独立解包一致性与隔离验证（Node **299**、`tests/` Python **133**、`tools/study` Python **686** 项通过；`verify-plugin` **36/36**、`verify-study-tools` **12/12**；`npm audit` 0 漏洞）；真实 DSH 插件安装、真实学校连接与增量同步、插件内教学保存、完整重启接续与升降级数据保留的现场验收记录仍属于 `0.6.0-trial.4`（见 §2.1），**不能当作 `0.6.0-trial.6` 的重测结果**。真实学校 SSO/MFA 页面登录与桌面 UI 鼠标点击安装仍未验证。
 - 配套文档：[插件试用说明](PLUGIN_TRIAL_GUIDE.md) · [市场提交材料](market/README.md)
 
-## 0. `0.6.0-trial.5`：发布前审计修复（2026-11-12 重建）
+## 0. `0.6.0-trial.6`：源码维护修复纳入插件包（2026-11-13 重建）
+
+本版把 2026-11-12 的源码维护修复（提交 `317d146`）纳入插件包；不改变安装方式、程序/数据布局、工具名、学校只读边界与依赖版本。此前 `0.6.0-trial.5` 及更早准备包只包含更早的源码。
+
+### 0.1 纳入插件包的内容
+
+- **旧复习写入口退役**：`review.py` 的 `due` 一律为只读预览，使用当前选题/题源/曝光校验；`render` 统一走当前页面入口；旧 `record` 入口无条件拒绝并提示改用 `daily.py attempt`，避免旧档案绕过当前复习流程或答案曝光条件。已导入的 FSRS 与历史记录、既有教学位置保留不动。
+- **公共原子写入**：新增共享的 `state_io.atomic_bytes` / `atomic_text`（JSON 校验、fsync、临时文件替换、可选跳过未变化内容），`library.py`、`planning.py`、`learning_library/versions.py`、`daily.py` 统一使用；未变化页面保留修改时间，页面新鲜度检查复用本轮已生成视图，不再为相同内容重写页面。
+- **CLI 参数前置校验**：`tools/moodle/run.mjs` 在读取任何配置/凭据或联网之前先校验命令与参数；错误信息不回显可能含 Token/URL 的原始输入，并给出安全用法示例；选课数字页面 ID 与章节核对支持的本地 ID/页面 ID/唯一课程名保持现有区分与行为。
+- 上述修复只涉及插件包内 `program/tools/` 引擎与工具；没有新增依赖，`npm audit` 仍为 0 漏洞。
+
+### 0.2 构建与验证
+
+- **发布候选产物**：源码提交 `317d146b1dc924e37bc50bbce3fdb323effb5474`（`build-info.builtFromCommit` 相同）；构建目录 3813 个文件 / 约 17.7 MiB（不含 tarball）；npm tarball `release/npm/dsh-moodle-study-0.6.0-trial.6.tgz` **3,821,604 字节 / 3812 个条目 / 92 个内置依赖包 / SHA-256 `6ad0cd5a5974b35e10a0df54b6031d2daee25b7649a8ba6da87b0ecd95af0826`**。
+- **独立解包复核**：在独立目录解包最终 tarball，包内 99 个源码文件与工作区逐字节一致（含上述修复标记）；包内没有 `Study/`、`.private/`、`config.local.json`、开发机路径/用户名、Token 字面量、测试文件、`__pycache__` 或 tmp 目录；解包产物上 `verify-plugin` **36/36**、`verify-study-tools` **12/12** 通过（含真实 MCP 握手、真实本地引擎调用与 teaching-save 保存/回读/幂等重试）。
+- **离线回归**：Node **299/299**、`tests/` Python **133/133**、`tools/study` Python **686/686**，合计 **1,118** 项通过；`npm audit` **0 漏洞**。首次运行受本机系统 TEMP 目录权限限制（Node 2 项、`tests/` 1 个测试类初始化失败），改用项目内临时目录后完整通过，不属于代码缺陷。
+- **未验证/限制**：按本轮约定**未把该包安装到当前 DeepSeek Harness**、**未发布** npm 或市场索引；真实 DSH 安装、真实学校连接/同步、插件内教学保存与完整重启接续的现场记录仍属于 `0.6.0-trial.4`（见 §2.1），不能当作本版重测；真实 SSO/MFA 页面重新登录、桌面 UI 鼠标点击安装、干净电脑/独立 Windows 用户环境、其他学校/电脑/Windows 账户仍未验证。
+- **升级/回滚**：源码版更新后重新执行安装入口；已安装旧 trial 包在 Plugins 卸载后安装 `0.6.0-trial.6`（个人资料、运行环境与设置保留）。旧 `release/npm/dsh-moodle-study-0.6.0-trial.5.tgz` 保留，需要回滚时卸载后重装旧包；不要把学习资料放在插件安装包目录内。
+
+## 1. `0.6.0-trial.5`：发布前审计修复（2026-11-12 重建，历史记录）
 
 本版在 `0.6.0-trial.4` 基础上修复发布前审计实际复现或代码确认的 4 个问题，并处理依赖安全告警；不改变程序/数据分离布局、学校只读边界与安装方式。
 
-### 0.1 修复内容
+### 1.1 修复内容
 
 - **资料目录保护扩大到整个插件安装包**：此前只保护 `<插件包>/program`，资料位置仍可能选在包内其他子目录（例如 `data/`、`resources/`、`node_modules/`），插件升级或卸载整包替换时会丢失资料。现在 `resolveDataDir` 按安装包清单（包根 `package.json`）识别整个包目录：包本身、包内任意文件夹、以及包含包的父目录都会被拒绝并给出可操作提示；程序目录与运行支持目录保护保留，正常独立目录不受影响。回归覆盖包根、包内子目录、包含包的父目录与正常独立目录，并在解包产物的真实 MCP 流程中验证 `study_setup_location` 拒绝包内文件夹且不创建任何文件夹。
 - **`study_job_status` 按指定任务 ID 查询**：传入 `job_id` 时只返回该任务（运行中或已完成），不再在另一任务运行时或结束后回退到“最近任务”；未知 ID 返回结构化 `JOB_NOT_FOUND` 并提示不带 ID 查询最近任务；不传 ID 时保持原来的“运行中 → 最近任务”行为。新增真实任务运行器回归（查询旧任务不得返回运行中任务、未知 ID 不回退、无 ID 行为不变），并在解包产物中验证已完成任务可按 ID 查询、未知 ID 不被替换。
 - **依赖安全告警处置**：`npm audit` 原有 **9 项（4 高危 / 5 中危）**。已升级 `@modelcontextprotocol/sdk` **1.27.1 → 1.32.2**（修复 OAuth 客户端凭据发送、HTTP 请求体/批大小限制、实验性任务会话绑定等公告）、`zod` **3.25.76 → 4.6.7**（修复超大约束集合验证内存耗尽公告；通过 npm `overrides` 让 `moodle-mcp` 使用同一 zod 4，并实测真实 MCP 握手、工具 schema 转换与调用通过），并升级兼容的传递依赖；`npm audit` 当前 **0 漏洞**。插件只使用本地 stdio 传输、不启用 SDK 的 HTTP/OAuth 服务端，因此这是从依赖层面彻底消除，而不是只记录不可达依据。
 - **发布验证统一目标**：`verify-study-tools` 不再固定读取本地 `dist/`，改为接受与 `verify-plugin` 相同的解包包目录参数（或 `MOODLE_STUDY_VERIFY_PACKAGE`）；`verify-plugin` 以子进程对同一解析目标运行学习工具验证，`npm run verify:plugin` 为单入口，避免启动验证与学习工具验证针对不同产物。
 
-### 0.2 构建与验证
+### 1.2 构建与验证
 
 - **发布候选产物**：`build-info.builtFromCommit=7e88212`（`0.6.0-trial.5`）；解包 **3812 个文件 / 约 17.7 MB / 92 个随包依赖**；npm tarball `release/npm/dsh-moodle-study-0.6.0-trial.5.tgz` **3,821,421 字节 / 3812 个条目 / SHA-256 `cf5aeb7e93e93b03a86f93b5916542b467cf817351aca0598596bc50be3b6f23`**；在隔离目录解包后 `verify-plugin` **36/36**、`verify-study-tools` **12/12** 通过（含新增的包目录保护与任务 ID 检查），个人数据与敏感路径审计通过。
 - **测试**：Node `node --test tests/*.test.mjs` **260 项通过/0 失败**（较上一轮新增 3 项任务查询回归）；`tests/` Python **133 项 OK**；`tools/study` Python **675 项 OK**；`npm audit` **0 漏洞**。
-- **未验证/限制**：本版未重新执行真实 DSH 安装、真实学校连接/同步与教学保存的现场验收（该记录属于 `0.6.0-trial.4`，见 §1.1）；真实 SSO/MFA 页面重新登录、桌面 UI 鼠标点击安装、npm 发布与市场 `Discover` 安装、其他学校/电脑/Windows 账户仍未验证。本版只完成离线测试与隔离解包验证，正式发布前仍应按发布清单复核哈希。
+- **未验证/限制**：本版未重新执行真实 DSH 安装、真实学校连接/同步与教学保存的现场验收（该记录属于 `0.6.0-trial.4`，见 §2.1）；真实 SSO/MFA 页面重新登录、桌面 UI 鼠标点击安装、npm 发布与市场 `Discover` 安装、其他学校/电脑/Windows 账户仍未验证。本版只完成离线测试与隔离解包验证，正式发布前仍应按发布清单复核哈希。
 - **升级**：源码版更新代码后重新执行安装入口；已安装旧 trial 包在 Plugins 卸载后重装 `0.6.0-trial.5`（个人资料、运行环境与设置保留）。
 
-## 1. `0.6.0-trial.4`：补充审查缺陷修复与恢复闭环补漏（2026-11-12 重建）
+## 2. `0.6.0-trial.4`：补充审查缺陷修复与恢复闭环补漏（2026-11-12 重建）
 
 本版在 `0.6.0-trial.3` 基础上补齐恢复运行环境与安装器的漏判，并修复补充审查实际复现的三项缺陷、补齐插件教学保存与资料目录保护；不改变程序/数据分离布局、学校只读边界与安装方式。
 
-### 1.1 补充审查修复（2026-11-12 重建）
+### 2.1 补充审查修复（2026-11-12 重建）
 
 - **重新安装不再覆盖最后的状态备份**：主状态 `Study/_System/state.json` 缺失、但仍存在可恢复记录（`state.previous.json`、学校采集快照、资料同步报告、版本备份、运行记录或已保存的加密凭据）时，初始化拒绝创建空白档案并提示先备份/恢复，不再让后续初始化把空白写进备份。`setup.ps1` 在安装步骤前先做同样检查。
 - **子路径部署学校不再被误判为跨学校**：课程页 URL 保留配置的基础路径（如 `https://学校/moodle`）；资料同步报告新增显式 `school`（site + user_id），账号证据优先使用显式学校，旧报告缺少该字段时仍 fail-closed、不猜测。
@@ -39,7 +58,7 @@
 - **真实验收（2026-11-12）**：在真实 DeepSeek Harness 中通过插件管理器安装最终 tarball；在真实聊天内完成资料位置采用（真实档案副本）→ 运行依赖真实联网安装 → 使用已保存 Windows 加密凭据连接真实学校 Moodle（真实 API）→ 真实学校信息采集与增量资料同步（首轮 376 文件候选、102 份新安装、3 份失败如实记录；重跑只补 3 份失败文件后 `content_sync=complete`）→ `finish` ready（7 门课程、2505 份资料、26903 文本单元）→ 真实章节准备/原页渲染/严格章节核对（unchanged）→ 依据真实课件实际讲解后用 `study_teaching_save` 保存（`readback_verified=true`、revision 524→525、重试幂等）→ **完整重启 Harness 后接续**（设置、登录态、运行环境与教学记录保留，`finish` 仍 ready，同聊天章节回执 `reused=true` 且不重新联网）→ 卸载/重装与降级 `0.6.0-trial.3` 再升级回 `0.6.0-trial.4`（个人数据、教学事件、运行环境与设置均保留）。验收只写真实档案的本地副本，不写原档案；学校接口保持只读；验收后本机已回滚为源码接入。真实 SSO/MFA **页面重新登录**（本轮未执行该可选项）与桌面 UI 鼠标点击安装仍未验证。
 - **回归**：Node 257 项、`tests/` Python 133 项、`tools/study` Python 675 项全部通过；补充审查独立验证队友对三项缺陷的修复前后对照 A/B/C 全部 PASS。
 
-### 1.2 恢复闭环补漏（2026-11-11 修复）
+### 2.2 恢复闭环补漏（2026-11-11 修复）
 
 - **运行依赖损坏真正重装**：重新调用 `study_setup_runtime` 时不再单独信任旧 `runtime.json` 成功标记。分级本地检查 venv 目录、解释器能否运行、pip 是否可用、`requirements-core.txt` 每个依赖能否导入，并比对依赖清单版本与 SHA-256 指纹；依赖文件存在但导入失败或指纹不符时真正重新安装（`--force-reinstall`），不会只补“缺失”后误报完成。`study_setup_status` 与 Host 侧 `moodle_study_status` 使用同一分级诊断。
 - **重建 venv 后登录组件分级检查**：私有 venv 重建会顺带移除登录组件（Playwright），旧 `login.installed` 标记不能证明它仍可用。本版在连接学校前分级检查解释器可运行、`playwright.sync_api` 可导入、登录依赖指纹匹配；不匹配时重新安装登录组件，避免“已安装”标记与真实环境不一致。
@@ -47,10 +66,10 @@
 - **重登录后的连接与章节回执恢复**：保存的学校连接（配置 + DPAPI 凭据）带 generation 指纹；重登录进行中或刚完成时，旧连接与缓存 API 不会交给新请求，下一次只读调用最多用新凭据重试一次（保存内容未变时不自动重试的约定不变）。章节严格核对回执记录 `connection_generation`，冷启动进程也只在当前保存连接与回执一致时复用；登录或授权变化后旧回执失效，需要重新联网核对。
 - **构建与本地包**：`node tools/release/build-plugin.mjs` 已按补充审查修复重建 `dist/moodle-study-assistant/`（`0.6.0-trial.4`：3559 个文件、约 15.1 MB，`builtFromCommit=a0842ee`），个人数据与敏感路径审计通过；`pack:plugin` 已生成 `release/npm/dsh-moodle-study-0.6.0-trial.4.tgz`（3,195,277 字节 / 3558 个条目 / 92 个内置依赖包 / SHA-256 `a604eed99f186e085c04766191515beafcb14921a4659fa1eaa029b19748bd0c`），隔离解包后 `verify-plugin` **31/31** 与 `verify-study-tools` **12/12** 通过（含真实 MCP 握手、真实联网安装核心 Python 依赖，以及真实 MCP 工具 + 真实引擎的 teaching-save 保存/回读/幂等重试）。
 - **验证结论**：本版修复的完整验证结论见 [CHANGELOG.md](../CHANGELOG.md) 的 2026-11-11 与 2026-11-12 条目；本文件不重复全部测试数量与验收结论。
-- **发布方式（准备中，尚未公开）**：该准备版本未公开发布，已由 `0.6.0-trial.5` 取代（见 §0）。计划由维护者确认后发布到 npm（包名 `dsh-moodle-study`，当前准备版本 `0.6.0-trial.5`，发布标签 `trial`，不设 latest），并用 GitHub Pages 托管社区插件目录；目录 URL 与 npm 页面尚未上线，学生暂时仍用本地试用包安装。
-- 真实 SSO/MFA 页面登录与桌面 UI 鼠标点击安装仍需现场验收；真实 Harness 安装、真实学校连接/增量同步、插件内教学保存与重启接续已在 §1.1 完成验证，未验证项与限制沿用 §3.3 及下文。
+- **发布方式（准备中，尚未公开）**：该准备版本未公开发布，已由 `0.6.0-trial.5`（见 §1）与当前 `0.6.0-trial.6`（见 §0）取代。计划由维护者确认后发布到 npm（包名 `dsh-moodle-study`，当前准备版本 `0.6.0-trial.6`，发布标签 `trial`，不设 latest），并用 GitHub Pages 托管社区插件目录；目录 URL 与 npm 页面尚未上线，学生暂时仍用本地试用包安装。
+- 真实 SSO/MFA 页面登录与桌面 UI 鼠标点击安装仍需现场验收；真实 Harness 安装、真实学校连接/增量同步、插件内教学保存与重启接续已在 §2.1 完成验证，未验证项与限制沿用 §4.3 及下文。
 
-## 2. `0.6.0-trial.3`：完整资料同步也要求学校信息采集完整（2026-11-09，未公开发布，历史补漏记录）
+## 3. `0.6.0-trial.3`：完整资料同步也要求学校信息采集完整（2026-11-09，未公开发布，历史补漏记录）
 
 本轮补上一个完成判定漏判；不改变程序/数据分离布局、安装方式与既有行为。
 
@@ -60,21 +79,21 @@
 - **兼容已有记录**：资料同步报告中记录为完整采集的快照，在缺少刷新指针时仍作为采集证据复用，升级不会强迫已有用户全部重新同步。
 - **回归测试**：`tests/plugin-recovery.test.mjs` 新增 3 项——“完整同步 + 采集不完整不完成且保留已下载资料”“完整同步报告无采集记录不完成”“已有完整采集记录可复用”；恢复测试 **19/19** 通过，全量离线回归 **node 196 + Python 105 + 学习工具 638**。
 - **独立模拟学校聚焦复验 34/34 PASS**（隔离 fixture + 真实 MCP 工具调用；采集失败由 mock 让 `mod_quiz_get_quizzes_by_courses` 返回 500，走真实引擎采集路径）：先完成 full 同步（2 门课/17 份资料），再让采集失败后，`study_setup_status` 逐门返回 `partial` + `collection_incomplete`，`study_setup_finish` 返回 `SETUP_INCOMPLETE(sync_incomplete)`；已下载的 10 个资料文件路径与内容 SHA-256 与失败前完全一致（未删除/改写）；恢复采集后重跑同步 `already_current=10 / failed=0 / downloaded_bytes=0`（未重复下载），之后 `finish` 才返回 `ready`；`info_only` 行为无回归。
-- 本次未使用真实学校账号；未验证项与限制沿用 §3.3 及下文。
-- **发布方式（准备中，尚未公开）**：该准备版本未公开发布，已由 `0.6.0-trial.4`（见 §1）与当前 `0.6.0-trial.5`（见 §0）取代。计划由维护者确认后发布到 npm（包名 `dsh-moodle-study`，当前准备版本 `0.6.0-trial.5`，发布标签 `trial`，不设 latest），并用 GitHub Pages 托管社区插件目录；目录 URL 与 npm 页面尚未上线，学生暂时仍用本地试用包安装。
+- 本次未使用真实学校账号；未验证项与限制沿用 §4.3 及下文。
+- **发布方式（准备中，尚未公开）**：该准备版本未公开发布，已由 `0.6.0-trial.4`（见 §2）、`0.6.0-trial.5`（见 §1）与当前 `0.6.0-trial.6`（见 §0）取代。计划由维护者确认后发布到 npm（包名 `dsh-moodle-study`，当前准备版本 `0.6.0-trial.6`，发布标签 `trial`，不设 latest），并用 GitHub Pages 托管社区插件目录；目录 URL 与 npm 页面尚未上线，学生暂时仍用本地试用包安装。
 
-## 3. 0.6.0-trial.2：设置恢复、断网学习与同步完成判定
+## 4. 0.6.0-trial.2：设置恢复、断网学习与同步完成判定
 
 本版修复试用反馈暴露的三个问题；不改变程序/数据分离布局、学校只读边界与安装方式。
 
-### 3.1 修复内容
+### 4.1 修复内容
 
 1. **设置与学习工具不再分两套，中断后可从当前进度继续。** MCP 每次启动都注册设置/恢复工具（`study_setup_status`、`study_setup_location`、`study_setup_runtime`、`study_setup_courses`、`study_setup_select_courses`、`study_setup_sync`、`study_setup_finish`、`study_connect_school`、`study_reconnect`、`study_job_status`）与本地学习工具，`next_steps` 引用的工具一定存在。任一步中断（关聊天、退出、断网、安装失败、同步失败）后重启，`study_setup_status` 会指出当前真正要做的下一步，不需要从头再来。已设置用户可在聊天里更换课程、更换资料位置、修复运行依赖；切换资料位置或登录成功后工具自动重连（约几秒）；旧目录资料原样保留，新位置不沿用旧目录的登录凭据，账号与课程授权检查保留。配套修复：Host 工具 `moodle_study_status` 在 MCP 工具不可用时也能区分运行依赖缺失、未登录与资料目录不可用。
 2. **本地学习与远端连接解耦。** 学校网络故障时 `study_local_context`、`study_chapter_prep`、`study_material_read`、`study_material_render`、`study_teaching_event`、`study_local_status` 仍可用；联网工具返回结构化连接状态（`kind`、`next_step`、`requires_login`、`retryable`），网络故障用新增的 `study_reconnect` 重试，不要求重新登录；只有登录失效或凭据无法解密才需要学生本人重新 `study_connect_school`。章节核对失败会如实返回失败状态、不会写成成功回执，同一聊天/章节的回执复用规则与单次授权恢复规则不变。**不承诺离线模型推理**，只保证本机资料访问与本地教学记录。
 3. **设置完成改为依据真实同步证据。** `study_setup_finish` 只有在学校采集快照 + 资料同步报告齐全且匹配当前账号、课程和授权范围时才返回 `ready`；空索引目录、同步未开始/失败/中断/部分/过期都会返回每门课程的可用范围与剩余问题，而不是“完成”。重跑 `study_setup_sync` 增量补齐、不重复下载已成功内容；`info_only` 与“课程确实无可下载资料”可以正常完成；升级前已存在且匹配当前账号与授权的有效记录直接复用。
 4. **验收中发现并修复的附加问题**：章节核对工具在插件内可能只拿到懒连接网关、拿不到真实客户端，导致严格核对永远 incomplete（CRITICAL，已修复并回归）；未初始化时本地学习工具会直接透传原始 Python 异常（MINOR，现返回结构化 `LOCAL_STATE_MISSING` 提示并指向 `study_setup_status`）；干净运行时缺少可选的数学核验依赖 sympy 导致首次初始化失败（DEP，已改为容错，缺失时记 `null`，不影响聊天学习）。
 
-### 3.2 用户可见变化
+### 4.2 用户可见变化
 
 | 之前 | 现在 |
 | --- | --- |
@@ -87,7 +106,7 @@
 
 不变的部分：学校接口仍为**只读**（不提交作业、不代替作答、不发帖、不修改完成状态、不发邮件）；学校登录由学生本人在浏览器完成；密码、验证码和 Token 不进入聊天、日志或插件配置；程序在插件包内，个人资料在自选目录，升级或卸载默认保留。
 
-### 3.3 验证范围
+### 4.3 验证范围
 
 **实际运行验证（本机、离线隔离目录）**
 
@@ -101,7 +120,7 @@
 **仅代码/静态检查（未在真实界面或线上环境运行）**
 
 - 修复涉及的工具注册、`next_steps` 与实际工具名一致性、同步证据判定、位置切换后的重连调度与凭据不复制逻辑，由代码阅读与上述单测/验收覆盖；未在真实 Harness 插件页逐项点击验证。
-- 文档中的工具名与行为按该版本工作区源码核对；`plugin/package.json` 与 `dist/` 的版本为 `0.6.0-trial.3`（该准备版本的历史记录；当前准备版本为 `0.6.0-trial.5`，见 §0）。
+- 文档中的工具名与行为按该版本工作区源码核对；`plugin/package.json` 与 `dist/` 的版本为 `0.6.0-trial.3`（该准备版本的历史记录；当前准备版本为 `0.6.0-trial.6`，见 §0）。
 
 **未验证（需要本人操作或本阶段未执行）**
 
@@ -113,16 +132,16 @@
 - npm 发布、市场索引托管、`Discover` 浏览安装、官方收录。
 - 其他学校、其他电脑、其他 Windows 账户的安装表现。
 
-### 3.4 升级方式与数据保留
+### 4.4 升级方式与数据保留
 
 - 在 `Plugins` 页卸载旧试用包（`0.6.0-trial.2` 或更早），再安装 `0.6.0-trial.3` 试用包；本地路径/tarball 来源没有 `Versions`/`Update`，同包名直接重装会被拒绝。
 - 个人资料目录与运行支持目录默认保留，数据布局不变（`Study/`、`config.local.json`、`.private/`），无需迁移；已安装的运行依赖会被识别，通常不需要重装。
 - 旧版设置做到一半时升级，重新打开聊天后会从当前进度继续；升级后如工具没有出现，重启一次 DeepSeek Harness 或让助手检查状态。
 - 回滚：卸载新版、重新安装旧试用包；个人资料目录不变。
 
-## 4. 0.6.0-trial.1 初始插件化改造（2026-11-08）
+## 5. 0.6.0-trial.1 初始插件化改造（2026-11-08）
 
-### 4.1 本次发布做了什么
+### 5.1 本次发布做了什么
 
 本次把原来需要项目文件夹和命令行的 Moodle 学习助手，改造成一个可从 DeepSeek Harness 插件页安装的第三方 bundle：
 
@@ -134,7 +153,7 @@
 6. **程序与个人数据分离**：程序在插件包内；学习资料、配置和 Windows DPAPI 加密的学校凭据放在学生选择的资料目录（布局仍是 `<资料目录>/Study/`）；运行环境、日志和设置状态放在 `%LOCALAPPDATA%\MoodleStudyAssistant`。升级或卸载插件默认保留个人资料。
 7. **引擎支持独立数据根**：新增 `STUDY_DATA_ROOT` 环境变量覆盖（未设置时行为与旧版一致），Node/Python 引擎按程序根定位自身文件、按数据根读写学生数据；仓库新增对应回归测试 `tests/data-root.test.mjs`、`tests/test_data_root.py`。
 
-### 4.2 用户可见变化
+### 5.2 用户可见变化
 
 | 之前 | 现在 |
 | --- | --- |
@@ -147,7 +166,7 @@
 
 不变的部分：学校接口仍为**只读**（不提交作业、不代替作答、不发帖、不修改完成状态、不发邮件）；学校登录由学生本人在浏览器完成；密码、验证码和 Token 不进入聊天、日志或插件配置。
 
-### 4.3 安装与开始使用
+### 5.3 安装与开始使用
 
 面向学生的完整步骤见 [插件试用说明](PLUGIN_TRIAL_GUIDE.md)，这里只给最短路径：
 
@@ -158,23 +177,23 @@
 
 > 桌面版 profile 由 Electron 独占管理，不能用命令行安装/管理插件；学生和验收都以 `Plugins` 页为准。
 
-### 4.4 升级方式
+### 5.4 升级方式
 
 - 本试用包从本地路径或 `.tgz` 安装，插件页**没有** `Versions`/`Update`（那是 registry 来源才有的）；
 - 升级 = 在 `Plugins` 页卸载旧版 → 安装新试用包 → 打开聊天按提示继续。卸载不会删除个人资料目录；
 - 同一插件包已安装时直接重装会被拒绝，先卸载再装；
 - 升级后如果 Moodle 工具没有出现，按提示重启一次 DeepSeek Harness，或让助手重新检查设置；工具重连后才能用新版本。
 
-### 4.5 回滚方式
+### 5.5 回滚方式
 
 - **回滚到未插件化的工作流**：在 `Plugins` 页卸载本插件即可。个人资料目录默认保留，数据布局（`Study/`、`config.local.json`、`.private/`）与项目工作区一致；如需继续用原项目方式，先备份资料目录，再把其中的数据文件放回项目工作区后按原方式启动。
 - **回滚插件版本**：卸载当前试用包，重新安装之前的试用包（如持有）；个人资料目录不变。
 - 回滚不会自动清理 `%LOCALAPPDATA%\MoodleStudyAssistant` 中的运行环境与日志；需要彻底清理时按试用说明第 7 节手动删除。
 - 回滚前建议先备份整个资料文件夹；不要手工修改 `.private/` 或 `Study/_System/state.json`。
 
-### 4.6 验证范围
+### 5.6 验证范围
 
-#### 4.6.1 实际运行验证（本机、离线或本地）
+#### 5.6.1 实际运行验证（本机、离线或本地）
 
 - **构建与打包**：`tools/release/build-plugin.mjs` 成功生成 `dist/moodle-study-assistant/`（该版约 9.8 MB、2042 个文件），个人数据与敏感路径审计通过（包内不含 `Study/`、`.private/`、`config.local.json`、开发机绝对路径或姓名）；零 npm 安装依赖，随包 Node 运行时包可加载并注册工具。
 - **真实桌面运行时安装/停用/启用/卸载**：在 DSH 桌面版当前 profile 中，通过插件管理器安装一个使用唯一行 id 与 `moodle_study_verify` 服务名、其余与发布包一致的验证副本，返回 `application: applied`；随后真实会话中出现 `moodle_study_chat`、`moodle_study_status`、`mcp__moodle_study_verify__study_setup_status` 等工具、`moodle-study` 技能与常驻教学规则，并实际调用了 `study_setup_location`、`study_setup_finish` 等工具（含失败路径）。停用 bundle 后这些工具、技能与规则消失；重新启用后恢复；卸载后 profile 的 `package.json` 恢复原样，支持目录与资料目录按设计保留。安装方式与桌面版 `Plugins → Add plugin` 使用同一插件管理器代码路径，但**没有用鼠标实际点选或截图**。
@@ -183,14 +202,14 @@
 - **数据根分离**：`STUDY_DATA_ROOT` 覆盖回归 **node 177 + Python 103 + 学习工具 638** 项通过（未设置环境变量时保持旧行为）。
 - **凭据与本地核对**：Windows DPAPI 加解密往返可用（凭据只绑定当前 Windows 用户）；真实本地 `chapter-prep` 在只读资料上可用。
 
-#### 4.6.2 仅代码/静态检查（未在真实界面或线上环境运行）
+#### 5.6.2 仅代码/静态检查（未在真实界面或线上环境运行）
 
 - 插件清单 `package.json` 的 `engines.dsh`（`^0.2.2-rc.1`）、`dsh.bundle.patch`、`platforms: ["win32"]`、`exports`/`files` 与显示元数据（`locale/en.json`、`locale/zh.json`、`icon.svg`）按当前 DSH 随包文档逐项核对，**未在真实插件页渲染验证**。
 - `cordis.patch.yml` 的 `ctx.moodleStudy` 服务注入与 `!!js` 配置按 DSH 随包文档（并对 `dsh-mcp-client` 的 env 清洗规则）编写，MCP 子进程以 `ELECTRON_RUN_AS_NODE` 方式启动已在本地跑通，但**未在不同 DSH 版本上验证**。
 - `docs/market/index.json` 已用 DSH 自带的 `@deepseek-ai/dsh-plugin-market-index` 校验器做结构校验（测试索引 URL）通过；**未**在启用了 Custom plugin indexes 的 DSH 里实际添加该索引或从 `Discover` 安装。
 - 市场/发布事实（无官方索引、官方收录需随 DSH 发版、桌面 profile 不能用 CLI 管理）来自 DSH 随包文档与本机只读调研，未走官方收录申请。
 
-#### 4.6.3 未验证（需要本人操作或本阶段未执行）
+#### 5.6.3 未验证（需要本人操作或本阶段未执行）
 
 - **真实学校账号登录与真实课程同步**：需要学生本人在学校页面完成 SSO/MFA；本次验证不包含真实登录、真实课程资料下载或学校公告/作业的线上采集。
 - **桌面 UI 鼠标点击走查与截图**：安装对话框、第三方信任提示、安装结果、插件卡片与图标渲染、`Uninstall` 确认框未截图；插件管理器代码路径已按上节验证，但没在干净 profile 上从头用鼠标点击一遍。
@@ -198,7 +217,7 @@
 - **npm 发布、市场索引托管、`Discover` 浏览安装、官方收录**：均未执行。
 - **其他学校、其他电脑、其他 Windows 账户**：未验证；DPAPI 凭据与路径都绑定当前机器/用户。
 
-### 4.7 已知限制
+### 5.7 已知限制
 
 - 仅支持 Windows（学校登录依赖 Windows 凭据保护和系统 Edge/Chrome）。
 - 学校必须启用 Moodle Mobile Web Service，接口权限由学校控制，部分资料可能无法读取。
@@ -208,7 +227,7 @@
 - 插件不执行任意命令，不下载授权范围外的内容，不提交作业或修改学校状态。
 - 市场索引没有官方审核与签名；安装第三方插件即信任其代码，DSH 不验证索引声明的包内容。
 
-### 4.8 涉及的文件
+### 5.8 涉及的文件
 
 - 插件源码：`plugin/`（`index.js`、`cordis.patch.yml`、`locale/`、`icon.svg`、`resources/`（教学规则、使用技能、Python 依赖清单）、`docs/`、`README.md`）
 - 插件运行时与工具：`tools/moodle/plugin/`（设置、Python 运行时、任务、首次设置/恢复工具、学习工具）、`tools/moodle/mcp-entry.mjs`
@@ -224,3 +243,5 @@
 `0.6.0-trial.4` 在上述基础上修复恢复闭环：`tools/moodle/plugin/python-runtime.mjs`（分级运行环境/登录组件健康检查、损坏依赖重装 `--force-reinstall`）、`tools/moodle/plugin/remote.mjs`（重登录连接代际与缓存失效）、`tools/moodle/chapter-check.mjs` 与 `tools/moodle/source-gateway.mjs`（回执/连接 generation 绑定与重登录后单次重试）、`tools/moodle/plugin/{onboarding-tools,settings}.mjs`、`plugin/index.js`（Host 侧分级探测）、`tools/onboarding/dsh_integration.py` 与 `tools/onboarding/setup-dsh.ps1`（安装器完整性）及相关测试；`dist/` 已按 `0.6.0-trial.4` 重新构建，未改动安装方式与程序/数据布局。
 
 `0.6.0-trial.5` 在上述基础上做发布前审计修复：`tools/moodle/plugin/settings.mjs`（按安装包清单识别整个包目录并保护）、`tools/moodle/plugin/setup-tools.mjs`（`study_job_status` 按 `job_id` 精确查询与结构化 `JOB_NOT_FOUND`）、`tools/moodle/plugin/study-tools.mjs`（zod 4 双参数 `z.record`）、依赖（`package.json` / `package-lock.json`：MCP SDK `1.32.2`、zod `4.6.7` 与 `moodle-mcp` overrides）、`tools/release/{verify-plugin,verify-study-tools}.mjs` 与新增 `tools/release/verify-target.mjs`（统一验证目标），以及 `tests/plugin-job-status.test.mjs` 与 `tests/plugin-teaching-save.test.mjs` 的回归；`plugin/package.json`、`plugin/README.md`、`plugin/docs/DETAIL.*.md` 同步版本号与安装包目录保护说明，`dist/` 已按 `0.6.0-trial.5` 重新构建，未改动安装方式与程序/数据布局。
+
+`0.6.0-trial.6` 在上述基础上把 2026-11-12 源码维护修复纳入插件包（不新增文件清单，改动内容已随 `program/tools/` 打包）：`tools/study/review.py`（旧复习分支退役）、`tools/study/state_io.py`（新增共享 `atomic_bytes`/`atomic_text`）、`tools/study/library.py`、`tools/study/planning.py`、`tools/study/learning_library/versions.py`、`tools/study/daily.py`、`tools/study/learning_loop.py`、`tools/moodle/run.mjs`（CLI 参数前置校验），以及仓库内对应回归（`tests/cli-arguments.test.mjs`、`tools/study/test_atomic_io.py`、`tools/study/test_daily.py`、`tools/study/test_study_tools.py`）；`plugin/package.json`、`plugin/README.md`、`plugin/docs/DETAIL.*.md` 同步版本号，`dist/` 已按 `0.6.0-trial.6` 重新构建；安装方式、程序/数据布局与依赖版本未变。
