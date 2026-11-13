@@ -212,7 +212,8 @@ def _execute_loaded(state, state_path, original, command, now, minutes, course, 
                     operation=None, operation_id=None):
     if command == "check":
         expected = view_contents(state, now)
-        views = {name: view_path(state_path, name).read_text(encoding="utf-8")
+        # Match the writer: a legacy BOM or CRLF does not make a page stale.
+        views = {name: view_path(state_path, name).read_text(encoding="utf-8-sig")
                  if view_path(state_path, name).exists() else ""
                  for name in expected}
         result = planning.check_freshness(state, views, now, expected=expected)

@@ -76,6 +76,43 @@ class DailyIntegrationTests(unittest.TestCase):
                     self.assertTrue(daily.execute(self.path, 'check', self.now)['fresh'])
                     self.assertEqual(render.call_count, 1)
 
+    def test_legacy_page_encodings_are_fresh_without_rewriting(self):
+        daily.execute(self.path, "run", self.now)
+        state_before = self.path.read_bytes()
+        expected = daily.view_contents(self.read(), self.now)
+        for bom, newline in ((False, "\r\n"), (True, "\n"), (True, "\r\n")):
+            with self.subTest(bom=bom, newline=repr(newline)):
+                pages = {}
+                for name, text in expected.items():
+                    path = daily.view_path(self.path, name)
+                    data = (b"\xef\xbb\xbf" if bom else b"") + text.replace("\n", newline).encode("utf-8")
+                    path.write_bytes(data)
+                    pages[path] = (data, path.stat().st_mtime_ns)
+                self.assertTrue(daily.execute(self.path, "check", self.now)["fresh"])
+                daily.execute(self.path, "run", self.now)
+                self.assertTrue(daily.execute(self.path, "check", self.now)["fresh"])
+                self.assertEqual(pages, {path: (path.read_bytes(), path.stat().st_mtime_ns)
+                                         for path in pages})
+                self.assertEqual(self.path.read_bytes(), state_before)
+
+    def test_changed_bom_crlf_pages_remain_stale_until_rebuilt(self):
+        daily.execute(self.path, "run", self.now)
+        state_before = self.path.read_bytes()
+        for name, issue in (("Today Plan.md", "stale_content"),
+                            ("Today Review.md", "stale_or_missing")):
+            with self.subTest(page=name):
+                path = daily.view_path(self.path, name)
+                expected = path.read_text(encoding="utf-8-sig")
+                changed = expected + "\nThis content is stale.\n"
+                path.write_bytes(b"\xef\xbb\xbf" + changed.replace("\n", "\r\n").encode("utf-8"))
+                check = daily.execute(self.path, "check", self.now)
+                self.assertFalse(check["fresh"])
+                self.assertIn(name + ": " + issue, check["issues"])
+                daily.execute(self.path, "run", self.now)
+                self.assertEqual(path.read_text(encoding="utf-8-sig"), expected)
+                self.assertTrue(daily.execute(self.path, "check", self.now)["fresh"])
+                self.assertEqual(self.path.read_bytes(), state_before)
+
     def test_legacy_preview_matches_current_selector_across_timezones(self):
         import learning_loop
         import planning
