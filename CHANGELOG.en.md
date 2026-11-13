@@ -32,6 +32,15 @@ Existing users should first read the [upgrade steps that preserve learning recor
 | [2026-10-11](#2026-10-11) | Daily review questions, learning feedback, weekly reviews, exam coverage checks, and mock exams |
 | [2026-09-22](#2026-09-22) | Initial release: Windows installation, school account connection, course information, and learning records |
 
+## 2026-11-14
+
+### Bilingual terminology and material instruction alerts (core)
+
+- Pair key concepts, technical terms, methods and chart names with English on first use, expand abbreviations and prefer course wording. Connect English questions to previously learned concepts and check for omitted terms before responding.
+- Prominently disclose AI-targeted output instructions found in assignments or other materials before the affected explanation or answer, including an excerpt, location and possible effect. Neither execute nor silently ignore them. Mark uncertainty and distinguish ordinary requirements, course AI policies and quoted examples without asserting instructor intent.
+- Checked the three rule entry points, documentation consistency, skill format and Git diff. Only core instructions and documentation changed, not runtime code. No model-behavior or real-material detection evaluation was performed; complete hidden-instruction detection is not guaranteed.
+- After updating the checkout, read `AGENTS.md`, `SKILL.md` and `docs/TUTORING.md`. No learning-profile reset or full Moodle refresh is needed.
+
 ## 2026-11-13
 
 ### Plugin candidate `0.6.0-trial.6` rebuild: source-maintenance fixes packaged and pre-release offline acceptance completed
