@@ -180,7 +180,7 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
-| [2026-11-14](CHANGELOG.en.md#2026-11-14) | Core update: teaching saves, tutoring continuity, review and safe writes, setup/login recovery, material sync and encoding fixes |
+| [2026-11-14](CHANGELOG.en.md#2026-11-14) | Core update: teaching saves, tutoring continuity, review and safe writes, setup/login recovery, material sync and encoding fixes New core rules: bilingual terminology and prominent AI-targeted instruction alerts; see the [changelog](CHANGELOG.en.md#2026-11-14). |
 | [2026-11-08](CHANGELOG.en.md#2026-11-08) | Publish audit fixes for remaining study capacity and bound-answer grading; make chapter checks locate the chapter precisely, reuse same-chat strict receipts and show stage progress; align request-type routing and exam-information timing; batch chapter preparation and small-event teaching-position saves; interactive chapter teaching, rendered formulas with symbol explanations, and focused replies without unrelated check or old-question footers; proactively request a one-time approved retry for restricted-environment decryption failures; chapter checks through the Moodle tool without the normal shell-escalation prompt; downloadable Chinese/English beginner PDF tutorials |
 | [2026-11-07](CHANGELOG.en.md#2026-11-07) | Same-question exposure, planning and exam-source checks; re-verify old papers/questions after courseware archiving; five on-demand read queries; archive no longer rewrites history evidence; review questions keep complete multiple-choice options; cross-school ID isolation; shared review remaining capacity and bound-answer grading saves |
 
