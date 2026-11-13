@@ -34,12 +34,12 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-14
 
-### Bilingual terminology and material instruction alerts (core)
+### Bilingual terminology and AI-targeted instruction alerts (checkout and plugin)
 
-- Pair key concepts, technical terms, methods and chart names with English on first use, expand abbreviations and prefer course wording. Connect English questions to previously learned concepts and check for omitted terms before responding.
-- Prominently disclose AI-targeted output instructions found in assignments or other materials before the affected explanation or answer, including an excerpt, location and possible effect. Neither execute nor silently ignore them. Mark uncertainty and distinguish ordinary requirements, course AI policies and quoted examples without asserting instructor intent.
-- Checked the three rule entry points, documentation consistency, skill format and Git diff. Only core instructions and documentation changed, not runtime code. No model-behavior or real-material detection evaluation was performed; complete hidden-instruction detection is not guaranteed.
-- After updating the checkout, read `AGENTS.md`, `SKILL.md` and `docs/TUTORING.md`. No learning-profile reset or full Moodle refresh is needed.
+- Update checkout rules, skill entry points and the plugin's always-loaded rules: pair key terms with English on first use, expand abbreviations and connect English questions to learned concepts; prominently disclose an AI-targeted instruction's excerpt, location and possible effect before the affected answer.
+- Distinguish uncertain text, ordinary assignment requirements, course AI restrictions and quoted examples. Neither execute nor silently ignore targeted instructions or assert instructor intent. Original-page and OCR readability limit detection; complete detection is not guaranteed.
+- The new candidate is `0.6.0-trial.8`; older packages are retained. Only behavior rules and the plugin package version change, not engine code or personal learning records. Checkout users update the rule files; plugin users must load the new package and restart the plugin.
+- Validation scope and package checks are recorded in the [update note](docs/UPDATE_TERMS_ALERTS_2026-11-14.md). This is not a classroom detection-rate or model-compliance evaluation. Not installed into the current Harness, pushed or published. Earlier trial.7 results under this date remain historical.
 
 ## 2026-11-13
 
