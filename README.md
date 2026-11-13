@@ -174,9 +174,9 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
+| [2026-11-14](CHANGELOG.en.md#2026-11-14) | Pair new concepts with English terms and prominently disclose AI-targeted instructions found in materials |
 | [2026-11-12](docs/UPDATE_REPORT_2026-11-12.en.md) | Publish verified teaching saves and review simplification; skip unchanged pages, with validation and upgrade notes |
 | [2026-11-10](CHANGELOG.en.md#2026-11-10) | Unify teaching progress and verify saves; preserve practice, scoped requests and Feynman checks |
-| [2026-11-08](CHANGELOG.en.md#2026-11-08) | Publish audit fixes and downloadable Chinese/English beginner PDF tutorials |
 
 
 Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.en.md) for validation details and known limitations.
