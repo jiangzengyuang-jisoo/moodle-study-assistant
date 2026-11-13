@@ -8,19 +8,26 @@
 // Nothing here starts a quiz attempt, submits an assignment, posts, or changes a
 // school state. A successful download or parse is never verification or mastery.
 import {createHash, randomUUID} from 'node:crypto';
-import {existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync, unlinkSync, rmSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync, unlinkSync, rmSync} from 'node:fs';
 import {dirname, join, relative, resolve, sep} from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {python} from './state-bridge.mjs';
 import {
   MAX_BYTES, digest, fetchCourseFile, isDownloadableName, isImageName, remoteName,
   safeName, safeSubdir, webserviceFileURL, extensionOf,
 } from './course-files.mjs';
 import {checkWarnings, readDiscussions, verifyPosts} from './refresh.mjs';
+import {normalizeSite} from './content-policy.mjs';
+
+const programRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 export const SCOPE_VERSION = 1;
 export const SCOPE_TEXT = '所选课程当前账号可访问、可直接下载的全部课程资料（课件、作业题目附件、阅读材料、练习文件、论坛附件、正文图片、可直接下载的音视频），以及公告、作业要求、讨论文字及准确出处；不开始测验尝试、不提交作业、不发帖、不修改学校状态；流媒体、外部网站、额外登录或权限受限内容只保留入口和原因。';
 export const SNAPSHOT_MAX_AGE_MINUTES = 360;
+// HTML files larger than this are still archived, but their inline images are
+// not scanned in memory (the page itself remains available in the library).
+const HTML_INLINE_SCAN_MAX_BYTES = 4 * 1024 * 1024;
 const LEDGER_SCHEMA = 1;
 const REPORT_SCHEMA = 1;
 
@@ -110,8 +117,15 @@ export function authorizationReport(state, pages, account = null) {
   return {authorization, authorized, blocked};
 }
 
+// Keep the configured base path (schools may be deployed under /moodle or a
+// similar prefix). A root-absolute path would drop that prefix, and the same
+// school would later be read as a different site from the report URL alone.
 export function coursePageURL(baseUrl, moodleCourseid) {
-  return new URL(`/course/view.php?id=${moodleCourseid}`, baseUrl).toString();
+  const base = new URL(String(baseUrl));
+  base.pathname = base.pathname.replace(/\/+$/, '') + '/';
+  base.search = '';
+  base.hash = '';
+  return new URL(`course/view.php?id=${moodleCourseid}`, base).toString();
 }
 
 // Very small HTML-to-text conversion: enough to preserve wording, paragraph and
@@ -799,7 +813,7 @@ function readLedger(path) {
 }
 
 function pythonJSON(root, statePath, script, args, payload) {
-  const child = spawnSync(python(root), [join(root, 'tools/study', script), '--state', statePath, ...args], {
+  const child = spawnSync(python(root), [join(programRoot, 'tools/study', script), '--state', statePath, ...args], {
     input: JSON.stringify(payload), encoding: 'utf8', windowsHide: true,
     env: {...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1'},
     maxBuffer: 64 * 1024 * 1024,
@@ -906,6 +920,7 @@ function itemReport(item) {
     material_id: item.materialId ?? null, relative_path: item.relativePath ?? null,
     sha256: item.sha256 ?? null, bytes: item.bytes ?? null,
     duplicate_of: item.duplicateOf ?? null, retained_path: item.retainedPath ?? null,
+    inline: item.inline === true,
     source_pages: item.sourcePages,
   };
 }
@@ -997,8 +1012,16 @@ export async function syncCourseLibrary({
     }
   }
 
+  const reportSchool = (() => {
+    try {
+      return {site: normalizeSite(client.baseUrl), user_id: Number.isInteger(client.userId) && client.userId > 0 ? client.userId : null};
+    } catch {
+      return null;
+    }
+  })();
   const summary = {
     schema: REPORT_SCHEMA, run_id: runId, started_at: startedAt,
+    school: reportSchool,
     authorization: authorization ? {scope_version: authorization.scope_version, mode: 'full'} : null,
     text_source: {source: texts.source, captured_at: texts.capturedAt, snapshot_run_id: texts.snapshotRunId,
       snapshot: state.__snapshotProvenance ?? null, errors: texts.errors},
@@ -1048,6 +1071,51 @@ export async function syncCourseLibrary({
   let sequence = 0;
   const retainedTarget = (item) => join(study, '_Inbox', item.subject, String(item.moduleId ?? 'page'), item.filename);
 
+  // Queue images referenced from a page HTML body exactly once. A previously
+  // failed inline item is retried; a successful or already-known one is kept.
+  const queueInlineImages = (item, page, html) => {
+    if (!page || !html) return;
+    for (const image of inlineImagesFromHTML(html, page)) {
+      let cleanURL;
+      try { cleanURL = webserviceFileURL(page.baseUrl, image.url).toString(); } catch { continue; }
+      const key = `${item.subject}|${item.moduleId}|${item.filepath}inline|${image.filename}`;
+      const known = ledgerEntries[key];
+      if (known && known.status !== STATUS.failed) continue;
+      if (plannedItems.some(other => other.key === key)) continue;
+      if (plannedItems.some(other => other.cleanUrl === cleanURL)) continue;
+      const newItem = {
+        kind: 'file', key,
+        courseId: item.courseId, pageId: item.pageId, moodleCourseid: item.moodleCourseid,
+        subject: item.subject, moduleId: item.moduleId, moduleType: item.moduleType,
+        moduleName: item.moduleName, section: item.section, sectionIndex: item.sectionIndex,
+        filename: image.filename, filepath: `${item.filepath}inline`,
+        title: `${item.title} / ${image.filename}`, category: item.category,
+        url: image.url, cleanUrl: cleanURL, activityUrl: item.activityUrl,
+        filesize: null, timemodified: null, inline: true, sourcePages: item.sourcePages,
+        remote: {filesize: null, timemodified: null, url: cleanURL},
+      };
+      plannedItems.push(newItem);
+      pendingIndex.push(newItem);
+      const report = courseReportByPage.get(item.pageId);
+      if (report) report.file_candidates++;
+    }
+  };
+
+  // An already-current HTML page is not downloaded again, but its body still
+  // needs the inline-image pass: images may never have been queued by an
+  // earlier run, or a previous image download may have failed and must retry.
+  for (const item of plannedItems.slice()) {
+    if (item.kind !== 'file' || item.status !== STATUS.already_current) continue;
+    if (!['.html', '.htm'].includes(extensionOf(item.filename)) || !item.relativePath) continue;
+    const page = authorized.find(p => p.courseId === item.pageId);
+    if (!page) continue;
+    try {
+      const localPath = join(study, item.relativePath);
+      if (!existsSync(localPath) || statSync(localPath).size > HTML_INLINE_SCAN_MAX_BYTES) continue;
+      queueInlineImages(item, page, readFileSync(localPath, 'utf8'));
+    } catch { /* a missing local copy stays visible through the ledger on the next retry */ }
+  }
+
   while (pendingIndex.length) {
     const batch = pendingIndex.splice(0, batchSize);
     const payloadItems = [];
@@ -1068,6 +1136,11 @@ export async function syncCourseLibrary({
           item.stagedPath = target;
           item.sha256 = sha256Bytes(bytes);
           item.bytes = bytes.length;
+          // A verified install moves the staged file into the library, so the
+          // HTML body must be kept here for the later inline-image discovery.
+          if (['.html', '.htm'].includes(extensionOf(item.filename)) && bytes.length <= HTML_INLINE_SCAN_MAX_BYTES) {
+            item.htmlSource = bytes.toString('utf8');
+          }
         }
         payloadItems.push({
           item_key: item.key,
@@ -1160,36 +1233,16 @@ export async function syncCourseLibrary({
       ledger.updated_at = now();
       atomicJSON(ledgerPath, ledger);
     }
-    // Page HTML can reference inline images; queue newly discovered images once.
+    // Page HTML downloaded in this batch can reference inline images; queue
+    // newly discovered images once. The body comes from the verified download
+    // bytes, because a promoted file is moved out of the staging folder.
     for (const item of batch) {
-      if (item.kind !== 'file' || !item.stagedPath || !['.html', '.htm'].includes(extensionOf(item.filename))) continue;
-      if (!existsSync(item.stagedPath)) continue;
-      let html = '';
-      try { html = readFileSync(item.stagedPath, 'utf8'); } catch { continue; }
+      if (item.kind !== 'file' || !item.htmlSource) continue;
+      if (![STATUS.installed, STATUS.identical, STATUS.duplicate].includes(item.status)) continue;
       const page = authorized.find(p => p.courseId === item.pageId);
       if (!page) continue;
-      for (const image of inlineImagesFromHTML(html, page)) {
-        let cleanURL;
-        try { cleanURL = webserviceFileURL(page.baseUrl, image.url).toString(); } catch { continue; }
-        if (plannedItems.some(other => other.cleanUrl === cleanURL)) continue;
-        const module = enumerated.find(e => e.page.courseId === page.courseId)?.modules.find(m => m.id === item.moduleId);
-        const newItem = {
-          kind: 'file', key: `${item.subject}|${item.moduleId}|${item.filepath}inline|${image.filename}`,
-          courseId: item.courseId, pageId: item.pageId, moodleCourseid: item.moodleCourseid,
-          subject: item.subject, moduleId: item.moduleId, moduleType: item.moduleType,
-          moduleName: item.moduleName, section: item.section, sectionIndex: item.sectionIndex,
-          filename: image.filename, filepath: `${item.filepath}inline`,
-          title: `${item.title} / ${image.filename}`, category: item.category,
-          url: image.url, cleanUrl: cleanURL, activityUrl: item.activityUrl,
-          filesize: null, timemodified: null, inline: true, sourcePages: item.sourcePages,
-          remote: {filesize: null, timemodified: null, url: cleanURL},
-        };
-        if (newItem.key in ledgerEntries || plannedItems.some(other => other.key === newItem.key)) continue;
-        plannedItems.push(newItem);
-        pendingIndex.push(newItem);
-        courseReportByPage.get(item.pageId).file_candidates++;
-        void module;
-      }
+      queueInlineImages(item, page, item.htmlSource);
+      item.htmlSource = '';
     }
   }
 

@@ -5,7 +5,9 @@
   "type": "module",
   "description": "Local Moodle learning loop, current study plans and source-grounded exam practice",
   "license": "MIT",
-  "engines": {"node": ">=22"},
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "postinstall": "node tools/moodle/patch-upstream.mjs",
     "init": "node tools/moodle/run.mjs init",
@@ -18,7 +20,12 @@
   },
   "dependencies": {
     "moodle-mcp": "0.2.0",
-    "@modelcontextprotocol/sdk": "1.27.1",
-    "zod": "3.25.76"
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.7"
+  },
+  "overrides": {
+    "moodle-mcp": {
+      "zod": "$zod"
+    }
   }
 }

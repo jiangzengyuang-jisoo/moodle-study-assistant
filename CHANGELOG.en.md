@@ -14,6 +14,7 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 | Date | Main changes |
 | --- | --- |
+| [2026-11-14](#2026-11-14) | Sync DeepSeek core: teaching saves and continuity, review and safe writes, setup/login recovery, material synchronization and encoding fixes |
 | [2026-11-08](#2026-11-08) | Publish audit fixes for remaining study capacity and bound-answer grading; make chapter checks locate the chapter precisely, reuse same-chat strict receipts and show stage progress; align request-type routing and exam-information timing; batch chapter preparation and small-event teaching-position saves |
 | [2026-11-07](#2026-11-07) | Port same-question exposure, planning and exam-source checks; re-verify old papers/questions after courseware archiving; add five on-demand read queries; fix archive rewriting history evidence and review packages missing multiple-choice options; fix cross-school numeric ID collisions; post-audit fixes for review remaining capacity and bound-answer grading saves |
 | [2026-11-06](#2026-11-06) | Complete English changelog for the Harness edition, language links, and English README navigation |
@@ -26,6 +27,20 @@ Existing users should first read the [upgrade steps that preserve learning recor
 | [2026-10-16](#2026-10-16) | Built-in self-study tutor with graded hints, Feynman explanations, transfer practice, and independent checks |
 | [2026-10-11](#2026-10-11) | Daily review questions, learning feedback, weekly reviews, exam coverage checks, and mock exams |
 | [2026-09-22](#2026-09-22) | Initial release: Windows installation, school account connection, course information, and learning records |
+
+## 2026-11-14
+
+### DeepSeek core update (source installation)
+
+This update brings previously local core changes to the `deepseek` branch. It excludes the Harness plugin, marketplace materials and trial packages; the source version remains 0.5.0.
+
+- Teaching continuity and saves: overview, course context and memory queries share progress selection based on when learning actually happened. The new `library.cmd teaching-save --course ID` appends teaching events, original answers and next steps, then reads back the saved result. Repeated requests are idempotent and stale revisions cannot overwrite newer data. Existing answers, grades and FSRS history remain intact.
+- Tutoring and review: interpret requests to continue, ask for help, skip or switch by intent; retain alternating explanations and practice plus Feynman checks after important concepts. Review previews and pages use shared paths. Retire the legacy `review.py record` writer in favor of `daily.py attempt`; answered, skipped and answer-exposed questions no longer appear as pending work.
+- Files and encoding: state, caches, material versions and generated pages share safe writes; unchanged pages are not rewritten. Legacy UTF-8 BOM and Windows line endings no longer make an unchanged page appear stale, while real content changes remain detectable. Initialization stops when the primary profile is missing but its recovery backup exists.
+- Setup and connection: Harness configuration conflicts now produce a failure, and setup checks persisted configuration before reporting completion. The Moodle service starts and registers tools before login; users can retry in the same chat after login. Fix reuse of older connections and cached API-support answers during re-login, and bind chapter receipts to the current saved school connection.
+- Materials and arguments: preserve school subpath identity and improve synchronization and source handling for embedded HTML resources. Validate CLI arguments before reading a profile or connecting to school. Update locked MCP/Zod and related Node dependencies.
+- Validation: all 243 Node tests, 131 setup/entry Python tests and 688 study-tool Python tests passed in an isolated core-only copy: 1,062 total with zero skips; the Node production dependency audit reported zero vulnerabilities. Tests use synthetic courses and temporary profiles. Real school SSO/MFA, full installation on a new computer and Harness desktop restart continuity were not revalidated and still require separate live checks.
+- Upgrade: back up and preserve `Study/`, `.private/` and local configuration, update the source and run `setup.ps1` to update dependencies and client integration. Resolve any reported path conflicts, then fully restart Harness. Do not delete learning records, replace them with a blank profile or mix data from another account.
 
 ## 2026-11-08
 

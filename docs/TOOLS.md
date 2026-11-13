@@ -42,7 +42,7 @@ MCP 暴露原有 15 个课程、作业、测验、论坛、日历、成绩、通
 
 返回 `STUDY_MCP_RESTART_REQUIRED` 时先重新加载 Moodle 服务，不申请 shell 提权；学校/账号/授权/范围等固定错误按其原因处理，不能把缓存失败或普通错误当作核对成功。
 
-回执沿用现有 `verdict`、`verified.complete`、`scope`、`reused`、`network_started` 等含义。相同原聊天、学校账号、课程/资料范围及本地内容未变时可复用严格回执；新增范围只补核对新增资料，错误和未完成不能冒充成功。MCP 服务不保证继承主聊天身份，所以每次明确提供 `chat_id`；只在本地保存其摘要。
+回执沿用现有 `verdict`、`verified.complete`、`scope`、`reused`、`network_started` 等含义。回执记录保存的学校连接指纹（`connection_generation`：配置与加密凭据的哈希）；相同原聊天、当前保存的学校连接、课程/资料范围及本地内容未变时才可复用严格回执，重新登录、换账号或凭据变化后旧回执失效、需要重新联网核对。新增范围只补核对新增资料，错误和未完成不能冒充成功。MCP 服务不保证继承主聊天身份，所以每次明确提供 `chat_id`；只在本地保存其摘要。
 
 工具缺失/未加载或服务启动、传输故障才退回同范围 `study.cmd --chat "原始用户聊天ID" chapter-check --course COURSE101 --section "Topic 5" --mode strict`；不因学校拒绝、账号/课程授权不符、参数错误或客户端审批拒绝而换路径。不并发运行或在两条路径间循环；仅后备 CLI 遇到受限执行解密错误才申请一次单次授权，详见 [DSH 恢复流程](DSH.md#章节核对默认使用-moodle-工具)。用户自定义审批策略仍然生效，不修改全局权限。
 
@@ -141,7 +141,9 @@ node tools/moodle/run.mjs download 123 --authorized
 
 展示提示或解答时，以 `daily.py answer-shown` 记录 `session_id`、`review_id`、`variant_id` 和实际 `evidence`，可选 `shown_at`。这是曝光记录，不是虚构一次作答；下一次独立检查换新变式。
 
-统一学习流程启用后，旧 `review.py record` 拒绝绕过题包和曝光校验的直接写入。`review.py due --minutes 15` 可作只读预览，与正式题包共用当天剩余容量规则且不写状态。不要绕过 `daily.py` 直接调用内部函数给真实状态评级。
+旧 `review.py record` 已退役，所有档案（包括缺少学习闭环启用标志的旧档案）均拒绝直接写入，并提示改用 `daily.py attempt`。`review.py due --minutes 15` 使用当前选题、来源与曝光校验，返回 `read_only_preview`，与正式题包共用当天剩余容量规则且不保存预览题包；无核验新题时返回待准备，不再展示旧 prompt。`review.py render` 转到 `daily.py render` 统一页面入口，仍返回 `status: rendered`；FSRS 内部核心与保存函数保留供当前流程调用。不要绕过 `daily.py` 直接调用内部函数给真实状态评级。
+
+页面内容未变时保留原文件与修改时间，新鲜度检查复用同轮计划内容；这是减少重复文件操作和计划计算，不代表测得整体显著提速。状态保存后页面失败仍可沿用原 `attempt_id` / `operation_id` 重试，不重复追加作答或 FSRS 历史。
 
 ### 保存学习反馈
 
@@ -153,9 +155,19 @@ node tools/moodle/run.mjs download 123 --authorized
 
 所有写入均以最新状态为基础，保留上一版本、验证临时 JSON、检查并发冲突后保存。状态写入必须顺序执行，不能并行提交多个命令。
 
-## 保存教学位置（teaching-event）
+## 保存教学进度（teaching-save）
 
-讲完一章、推进或切换教学位置后，通过标准输入提交一个小事件；程序读最新状态合并、校验、原子保存并至多重建一次视图，成功后不必再跑 `daily.py run/check`：
+`teaching-save` 是新教学进度与原答的统一保存入口。实际讲解、收到并反馈真实作答、切换主题或收尾后，先读最新 `revision`，再把 UTF-8 JSON 交给标准输入；事件以 `courses[].teaching_events` 追加保存，共享锁内完整校验、原子保存后回读确认。相同编号同内容重试不重复记录，同编号换内容或过期 `expected_revision` 拒绝覆盖；写入或回读失败不会返回已保存。该命令不改写旧原答、评分、掌握或 FSRS，也不重建页面视图。
+
+```powershell
+Get-Content -Raw -Encoding UTF8 'tmp/teaching-save.json' | .\tools\study\library.cmd teaching-save --course 课程ID
+```
+
+字段、实际发生时间、聊天/轮次来源、原答与帮助条件、待答题状态及回执说明见 [MEMORY.md](MEMORY.md#教学接续保存与漏记检查)。总览、单科 `context` 与 `memory` 共用同一教学位置读取口径；需要更新页面时再按原流程运行 `daily.py run` 与 `daily.py check`。
+
+## 保存教学位置（teaching-event，兼容旧流程）
+
+`teaching-event` 继续兼容旧流程（引导登记、旧档案、`checks_append`/`review_backlog_append` 等），新教学进度与原答优先用上面的 `teaching-save`。讲完一章、推进或切换教学位置后，通过标准输入提交一个小事件；程序读最新状态合并、校验、原子保存并至多重建一次视图，成功后不必再跑 `daily.py run/check`：
 
 ```powershell
 Get-Content -Raw -Encoding UTF8 'tmp/teaching-event.json' | .\study.cmd --chat "原始用户聊天ID" teaching-event [--operation-id 编号]
@@ -249,7 +261,7 @@ Get-Content -Raw -Encoding UTF8 'tmp/teaching-event.json' | .\study.cmd --chat "
 & '.venv/Scripts/python.exe' tools/study/chat_identity.py
 ```
 
-`install` 以**实际 YAML 结构**处理 profile patch（依赖 PyYAML，由 setup 安装）：注释不算配置，合法的空列表 `[]` 会被正常归一化；写入前完整解析并校验合并结果，解析或校验失败时保留原文件不替换；用 `# >>> ... >>>` 标记段幂等更新，重复运行只改本段。遇到同名 `moodle_study` MCP 或用户自定义 `skill-filesystem` 覆盖时默认不覆盖，只提示手动合并；确认旧条目是本项目旧部署时，可用 `install --update-existing` 只更新该条目的 `run.mjs` 路径。`status --json` 的 `configuration_ok` 只表示配置结构正确，`runtime_loaded` 恒为 `unverified`——配置检测不等于运行成功，必须重启 DSH 后在新聊天实际确认。修改后需重启 DSH 才加载。`study.cmd`/`session.py` 的 `--chat` 可省略：按“显式 `--chat` → 环境变量 `STUDY_CHAT_ID`（与本人约定的会话名）→ DSH 主聊天 `DSH_SESSION_ID`”解析；DSH 内部子会话的裸 UUID 会被拒绝，子任务必须显式传主聊天 ID 并加 `--subtask`。完整说明见 [DSH.md](DSH.md)。
+`install` 以**实际 YAML 结构**处理 profile patch（依赖 PyYAML，由 setup 安装）：注释不算配置，合法的空列表 `[]` 会被正常归一化；写入前完整解析并校验合并结果，解析或校验失败时保留原文件不替换；用 `# >>> ... >>>` 标记段幂等更新，重复运行只改本段。`install` 返回 `installed`/`unchanged`/`dry-run`/`conflict`/`skipped`/`error` 状态，并带同时覆盖 MCP 与技能目录的 `configuration_ok`、分项 `mcp`/`skills`、`warnings` 与可操作 `next_steps`；退出码 0 只用于“成功且两部分都配置正确”（`installed`/`unchanged`/`dry-run` 且 `configuration_ok=true`）。同名 `moodle_study` MCP 指向旧项目、出现多条同名条目、或用户自定义 `skill-filesystem` 覆盖缺当前项目 `skills/` 目录时返回 `conflict`：不写入任何内容、原文件不变、退出非 0；当前项目 `skills/` 目录本身缺失时返回 `error`（同样零写入），不会生成指向不存在目录的配置。确认旧条目是本项目旧部署时，可用 `install --update-existing` 只更新该条目的 `run.mjs` 路径（同名条目不止一条时拒绝猜测，按提示手动去重）；技能冲突按 [DSH.md](DSH.md) 合并或移除旧覆盖；不要删除现有配置重试。已存在的生成配置段会重建并校验完整持久化文档后才写入（恰好一条指向当前项目的 MCP 条目 + 存在的技能目录），不会因剥离后的副本看似正确而误报 `unchanged` 或完成。配置正确时重复运行返回 `unchanged` 并退出 0。`status --json`/`install --json` 的 `configuration_ok` 只表示配置结构正确（同时覆盖 MCP 与技能目录），`runtime_loaded` 恒为 `unverified`——配置检测不等于运行成功，必须重启 DSH 后在新聊天实际确认。修改后需重启 DSH 才加载。`study.cmd`/`session.py` 的 `--chat` 可省略：按“显式 `--chat` → 环境变量 `STUDY_CHAT_ID`（与本人约定的会话名）→ DSH 主聊天 `DSH_SESSION_ID`”解析；DSH 内部子会话的裸 UUID 会被拒绝，子任务必须显式传主聊天 ID 并加 `--subtask`。完整说明见 [DSH.md](DSH.md)。
 
 在受限 shell（例如 DSH 自己的沙箱）里，`node --test`、部分 Python `tempfile` 测试，以及需要 Node 子进程、DPAPI 解密或网络下载的 `courses` 完整初始化和 `library-sync`，可能因管道/临时目录/进程权限失败；这不代表实现错误。助手应先按 Harness 实际提供的审批机制请求执行同一具体操作，并在当前聊天继续；不把打开 CMD 作为默认解决方法，不自行关闭安全限制。确实无法由宿主执行时才报告具体阻碍，并说明可选的手动备用方式。
 
@@ -263,7 +275,7 @@ npm test
 & '.venv/Scripts/python.exe' -m unittest discover -s tools/study -p 'test_*.py'
 ```
 
-测试使用虚构课程和临时状态，不连接学校，不读取个人 Token。课程级授权与资料同步的新增回归为 `tests/course-library.test.mjs`（Node）和 `tools/study/test_course_library.py`（Python）；专用工具回归为 `tests/chapter-check-mcp.test.mjs`（真实 MCP 协议配合虚构档案，核对严格比较、复用、输入与授权边界、错误脱敏）；按章核对回归为 `tests/chapter-check.test.mjs`（Node）和 `tools/study/test_session.py` 的 `ChapterCheckTests`（Python），本轮覆盖：Topic 5 不误选其他 Topic、日期或 Tutorial 区块；区块序号不被当章节号；匹配不唯一返回候选且不联网；同聊天第二次不联网；新增本章资料增量核对；本地文件改变/新聊天/账号变化/`--force` 使回执失效；失败或缺基线不误报成功且不自动重试；stderr 阶段进度实时可见且 stdout 仍是可解析 JSON。本轮的按需查询回归为 `tests/read-queries.test.mjs`（Node），学习处理回归为 `tools/study/test_question_exposure.py`、`test_material_learning_integration.py`，原答绑定归档回归为 `tools/study/test_evidence_archive_binding.py`，跨校数字 ID 回归分布在 `tests/chat-course-selection.test.mjs`、`tests/course-selection.test.mjs`、`tests/chapter-check.test.mjs`、`tools/study/test_course_library.py` 和 `tests/test_auth.py`。可选 `tests/browser_smoke.py` 只访问本机模拟服务，使用无界面 Edge，不验证学校真实 SSO；真实连接需本人登录后运行 `node tools/moodle/run.mjs check`。
+测试使用虚构课程和临时状态，不连接学校，不读取个人 Token。本轮学生上线可用性修复的回归为 `tests/mcp-startup.test.mjs`（真实 stdio 子进程在未登录/空目录启动、16 个工具、结构化错误与同聊天懒恢复），以及 `tests/test_dsh_integration.py` 的安装器状态/退出码与 `tools/onboarding/setup-dsh.ps1` 完成判定用例；受限环境运行 Node 测试前先把 `TEMP`/`TMP` 指向仓库内可写目录。课程级授权与资料同步的新增回归为 `tests/course-library.test.mjs`（Node）和 `tools/study/test_course_library.py`（Python）；专用工具回归为 `tests/chapter-check-mcp.test.mjs`（真实 MCP 协议配合虚构档案，核对严格比较、复用、输入与授权边界、错误脱敏）；按章核对回归为 `tests/chapter-check.test.mjs`（Node）和 `tools/study/test_session.py` 的 `ChapterCheckTests`（Python），本轮覆盖：Topic 5 不误选其他 Topic、日期或 Tutorial 区块；区块序号不被当章节号；匹配不唯一返回候选且不联网；同聊天第二次不联网；新增本章资料增量核对；本地文件改变/新聊天/账号变化/`--force` 使回执失效；失败或缺基线不误报成功且不自动重试；stderr 阶段进度实时可见且 stdout 仍是可解析 JSON。本轮的按需查询回归为 `tests/read-queries.test.mjs`（Node），学习处理回归为 `tools/study/test_question_exposure.py`、`test_material_learning_integration.py`，原答绑定归档回归为 `tools/study/test_evidence_archive_binding.py`，跨校数字 ID 回归分布在 `tests/chat-course-selection.test.mjs`、`tests/course-selection.test.mjs`、`tests/chapter-check.test.mjs`、`tools/study/test_course_library.py` 和 `tests/test_auth.py`。可选 `tests/browser_smoke.py` 只访问本机模拟服务，使用无界面 Edge，不验证学校真实 SSO；真实连接需本人登录后运行 `node tools/moodle/run.mjs check`。
 
 发布前从通用源码文件清单建立提交，检查 `git status`。不得加入 `Study/`、`.private/`、本地配置、依赖环境、个人附件、真实题库或状态备份，不用 `git add -f` 绕过忽略规则。Node 依赖锁在 package-lock.json；Python 固定版本见 requirements.txt。
 

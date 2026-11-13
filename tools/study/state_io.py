@@ -102,6 +102,28 @@ def read(path):
     return json.loads(Path(path).read_text(encoding='utf-8-sig'))
 
 
+def recovery_artifacts(path):
+    """Local evidence that a learning profile existed before its primary state.
+
+    Creating a blank state over such a folder lets the next initialization save
+    the blank state as ``state.previous.json`` and destroy the last recoverable
+    copy, so initialization must stop and let the assistant restore instead.
+    """
+    path = Path(path)
+    system = path.parent
+    candidates = [
+        system / 'state.previous.json',
+        system / 'refresh-latest.json',
+        system / 'refresh-last-complete.json',
+        system / 'LibrarySync' / 'latest.json',
+        system / 'Backups',
+        system / 'Runtime' / 'timings.jsonl',
+    ]
+    if len(system.parents) > 1:
+        candidates.append(system.parents[1] / '.private' / 'moodle-token.dpapi')
+    return [str(candidate) for candidate in candidates if candidate.exists()]
+
+
 @locked
 def prepare_state(path):
     """Resolve file/state transactions before another supported writer reads state.
@@ -262,18 +284,38 @@ def validate_draft(current, draft):
             course['evidence_bindings'] = bound['evidence_bindings']
 
 
-def atomic(path, value):
+def atomic_bytes(path, content, *, skip_unchanged=False):
+    """Replace from a flushed sibling temporary file; callers retain transaction ownership."""
     path = Path(path)
+    if path.suffix == '.json':
+        json.loads(content.decode('utf-8-sig'))
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + '\n'
+    if skip_unchanged and path.exists() and path.read_bytes() == content:
+        return False
     fd, name = tempfile.mkstemp(prefix=path.name + '.', suffix='.tmp', dir=path.parent)
     try:
-        with os.fdopen(fd, 'w', encoding='utf-8', newline='\n') as stream:
-            stream.write(data); stream.flush(); os.fsync(stream.fileno())
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(content); stream.flush(); os.fsync(stream.fileno())
         os.replace(name, path)
     finally:
         if os.path.exists(name):
             os.unlink(name)
+    return True
+
+
+def atomic_text(path, content, *, skip_unchanged=False):
+    # Match existing UTF-8/BOM and universal-newline readers without rewriting
+    # an otherwise identical legacy page merely to normalize its encoding.
+    path = Path(path)
+    if skip_unchanged and path.exists() and path.read_text(encoding='utf-8-sig') == content:
+        if path.suffix == '.json':
+            json.loads(content)
+        return False
+    return atomic_bytes(path, content.encode('utf-8'), skip_unchanged=skip_unchanged)
+
+
+def atomic(path, value):
+    return atomic_text(path, json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + '\n')
 
 
 @locked
@@ -282,6 +324,11 @@ def bridge(path, mode, payload):
     prepare_state(path)
     if mode == 'init':
         if not path.exists():
+            artifacts = recovery_artifacts(path)
+            if artifacts:
+                raise ValueError(
+                    '学习档案主状态缺失，但仍存在可恢复记录（' + '、'.join(artifacts)
+                    + '）。已停止创建空白档案，以免覆盖最后备份；请先备份 Study/_System，再由助手核对并恢复后再继续。')
             atomic(path, payload)
         return
     if mode != 'replace':

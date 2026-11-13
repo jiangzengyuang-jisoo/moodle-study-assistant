@@ -73,6 +73,8 @@ class LibraryContextTests(unittest.TestCase):
             self.assertIn(phrase, rules)
         self.assertIn("本章问题", policy["chapter_explanation"])
         self.assertIn("学习证据", policy["chapter_explanation"])
+        self.assertIn("不自动跳过练习", policy["chapter_explanation"])
+        self.assertIn("脱稿向零基础学生解释", policy["chapter_explanation"])
         self.assertIn("备考", policy["exam_info_usage"])
         self.assertIn("原始考试信息", policy["exam_info_usage"])
         self.assertEqual(policy["background_fields"], ["course.current_topic", "course.orientation", "tasks", "deadlines", "exam_profiles"])

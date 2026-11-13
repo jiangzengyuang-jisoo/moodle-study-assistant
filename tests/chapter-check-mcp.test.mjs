@@ -8,10 +8,12 @@ import {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {InMemoryTransport} from '@modelcontextprotocol/sdk/inMemory.js';
 import {registerChapterCheckTool, chapterChatKey} from '../tools/moodle/chapter-check-tool.mjs';
+import {createMcpChapterContext} from '../tools/moodle/mcp-workspace.mjs';
 import {connectionError} from '../tools/moodle/connection-errors.mjs';
 
 const BASE = 'https://school.example/moodle';
 const PDF = Buffer.from('%PDF-1.4\nsynthetic chapter data');
+const CONNECTION_AUTHORIZATION = Buffer.from('SYNTHETIC-ENCRYPTED-AUTHORIZATION');
 const hash = value => createHash('sha256').update(value).digest('hex');
 const CHAT = 'session-12345678-abcd-4321-abcd-123456789012';
 const input = (extra = {}) => ({course_id: 'moodle-1', section: 'Topic 5', chat_id: CHAT, ...extra});
@@ -23,8 +25,19 @@ function file(root, name, bytes) {
   writeFileSync(path, bytes);
 }
 
-async function fixture(t) {
-  const root = mkdtempSync(join(tmpdir(), 'chapter-mcp-'));
+async function fixture(t, {root: existingRoot = null, schoolUserId = 7} = {}) {
+  const root = existingRoot ?? mkdtempSync(join(tmpdir(), 'chapter-mcp-'));
+  // Receipt reuse is bound to the saved config+credential generation. Write
+  // stable synthetic connection files once per root so a restarted server can
+  // distinguish "same saved login" from "a new login was saved".
+  mkdirSync(join(root, '.private'), {recursive: true});
+  if (!existsSync(join(root, 'config.local.json'))) {
+    writeFileSync(join(root, 'config.local.json'),
+      JSON.stringify({moodle_url: BASE, timezone: 'Asia/Hong_Kong'}, null, 2));
+  }
+  if (!existsSync(join(root, '.private/moodle-token.dpapi'))) {
+    writeFileSync(join(root, '.private/moodle-token.dpapi'), CONNECTION_AUTHORIZATION);
+  }
   const sources = [501, 502].map((id, i) => {
     const name = `Topic${5 + i}.pdf`;
     return {id, name, bytes: PDF, relative: `moodle-1/Lectures/${name}`,
@@ -49,7 +62,7 @@ async function fixture(t) {
   save();
   const calls = {connect: 0, catalog: [], fetch: [], before: 0};
   const control = {connectionError: null, catalogError: null, fileError: null, guardError: null};
-  const school = {baseUrl: BASE, userId: 7, token: 'PRIVATE_TOKEN',
+  const school = {baseUrl: BASE, userId: schoolUserId, token: 'PRIVATE_TOKEN',
     call: async (method, args) => {
       assert.equal(method, 'core_course_get_contents');
       assert.equal(args.courseid, 101);
@@ -248,4 +261,104 @@ test('catalog errors do not disclose remote response bodies', async t => {
   assert.equal(result.isError, true);
   assert.equal(parse(result).error, 'CHAPTER_CATALOG_UNAVAILABLE');
   assert(!JSON.stringify(result).includes('PRIVATE_TOKEN'));
+});
+
+// One restarted source-style service: a fresh MCP server + fresh pinned chapter
+// workspace context (the config/credential are read at "startup"), backed by a
+// gateway whose account identity only becomes available after connect.
+async function restartedService(t, {root, statePath, credential, school}) {
+  const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+  let connected = false;
+  let connections = 0;
+  const gateway = {
+    get baseUrl() { return BASE; },
+    get userId() { return connected ? school.userId : null; },
+    async connect() { connections += 1; connected = true; return school; },
+  };
+  const context = createMcpChapterContext({
+    root, loadState: () => JSON.parse(readFileSync(statePath, 'utf8')),
+    client: gateway, config: {moodle_url: BASE, timezone: 'Asia/Hong_Kong'}, credential,
+  });
+  const server = new McpServer({name: 'chapter-restart', version: '1.0.0'});
+  registerChapterCheckTool(server, context);
+  const client = new Client({name: 'chapter-restart-client', version: '1.0.0'});
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  t.after(async () => { await client.close(); await server.close(); });
+  return {
+    call: args => client.callTool({name: 'study_check_chapter', arguments: args}),
+    connections: () => connections,
+  };
+}
+
+test('a restarted source-style chapter service refuses to reuse the previous account receipt', async t => {
+  const first = await fixture(t);
+  // First service: the saved login authenticates as account 7 and the strict
+  // check succeeds, writing a schema-3 receipt bound to this connection.
+  const serviceA = await restartedService(t, {root: first.root, statePath: first.statePath,
+    credential: CONNECTION_AUTHORIZATION, school: first.school});
+  const successResult = await serviceA.call(input());
+  const success = parse(successResult);
+  assert.equal(successResult.isError, undefined);
+  assert.equal(success.reused, undefined);
+  assert.equal(success.verified.complete, true);
+  assert.equal(serviceA.connections(), 1);
+  assert.equal(first.calls.fetch.length, 1);
+  const receiptPath = join(first.root, 'Study/_System/ChapterChecks/moodle-1/topic-5.json');
+  assert(existsSync(receiptPath));
+  const previousReceipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
+  assert.match(previousReceipt.connection_generation, /^[0-9a-f]{64}$/);
+  const previousRun = previousReceipt.run_id;
+
+  // The student signs in again: only the protected credential changes. A new
+  // service process starts with the new credential and the same chat/chapter.
+  const credentialB = Buffer.from('SYNTHETIC-ENCRYPTED-AUTHORIZATION-B');
+  writeFileSync(join(first.root, '.private/moodle-token.dpapi'), credentialB);
+  const accountBCalls = {catalog: 0, fetch: 0};
+  const schoolB = {
+    baseUrl: BASE, userId: 88, token: 'PRIVATE_TOKEN',
+    async call() { accountBCalls.catalog += 1; throw new Error('must not enumerate another account'); },
+    async transport() { accountBCalls.fetch += 1; throw new Error('must not download another account files'); },
+  };
+  const serviceB = await restartedService(t, {root: first.root, statePath: first.statePath,
+    credential: credentialB, school: schoolB});
+  const result = await serviceB.call(input());
+  assert.equal(result.isError, true);
+  assert.equal(parse(result).error, 'PROFILE_ACCOUNT_GUARD');
+  assert.notEqual(parse(result).reused, true);
+  // The account guard connects once and rejects before enumeration/downloads.
+  assert.equal(serviceB.connections(), 1);
+  assert.deepEqual(accountBCalls, {catalog: 0, fetch: 0});
+  // The old success receipt is neither echoed nor replaced.
+  const written = JSON.parse(readFileSync(receiptPath, 'utf8'));
+  assert.equal(written.run_id, previousRun);
+  assert(!JSON.stringify(result).includes('SYNTHETIC-ENCRYPTED-AUTHORIZATION-B'));
+});
+
+test('a restarted server with a newly saved credential does not reuse the previous account receipt', async t => {
+  const first = await fixture(t);
+  const success = parse(await first.call(input()));
+  assert.equal(success.reused, undefined);
+  assert.equal(success.verified.complete, true);
+  assert.equal(first.calls.connect, 1);
+  assert.equal(first.calls.fetch.length, 1);
+  assert.match(success.connection_generation, /^[0-9a-f]{64}$/);
+  assert(!JSON.stringify(success).includes(CONNECTION_AUTHORIZATION.toString('utf8')));
+
+  // The student signs in again: only the protected credential changes. The
+  // local learning state still records account 7, so the cached strict receipt
+  // must not be echoed by the newly started service process.
+  writeFileSync(join(first.root, '.private/moodle-token.dpapi'),
+    Buffer.from('SYNTHETIC-ENCRYPTED-AUTHORIZATION-B'));
+  const restarted = await fixture(t, {root: first.root, schoolUserId: 88});
+  const result = await restarted.call(input());
+  assert.equal(result.isError, true);
+  assert.equal(parse(result).error, 'PROFILE_ACCOUNT_GUARD');
+  assert.notEqual(parse(result).reused, true);
+  assert.equal(restarted.calls.connect, 1);
+  // The account guard rejects before course enumeration or chapter downloads.
+  assert.deepEqual(restarted.calls.catalog, []);
+  assert.deepEqual(restarted.calls.fetch, []);
+  assert(!JSON.stringify(result).includes('PRIVATE_TOKEN'));
+  assert(!JSON.stringify(result).includes('SYNTHETIC-ENCRYPTED-AUTHORIZATION'));
 });

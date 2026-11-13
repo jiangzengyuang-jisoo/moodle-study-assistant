@@ -16,6 +16,9 @@ from urllib.parse import urlencode, urlsplit, unquote
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 ROOT = Path(__file__).resolve().parents[2]
+# Personal data may live outside the installed program directory (STUDY_DATA_ROOT);
+# without the override the data root is the program root, exactly as before.
+DATA_ROOT = Path(os.environ.get('STUDY_DATA_ROOT') or ROOT).resolve()
 
 
 def parse_callback(value, site, passport):
@@ -85,7 +88,7 @@ def profile_accounts(root=None):
     numeric course/module IDs are only meaningful inside the account that created
     them. Missing legacy account information is never guessed or back-filled.
     """
-    root = Path(root) if root is not None else ROOT
+    root = Path(root) if root is not None else DATA_ROOT
     accounts = []
     state_path = root / 'Study/_System/state.json'
     try:
@@ -156,7 +159,7 @@ def assert_connect_identity(site, user_id=None, root=None):
 def store_token(token):
     if sys.platform != 'win32':
         raise ValueError('此版本凭据保护仅支持 Windows')
-    path = ROOT / '.private' / 'moodle-token.dpapi'
+    path = DATA_ROOT / '.private' / 'moodle-token.dpapi'
     path.parent.mkdir(parents=True, exist_ok=True)
     target = str(path).replace("'", "''")
     # stdin only: the token never appears in process arguments or a plaintext file.
@@ -241,7 +244,7 @@ def main():
     parser.add_argument('--manual', action='store_true', help='输入学校提供的官方 Token，不显示输入')
     parser.add_argument('--browser', choices=['msedge', 'chrome'], default='msedge')
     args = parser.parse_args()
-    config = json.loads((ROOT / 'config.local.json').read_text(encoding='utf-8-sig'))
+    config = json.loads((DATA_ROOT / 'config.local.json').read_text(encoding='utf-8-sig'))
     site = config['moodle_url'].rstrip('/')
     url = urlsplit(site)
     if url.scheme != 'https' or not url.netloc or url.username or url.password or url.query or url.fragment:

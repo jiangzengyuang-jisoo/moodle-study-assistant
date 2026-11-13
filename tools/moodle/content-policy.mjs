@@ -197,9 +197,15 @@ export function recordedDiskAccounts(root) {
   }
   const report = readJSONFile(join(system, 'LibrarySync', 'latest.json'));
   if (report && typeof report === 'object' && !Array.isArray(report)) {
-    for (const course of report.courses ?? []) {
-      const site = siteFromPageURL(course?.page_url);
-      if (site) accounts.push({site, user_id: null, source: 'LibrarySync/latest.json'});
+    // Newer reports record the school explicitly. Prefer that over deriving an
+    // identity from a displayed page URL, which can lose a deployment prefix.
+    const explicit = recordedAccount(report.school);
+    if (explicit) accounts.push({...explicit, source: 'LibrarySync/latest.json'});
+    else {
+      for (const course of report.courses ?? []) {
+        const site = siteFromPageURL(course?.page_url);
+        if (site) accounts.push({site, user_id: null, source: 'LibrarySync/latest.json'});
+      }
     }
   }
   return accounts;

@@ -5,13 +5,16 @@
 ## 安装与恢复
 
 1. 先读取当前项目规则，运行 `diagnose.cmd -Json -NoPause`，只按缺口补装。没有 Python 时检查现有运行环境，并由助手处理允许的安装步骤；确需本人操作或客户端审批时，在聊天里说明具体内容。已有档案损坏先修复，不删掉重建。
-2. 由助手运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File setup.ps1`；不要运行会 `pause` 的 `setup.cmd`，也不要启动交互式 `start.cmd`。安装授权涵盖正常依赖安装；付费或权限扩大另按实际要求处理。
+2. 由助手运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File setup.ps1`；不要运行会 `pause` 的 `setup.cmd`，也不要启动交互式 `start.cmd`。安装授权涵盖正常依赖安装；付费或权限扩大另按实际要求处理。`setup.ps1` 只有在本机文件准备完成、且 DSH 配置校验通过（`configuration_ok`，MCP 与技能目录都正确）时才打印 Setup complete 并返回 0；非 0 时按输出修复后重跑，不要把非 0 当作安装成功。
 3. 安装结束后立即在当前回复中说明怎样通过聊天使用系统，不能只报“安装成功”。读取 `tools/study/product_tour.py status` 的结果：尚未讲解则主动进行下文教学。只完成环境时说明登录/选课/资料/核读的真实未完成项，然后继续初始化。
-4. 本分支安装器按 `client-target.json` 合并 Harness 配置，不依赖是否从 Harness 启动；已有安装先由助手检查 `dsh_integration.py status --json`，必要时执行 `install`；需要重启 Harness 时，先保存现有进度，明确“退出并重新打开 Harness，回到这个项目聊天”。重启后读实际诊断接续，不能因配置已写入就宣称工具运行已验证。不要用其他版本整目录覆盖本端的 SSO 登录修复和资料同步实现。
+4. 本分支安装器按 `client-target.json` 合并 Harness 配置，不依赖是否从 Harness 启动；已有安装先由助手检查 `dsh_integration.py status --json`，必要时执行 `install`。`install` 现在返回 `installed`/`unchanged`/`dry-run`/`conflict`/`skipped`/`error` 与覆盖 MCP 和技能目录的 `configuration_ok`：同名 `moodle_study` MCP 指向旧项目、或旧 `skill-filesystem` 覆盖缺当前 `skills/` 目录时是 `conflict`，**零写入、原文件不变、非 0 退出**，`setup.ps1` 不会打印 Setup complete。按输出修复：确认旧部署用 `install --update-existing` 只更新旧 MCP 条目的 `args` 路径；技能冲突按 `docs/DSH.md` 合并或移除旧覆盖；**不要删除现有配置重试**。配置正确时幂等重跑为 `unchanged` 且退出 0。不要用其他版本整目录覆盖本端的 SSO 登录修复和资料同步实现。
+5. 配置正确不等于运行时已验证，按真实顺序继续：**先完整退出并重开 DSH → 回到本项目聊天 → 由聊天内助手在同一聊天完成学校浏览器登录 → 联网工具才可用**。源码版 MCP 服务在未登录时也会完成握手并注册全部 16 个工具（15 个只读工具 + `study_check_chapter`）；登录前调用联网工具返回结构化 `STUDY_LOGIN_REQUIRED`（已下载资料仍可本地学习），登录后直接重试同一工具即可，**不需要再次重启**，网络临时失败会在下一次调用自动重试。若重启后仍看不到 Moodle 工具，先再完整重启一次并确认工具列表，不要删除配置或重建档案。重启后读实际诊断接续，不能因配置已写入就宣称工具运行已验证。
 
 ## 登录只进入学校网页
 
 先确认学校地址。默认 HKU 不能当作其他学校用户的选择。有已有加密授权时先检查是否需要重新连接，不要求每次登录。
+
+重启后第一次调用联网工具若返回 `STUDY_LOGIN_REQUIRED`（或 `study_check_chapter` 返回同样的登录提示），这是预期状态而不是工具损坏：MCP 已经启动并注册了工具，只是尚未保存学校登录。已下载资料在此期间仍可本地学习；按要求完成下面的浏览器登录后，让助手在**同一聊天直接重试同一个工具**即可，不需要重启 Harness、重装或重建学习档案。
 
 助手执行 `.venv/Scripts/python.exe tools/moodle/auth.py --browser msedge`（或用户选择的 Chrome），保持该进程运行，告诉用户在弹出的学校网页完成登录和验证；用 Harness 的后台任务（`run_in_background`）启动并继续等待，再用 `job_output`（必要时 `wait: true`）读取结果；不要在前台反复启动同一条命令，也不要把“同一消息发两条命令”当作并行。收到成功结果后自动继续列课程，不让用户打开 CMD、输入命令或处理进程编号。不得读取 `.private/`、索取密码/验证码/Token 或读取浏览器 Cookie。
 

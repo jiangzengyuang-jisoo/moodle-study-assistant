@@ -60,6 +60,115 @@ class DailyIntegrationTests(unittest.TestCase):
         self.assertIn("2026-10-08", self.path.with_name("Today Plan.md").read_text(encoding="utf-8"))
         self.assertEqual(self.read()["tasks"], self.state["tasks"])
 
+    def test_unchanged_views_keep_mtime_and_check_renders_plan_once(self):
+        from unittest.mock import patch
+        import planning
+        for zone in ('Asia/Hong_Kong', 'UTC', 'Europe/London', 'America/New_York'):
+            with self.subTest(zone=zone):
+                state = self.read()
+                state['timezone'] = zone
+                self.path.write_text(json.dumps(state), encoding='utf-8')
+                daily.execute(self.path, 'run', self.now)
+                before = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in self.path.parent.glob('*.md')}
+                daily.execute(self.path, 'run', self.now)
+                self.assertEqual(before, {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in before})
+                with patch.object(planning, 'render_views', wraps=planning.render_views) as render:
+                    self.assertTrue(daily.execute(self.path, 'check', self.now)['fresh'])
+                    self.assertEqual(render.call_count, 1)
+
+    def test_legacy_page_encodings_are_fresh_without_rewriting(self):
+        daily.execute(self.path, "run", self.now)
+        state_before = self.path.read_bytes()
+        expected = daily.view_contents(self.read(), self.now)
+        for bom, newline in ((False, "\r\n"), (True, "\n"), (True, "\r\n")):
+            with self.subTest(bom=bom, newline=repr(newline)):
+                pages = {}
+                for name, text in expected.items():
+                    path = daily.view_path(self.path, name)
+                    data = (b"\xef\xbb\xbf" if bom else b"") + text.replace("\n", newline).encode("utf-8")
+                    path.write_bytes(data)
+                    pages[path] = (data, path.stat().st_mtime_ns)
+                self.assertTrue(daily.execute(self.path, "check", self.now)["fresh"])
+                daily.execute(self.path, "run", self.now)
+                self.assertTrue(daily.execute(self.path, "check", self.now)["fresh"])
+                self.assertEqual(pages, {path: (path.read_bytes(), path.stat().st_mtime_ns)
+                                         for path in pages})
+                self.assertEqual(self.path.read_bytes(), state_before)
+
+    def test_changed_bom_crlf_pages_remain_stale_until_rebuilt(self):
+        daily.execute(self.path, "run", self.now)
+        state_before = self.path.read_bytes()
+        for name, issue in (("Today Plan.md", "stale_content"),
+                            ("Today Review.md", "stale_or_missing")):
+            with self.subTest(page=name):
+                path = daily.view_path(self.path, name)
+                expected = path.read_text(encoding="utf-8-sig")
+                changed = expected + "\nThis content is stale.\n"
+                path.write_bytes(b"\xef\xbb\xbf" + changed.replace("\n", "\r\n").encode("utf-8"))
+                check = daily.execute(self.path, "check", self.now)
+                self.assertFalse(check["fresh"])
+                self.assertIn(name + ": " + issue, check["issues"])
+                daily.execute(self.path, "run", self.now)
+                self.assertEqual(path.read_text(encoding="utf-8-sig"), expected)
+                self.assertTrue(daily.execute(self.path, "check", self.now)["fresh"])
+                self.assertEqual(self.path.read_bytes(), state_before)
+
+    def test_legacy_preview_matches_current_selector_across_timezones(self):
+        import learning_loop
+        import planning
+        for zone in ('Asia/Hong_Kong', 'UTC', 'Europe/London', 'America/New_York'):
+            for invalid_source in (False, True):
+                with self.subTest(zone=zone, invalid_source=invalid_source):
+                    state = deepcopy(self.state)
+                    state['timezone'] = zone
+                    state['settings'].pop('learning_loop', None)
+                    if invalid_source:
+                        state['materials'] = []
+                    self.path.write_text(json.dumps(state), encoding='utf-8')
+                    before = self.path.read_bytes()
+                    expected = learning_loop.prepare(deepcopy(state), self.now,
+                        planning.review_budget_limit(state, self.now, 15),
+                        remaining_minutes=planning.remaining_study_minutes(state, self.now))
+                    result = subprocess.run([sys.executable, str(Path(review.__file__)), '--state',
+                        str(self.path), 'due', '--at', self.now.isoformat()], capture_output=True, encoding='utf-8')
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    output = json.loads(result.stdout)
+                    self.assertTrue(output.pop('read_only_preview'))
+                    output.pop('next_step')
+                    self.assertEqual(output, expected)
+                    self.assertEqual(self.path.read_bytes(), before)
+                    self.assertNotIn('SECRET_RUBRIC', result.stdout)
+                    if invalid_source:
+                        self.assertEqual(output['items'], [])
+
+    def test_new_writer_failure_after_attempt_save_is_recoverable(self):
+        from unittest.mock import patch
+        import state_io
+        daily.execute(self.path, 'run', self.now)
+        session = self.read()['review_sessions'][0]
+        item = session['items'][0]
+        payload = {'attempt_id': 'WRITE-FAIL', 'session_id': session['id'], 'review_id': 'R',
+                   'variant_id': item['variant_id'], 'answer': '4', 'feedback': 'independent',
+                   'evidence': 'synthetic', 'independent': True, 'answer_seen_before_attempt': False,
+                   'rating': 'good', 'reviewed_at': '2026-10-07T15:05:00+08:00'}
+        now = review.timestamp(payload['reviewed_at'])
+        real_replace = state_io.os.replace
+        def fail_page(source, target):
+            if Path(target).suffix == '.md':
+                raise OSError('page replace failed')
+            return real_replace(source, target)
+        with patch.object(state_io.os, 'replace', side_effect=fail_page):
+            with self.assertRaises(OSError):
+                daily.execute(self.path, 'attempt', now, payload=payload)
+        committed = self.path.read_bytes()
+        result = daily.execute(self.path, 'attempt', now, payload=payload)
+        self.assertTrue(result['duplicate'])
+        self.assertEqual(self.path.read_bytes(), committed)
+        self.assertEqual(len(self.read()['review_attempts']), 1)
+        self.assertEqual(len(self.read()['review_queue'][0]['fsrs']['history']), 1)
+        self.assertTrue(daily.execute(self.path, 'check', now)['fresh'])
+        self.assertEqual(list(self.path.parent.glob('*.tmp')), [])
+
     def test_choice_options_saved_and_shown_in_daily_views(self):
         state = self.read()
         state["review_queue"][0]["practice_variants"][0]["options"] = {"C": "四", "A": "二", "B": "三"}

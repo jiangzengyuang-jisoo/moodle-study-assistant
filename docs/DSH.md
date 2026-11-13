@@ -39,7 +39,7 @@
 - 保留用户已有配置的每一行，写入前生成 `cordis.patch.yml.bak-<UTC时间>` 备份；
 - 用 `# >>> ... >>>` / `# <<< ... <<<` 标记自己的段落，**重复运行只更新本段**（幂等）；
 - 写入前把合并结果完整解析并校验（顶层结构、条目内容、路径指向），任何解析或校验失败都**保留原文件不替换**；
-- 若已存在同名 `moodle_study` MCP 或用户自定义 `skill-filesystem` 覆盖，默认**不覆盖**。确认旧条目是本项目的旧部署时，可只在原文件中更新该条目的 `args` 路径（支持流式列表与跨行折叠路径；其他字段、注释和其他条目保持原样）。即使技能目录已经配置好、无需新增条目，这项修改也会实际写入并复核后才报告成功；`--dry-run` 只显示内容，不写文件：
+- 已有同名 `moodle_study` MCP 指向其他项目，或已有用户自定义 `skill-filesystem` 覆盖但未包含本项目 `skills/` 目录时，不会擅自覆盖：`install` 返回 `conflict`，**不写入任何内容、原文件保持不变、CLI 退出非 0**，并给出可操作修复提示；`setup.ps1` 因此不会打印 Setup complete。确认旧条目是本项目的旧部署时，可只在原文件中更新该条目的 `args` 路径（支持流式列表与跨行折叠路径；其他字段、注释和其他条目保持原样）。即使技能目录已经配置好、无需新增条目，这项修改也会实际写入并复核后才报告成功；`--dry-run` 只显示内容，不写文件：
 
 ```powershell
 & '.venv/Scripts/python.exe' tools/onboarding/dsh_integration.py install --update-existing
@@ -47,7 +47,9 @@
 
 - 不读取、不写入任何学习数据、凭据或 Cookie。
 
-本分支运行 `setup.cmd` 或 `setup.ps1` 时都会按 `client-target.json` 执行上述合并；无需先在 Harness 内运行。合并失败会停止并报告未完成，不冒充安装成功。
+`install` 的结果统一包含 `status`（`installed`/`unchanged`/`dry-run`/`conflict`/`skipped`/`error`）、`configuration_ok`（同时覆盖 MCP 与技能目录）、分项 `mcp`/`skills` 状态、`warnings` 与 `next_steps`；`--json` 便于助手读取。退出码即完成判定：`installed`/`unchanged`/`dry-run` 且 `configuration_ok=true` 时为 0，`conflict`/`skipped`/`error` 为非 0。配置正确时重复运行返回 `unchanged` 并退出 0（“无需修改”不是失败）。遇到冲突**不要删除现有配置重试**：确认旧部署后用 `--update-existing` 只更新 MCP 条目路径；技能冲突按本文手动合并或移除旧覆盖，把当前项目 `skills/` 目录加入 `customSkillDirs`（或换一个不冲突的技能提供方条目）后重跑。
+
+本分支运行 `setup.cmd` 或 `setup.ps1` 时都会按 `client-target.json` 执行上述合并；无需先在 Harness 内运行。`setup.ps1` 通过新增的 `tools/onboarding/setup-dsh.ps1`（`Invoke-DshConfiguration`）同时校验安装退出码与 `configuration_ok`（MCP 与技能目录都正确）才继续并打印 Setup complete；冲突、解析失败或未检测到 DSH 时打印修复提示并以非 0 退出，不会冒充安装成功。成功提示同时说明：配置正确不等于运行时已验证，必须完整重启 DSH 后回到项目聊天确认技能与 `moodle_study` 工具实际加载，并由聊天内助手完成学校登录后工具才可用。
 
 <details>
 <summary>手动配置示例（脚本不可用时）</summary>
@@ -60,7 +62,8 @@
 
 1. 完全退出并重新启动 DeepSeek Harness（profile 配置在启动时加载）。
 2. 新建聊天时选择 **本项目文件夹**（含 `AGENTS.md`、`Study/`）作为工作区。DSH 的写入权限只覆盖会话工作区，因此后续真实学习请以这个目录为工作区；不要把“公开源码目录”和“学习部署目录”混用。
-3. 新聊天中可先问：“你用到了哪些项目规则和教学技能？”——正常回答应能说明已读取 `AGENTS.md`，并能加载 `self-study-tutor` 技能。
+3. 回到项目聊天，由聊天内助手在**同一聊天**完成学校浏览器登录，再使用 Moodle 工具。正确顺序是：安装/合并配置 → **先完整重启 DSH** → 回到项目聊天完成学校登录 → 联网工具可用。未登录时 MCP 服务也会完成握手并注册全部 16 个工具（15 个只读工具 + `study_check_chapter`），登录前调用联网工具会返回结构化 `STUDY_LOGIN_REQUIRED` 提示（已下载资料仍可本地学习），这属于正常状态；登录完成后直接重试同一工具即可，**不需要再次重启**，网络临时失败会在下一次调用自动重试。旧版“重启后 MCP 启动失败、工具缺失、登录后还要再重启”的问题已修复；若本次重启后仍看不到 Moodle 工具，先再完整重启一次并确认工具列表，不要删除配置或重建档案。
+4. 新聊天中可先问：“你用到了哪些项目规则和教学技能？”——正常回答应能说明已读取 `AGENTS.md`，并能加载 `self-study-tutor` 技能。配置正确不等于运行时已验证：只有重启后实际看到技能与工具，才算加载成功。
 
 ### 2.3 诊断
 
@@ -77,10 +80,25 @@
 
 诊断中 `dsh`/`client` 的分工：
 
-- `dsh` 行只报告**配置结构**：MCP 条目是否指向本项目的 `tools/moodle/run.mjs`、技能目录是否加入 `customSkillDirs`、现有配置是否冲突/无法解析；`status --json` 里的 `configuration_ok` 表示配置正确，`runtime_loaded` 固定为 `unverified`——**配置检测不等于运行成功**。
-- `client` 行只表示当前 DeepSeek 分支的 DSH profile 配置可用，同样不代表运行时已加载；是否真正加载需重启后在新聊天中实际确认。
+- `dsh` 行只报告**配置结构**：MCP 条目是否指向本项目的 `tools/moodle/run.mjs`、技能目录是否加入 `customSkillDirs`、现有配置是否冲突/无法解析；`status --json` 里的 `configuration_ok` 表示配置正确（同时覆盖 MCP 与技能目录），`mcp`/`skills` 给出分项状态，`runtime_loaded` 固定为 `unverified`——**配置检测不等于运行成功**。
+- `dsh_integration.py install` 的退出码即完成判定：`installed`/`unchanged`/`dry-run` 且 `configuration_ok=true` 时为 0；`conflict`/`skipped`/`error` 为非 0。检查冲突时先看人类可读输出或 `--json` 的 `mcp`/`skills`、`warnings` 与 `next_steps`，按提示修复后重跑，不要删除现有配置。
+- `client` 行只表示当前 DeepSeek 分支的 DSH profile 配置可用，同样不代表运行时已加载；是否真正加载需重启后在新聊天中实际确认（例如让助手列出 `moodle_study` 工具、实际调用 `study_check_chapter` 或 `moodle_list_courses`）。
 - 若 profile patch 无法解析或缺少 YAML 依赖，诊断只给 warning 并明确“未修改任何配置”，不会报成“配置正确”。
-- 已有同名 MCP 冲突、技能目录未加入、profile 无法解析时，按 `status --json` 的 `warnings` 与上文手动处理。
+- 已有同名 MCP 冲突或技能冲突时，按 `warnings`/`next_steps` 与上文处理（`--update-existing` 只更新 MCP 条目路径；技能冲突按 §2.1 手动合并）；同名 `moodle_study` 条目出现多条时安装器不猜测、不覆盖，返回 `conflict` 并提示手动去重（`--update-existing` 同样拒绝猜测），当前项目 `skills/` 目录缺失返回 `error` 且零写入；已存在的生成配置段会重建并整体校验后才写入，不会只验剥离后的副本而误报 `unchanged`。`setup.ps1` 遇到未完成情况会复核状态并以非 0 退出且不打印 Setup complete。
+
+### 2.4 重启后工具缺失或调用提示未登录
+
+按下面的顺序恢复，不要删除配置、凭据或学习档案：
+
+1. **先确认配置**：让助手运行 `dsh_integration.py status --json`，看 `configuration_ok` 以及 `mcp`/`skills` 分项。不为 true 时按 §2.1/§2.3 修复冲突（确认旧部署时用 `--update-existing`，技能冲突按手动合并处理），再重跑 `install`；`status` 正常不等于运行时已加载。
+2. **再完整重启一次 DSH**：profile 与 MCP 配置只在启动时加载，重读规则不会给已经运行的旧服务添加新工具。重启后重新打开本项目工作区，让助手确认工具列表出现 15 个只读工具与 `study_check_chapter`。
+3. **调用返回 `STUDY_LOGIN_REQUIRED`**：表示 MCP 已正常启动但还没有学校登录，这是正常状态；已下载资料仍可本地学习。让聊天内助手在本聊天完成学校浏览器登录（账号、密码、验证码和 MFA 只由本人在学校页面输入），然后直接重试同一个工具：同一 MCP 进程会读取新凭据并连接，不需要再次重启或重装。
+4. **返回 `STUDY_SETUP_REQUIRED`**：本地学习档案或 `config.local.json` 未就绪，按提示完成本机初始化（`setup.cmd` 或安装器给出的步骤）后在同一聊天重试；不要重建学习档案。缺少学习档案现在报设置状态，不再误报为“账号不一致”。
+5. **网络临时失败**：结构化连接错误只表示当次调用失败，下一次调用会自动重试；只有 `STUDY_AUTH` 或凭据无法解密才说明登录失效，需要本人重新登录学校。
+6. **章节核对返回 `STUDY_MCP_RESTART_REQUIRED`**：已保存的连接配置或授权与长驻服务不一致，按 §3 的“升级加载”重连 Moodle 服务或重启 DSH，不要改走 CLI 绕过。
+
+以上恢复步骤依赖真实 Harness 重启与学校网络；离线测试覆盖的是启动、工具注册、结构化错误与同聊天懒恢复，不代表真实学校 SSO/MFA 已现场验收。
+
 
 ## 3. 聊天身份规则（与 Codex 一致）
 
@@ -107,7 +125,8 @@
 .\study.cmd status            # 只看本地状态，不联网
 .\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode strict   # CLI 异常后备；正常使用 study_check_chapter
 .\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode strict --force  # CLI 后备且本人明确要求重新核对
-.\study.cmd teaching-event    # 讲解后保存教学位置（stdin 小 JSON；见 SESSION.md）
+.\study.cmd teaching-event    # 兼容旧流程；新教学进度优先用下面的 teaching-save
+.\tools\study\library.cmd teaching-save --course 课程ID   # 追加实际教学事件并回读（stdin 小 JSON；见 MEMORY.md）
 .\study.cmd refresh           # 本人明确要求更新学校信息时才用
 ```
 
@@ -172,7 +191,7 @@
 ## 5. 只读与数据边界
 
 - Moodle MCP 工具仍不写学校状态；新增章节核对会读取授权文件字节并写本地核对回执，其他查询保持原边界；不注册提交、发帖、改完成状态等操作。选课时确认完整初始化后，刷新通过独立资料阶段自动下载、归档与索引授权课程的可访问内容；仅信息或未授权范围不下载。详见 [课程内容同步](COURSE_CONTENT.md)。
-- 所有学习状态写入仍走正式入口：纯教学位置用 `study.cmd teaching-event`（只交本轮变化，程序合并、校验、原子保存并至多重建一次视图），完整核读用 `study.cmd review`，其他状态用 `state_io.py` 等既有入口；锁、版本哈希、快照绑定、操作去重、历史证据保护不变；助手不直接改写 `state.json`。
+- 所有学习状态写入仍走正式入口：新教学进度与原答用 `library.cmd teaching-save --course ID`（追加实际发生时间、聊天/轮次来源与真实原答，保存后回读确认；见 [MEMORY.md](MEMORY.md#教学接续保存与漏记检查)），旧 `study.cmd teaching-event` 继续兼容；完整核读用 `study.cmd review`，其他状态用 `state_io.py` 等既有入口；锁、版本哈希、快照绑定、操作去重、历史证据保护不变；助手不直接改写 `state.json`。
 - 普通问答、查询或纠正本地记忆不触发 Moodle 联网；只有学习启动或本人明确刷新才检查学校信息。
 - DSH 配置里只有本机路径和 `serverName`，不含凭据；Moodle Token 仍由 Windows DPAPI 加密保存在 `.private/`，不进入聊天、状态或 Git。
 
@@ -196,7 +215,7 @@ DSH 适配新增的测试：
 
 ## 7. 已知限制与待验证
 
-- 仅新增章节核对工具不需改配置，但必须重连 MCP 服务（无此入口则重启 DSH）加载；技能目录与 MCP 配置修改后**必须重启 DSH** 才生效；运行中的聊天不会热加载 profile。
+- 仅新增章节核对工具不需改配置，但必须重连 MCP 服务（无此入口则重启 DSH）加载；技能目录与 MCP 配置修改后**必须重启 DSH** 才生效；运行中的聊天不会热加载 profile。源码版未登录时也能启动并注册全部 16 个工具、登录在同一聊天内生效，这已由离线测试（真实 stdio 子进程 + 注入凭据）覆盖，但尚未在真实 Harness 重启流程中端到端验收；真实学校 SSO/MFA、真实 DPAPI 凭据损坏或更换 Windows 账户仍需现场验证。
 - 在聊天中人工上传图片→模型识别的链路尚未在本适配中实测（`read_image` 读取本地文件已实测）。
 - DSH 跨桌面版重启后同一聊天 ID 是否保持，尚未实测；以 `chat_identity.py` 输出与第二次 `continue` 是否复用为准。
 - 真实学校 SSO/MFA、Windows OCR 中文语言包、PPTX/DOCX 经 `office-render` 的清晰度仍需按实际课件验证。

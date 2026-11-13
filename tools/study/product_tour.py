@@ -3,12 +3,16 @@ import argparse
 import copy
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import sys
 
 from state_io import bridge, digest, prepare_state, read, workspace_lock
 
 ROOT = Path(__file__).resolve().parents[2]
+# Personal data may live outside the installed program directory (STUDY_DATA_ROOT);
+# without the override the data root is the program root, exactly as before.
+DATA_ROOT = Path(os.environ.get('STUDY_DATA_ROOT') or ROOT).resolve()
 VERSION = 1
 EXAMPLES = [
     {'say': '我今天有一小时，帮我安排学习', 'does': '结合截止日期、实际进度和可用时间安排任务'},
@@ -82,7 +86,7 @@ def main():
     parser.add_argument('action', choices=('status', 'shown', 'skipped'), nargs='?', default='status')
     parser.add_argument('--chat', default='')
     args = parser.parse_args()
-    path = ROOT / 'Study/_System/state.json'
+    path = DATA_ROOT / 'Study/_System/state.json'
     if args.action == 'status':
         result = tour_status(read(path) if path.exists() else None)
     else:

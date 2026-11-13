@@ -12,12 +12,15 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
+import state_io
 import time
 import unicodedata
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_STATE = ROOT / 'Study/_System/state.json'
+# Personal data may live outside the installed program directory (STUDY_DATA_ROOT);
+# without the override the data root is the program root, exactly as before.
+DATA_ROOT = Path(os.environ.get('STUDY_DATA_ROOT') or ROOT).resolve()
+DEFAULT_STATE = DATA_ROOT / 'Study/_System/state.json'
 SCHEMA = 1
 
 # Search vocabulary is a locator, never authority for an answer or exam scope.
@@ -76,19 +79,7 @@ def resolve_course(state, course_id):
 
 
 def atomic_json(path, data):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, name = tempfile.mkstemp(prefix=path.name+'.', suffix='.tmp', dir=path.parent)
-    try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        read_json(name)
-        os.replace(name, path)
-    finally:
-        if os.path.exists(name):
-            os.unlink(name)
+    return state_io.atomic(path, data)
 
 
 def digest(path):
@@ -918,8 +909,15 @@ def main():
     p=sub.add_parser('evidence-source'); p.add_argument('--course',required=True); p.add_argument('--observation',required=True)
     p=sub.add_parser('memory'); p.add_argument('--course',required=True); p.add_argument('--query'); p.add_argument('--limit',type=int,default=8)
     p=sub.add_parser('memory-correct'); p.add_argument('--course',required=True)
+    p=sub.add_parser('teaching-save'); p.add_argument('--course',required=True)
     p=sub.add_parser('detail'); p.add_argument('collection'); p.add_argument('record_id')
     args=parser.parse_args(); lib=Library(args.state,args.cache_dir)
+    if args.command == 'teaching-save':
+        sys.dont_write_bytecode=True
+        from teaching_progress import save_teaching
+        if hasattr(sys.stdin,'reconfigure'): sys.stdin.reconfigure(encoding='utf-8')
+        print(json.dumps(save_teaching(args.state,args.course,json.load(sys.stdin)),ensure_ascii=False,indent=2))
+        return
     if args.command in {'memory', 'memory-correct'}:
         sys.dont_write_bytecode = True
         if args.command == 'memory':

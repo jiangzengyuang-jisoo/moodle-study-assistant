@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync} from 'node:fs';
+import {cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {dirname, join, relative} from 'node:path';
 import {
   assignArchiveLayouts, authorizationReport, categoryFor, enumerateCourse, externalReason,
   gapMarkdown, htmlToText, planPage, resolveSubject, selectedPages, syncCourseLibrary,
 } from '../tools/moodle/course-library.mjs';
+import {assertProfileAccount, profileAccountStatus} from '../tools/moodle/content-policy.mjs';
 import {validateFileBytes} from '../tools/moodle/course-files.mjs';
 
 const BASE = 'https://school.example/moodle';
@@ -367,5 +368,138 @@ test('gap markdown is generated from a completed report', async () => {
     assert.match(markdown, /课程资料缺口/);
     assert.match(markdown, /MATH|DEMO|moodle-1/);
     assert.match(markdown, /索引/);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('a subpath Moodle deployment keeps its base path and does not self-conflict', async () => {
+  const root = temporaryRoot();
+  try {
+    const snapshotPath = join(root, 'Study/_System/test-snapshot.json');
+    writeFileSync(snapshotPath, JSON.stringify(snapshotFixture()), 'utf8');
+    const state = stateFixture();
+    const report = await syncCourseLibrary({
+      client: syncClient(), root, state, snapshotPath,
+      installBatch: stubInstaller([]), buildIndex: () => ({courses: {}}), batchSize: 4,
+    });
+    assert.equal(report.ok, true);
+    for (const row of report.courses) {
+      assert.equal(row.page_url, `${BASE}/course/view.php?id=${row.moodle_courseid}`);
+    }
+    const latest = JSON.parse(readFileSync(join(root, 'Study/_System/LibrarySync/latest.json'), 'utf8'));
+    assert.deepEqual(latest.school, {site: BASE, user_id: 1});
+    // The report on disk must not make the same configured school look like a
+    // second school, which previously blocked every later sync/check.
+    const boundState = {...state, settings: {...state.settings,
+      profile_account_scope: {schema: 1, site: BASE, user_id: 1}}};
+    assert.equal(profileAccountStatus(boundState, {root}).status, 'bound');
+    assert.equal(assertProfileAccount({state: boundState, root, site: BASE, userId: 1,
+      action: '再次同步'}).status, 'bound');
+    // An explicit report school wins over a legacy page URL that lost the
+    // deployment prefix (old reports written before this fix). A legacy report
+    // without the explicit school still fails closed instead of guessing.
+    const legacy = {courses: [{course_id: 'moodle-1', page_url: 'https://school.example/course/view.php?id=101'}]};
+    writeFileSync(join(root, 'Study/_System/LibrarySync/latest.json'), JSON.stringify(legacy), 'utf8');
+    assert.equal(profileAccountStatus(boundState, {root}).status, 'conflict');
+    writeFileSync(join(root, 'Study/_System/LibrarySync/latest.json'), JSON.stringify({school: {site: BASE, user_id: 1}, ...legacy}), 'utf8');
+    assert.equal(profileAccountStatus(boundState, {root}).status, 'bound');
+    // A real cross-school profile is still rejected.
+    assert.throws(() => assertProfileAccount({state: boundState, root, site: 'https://other.example', userId: 1,
+      action: '再次同步'}), /另一所学校/);
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+test('inline images referenced by an installed HTML page are downloaded and recorded', async () => {
+  const root = temporaryRoot();
+  try {
+    const snapshotPath = join(root, 'Study/_System/test-snapshot.json');
+    writeFileSync(snapshotPath, JSON.stringify(snapshotFixture()), 'utf8');
+    const client = syncClient();
+    const originalTransport = client.transport.bind(client);
+    client.transport = async (url, options) => {
+      const response = await originalTransport(url, options);
+      if (String(url).endsWith('.html')) {
+        const text = await response.text();
+        // The same image appears twice; it must still be queued only once.
+        return new Response(text.replace('</body>',
+          `<img src="${BASE}/pluginfile.php/1/mod_page/content/inline.png"></body>`),
+        {headers: {'content-type': 'text/html'}});
+      }
+      return response;
+    };
+    const report = await syncCourseLibrary({
+      client, root, state: stateFixture(), snapshotPath,
+      installBatch: stubInstaller([]), buildIndex: () => ({courses: {}}), batchSize: 3,
+    });
+    assert.equal(report.ok, true, JSON.stringify(report.errors).slice(0, 2000));
+    const inline = report.items.filter(item => item.filename === 'inline.png');
+    assert.equal(inline.length, 1);
+    assert.equal(inline[0].inline, true);
+    assert.equal(inline[0].status, 'installed');
+    assert.equal(inline[0].course_id, 'moodle-1');
+    assert.equal(inline[0].bytes, PNG.length);
+    assert.match(inline[0].sha256, /^[a-f0-9]{64}$/);
+    assert.equal(client.fetches.filter(url => url.includes('inline.png')).length, 1);
+    const ledger = JSON.parse(readFileSync(join(root, 'Study/_System/LibrarySync/ledger.json'), 'utf8'));
+    const inlineEntries = Object.entries(ledger.entries).filter(([key]) => key.includes('inline.png'));
+    assert.equal(inlineEntries.length, 1);
+    assert.equal(inlineEntries[0][1].status, 'installed');
+  } finally { rmSync(root, {recursive: true, force: true}); }
+});
+
+function archivingInstaller({root, payload}) {
+  const study = join(root, 'Study');
+  return {
+    items: payload.items.map(item => {
+      const source = join(study, item.relative_path);
+      const target = join(study, item.source.course_id, 'Lectures', String(item.source.module_id), item.source.filename);
+      mkdirSync(dirname(target), {recursive: true});
+      cpSync(source, target);
+      unlinkSync(source);
+      return {
+        item_key: item.item_key, status: 'promoted',
+        material_id: 'material-' + item.item_key.replace(/[^A-Za-z0-9]/g, ''),
+        relative_path: relative(study, target).replaceAll('\\', '/'), archived_id: null,
+      };
+    }),
+  };
+}
+
+test('a failed inline image download is retried from the archived HTML without refetching it', async () => {
+  const root = temporaryRoot();
+  try {
+    const snapshotPath = join(root, 'Study/_System/test-snapshot.json');
+    writeFileSync(snapshotPath, JSON.stringify(snapshotFixture()), 'utf8');
+    const state = stateFixture();
+    const firstClient = syncClient({failURL: 'inline.png'});
+    const first = await syncCourseLibrary({
+      client: firstClient, root, state, snapshotPath,
+      installBatch: archivingInstaller, buildIndex: () => ({courses: {}}), batchSize: 3,
+    });
+    assert.equal(first.ok, false);
+    const failedInline = first.items.filter(item => item.filename === 'inline.png');
+    assert.equal(failedInline.length, 1);
+    assert.equal(failedInline[0].status, 'failed');
+    assert(firstClient.fetches.some(url => url.includes('inline.png')));
+
+    // Keep the successfully installed materials so the second run sees the page
+    // as already current rather than downloading it again.
+    const materials = first.items.filter(item => item.kind === 'file' && item.status === 'installed').map(item => ({
+      id: item.material_id, course_id: item.subject, sha256: item.sha256, relative_path: item.relative_path,
+      moodle_file_sources: [{course_id: item.subject, module_id: item.module_id, filepath: item.filepath,
+        remote_filename: item.filename, url: item.url}],
+    }));
+    const resumedState = {...stateFixture(), materials};
+    const secondClient = syncClient();
+    const second = await syncCourseLibrary({
+      client: secondClient, root, state: resumedState, snapshotPath,
+      installBatch: archivingInstaller, buildIndex: () => ({courses: {}}), batchSize: 3,
+    });
+    assert.equal(second.ok, true, JSON.stringify(second.errors).slice(0, 2000));
+    const recovered = second.items.filter(item => item.filename === 'inline.png');
+    assert.equal(recovered.length, 1);
+    assert.equal(recovered[0].status, 'installed');
+    assert(secondClient.fetches.some(url => url.includes('inline.png')));
+    assert.equal(secondClient.fetches.some(url => url.includes('index.html')), false);
+    assert.equal(secondClient.fetches.filter(url => url.includes('inline.png')).length, 1);
   } finally { rmSync(root, {recursive: true, force: true}); }
 });

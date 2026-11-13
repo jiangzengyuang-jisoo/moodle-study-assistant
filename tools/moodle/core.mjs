@@ -1,9 +1,12 @@
 import { saveState } from './state-bridge.mjs';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { MoodleClient } from 'moodle-mcp/dist/moodle-client.js';
 import { redactEvidence } from './refresh.mjs';
 import {connectionError, classifyTransportError} from './connection-errors.mjs';
+
+const programRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 export function normalizeSite(value) {
   const url = new URL(value);
@@ -28,12 +31,41 @@ export function clientTarget(root) {
   return target.client;
 }
 
+// Files that prove a learning profile existed before its primary state file was
+// lost. Initialization must stop instead of creating a blank profile: the next
+// writer (review/daily initialization) records the blank state as
+// state.previous.json and would overwrite the last recoverable copy.
+function recoveryArtifacts(root) {
+  const system = join(root, 'Study', '_System');
+  const candidates = [
+    join(system, 'state.previous.json'),
+    join(system, 'refresh-latest.json'),
+    join(system, 'refresh-last-complete.json'),
+    join(system, 'LibrarySync', 'latest.json'),
+    join(system, 'Backups'),
+    join(system, 'Runtime', 'timings.jsonl'),
+    join(root, '.private', 'moodle-token.dpapi'),
+  ];
+  return candidates.filter((path) => existsSync(path));
+}
+
 export function initialize(root) {
-  const target = clientTarget(root);
+  // client-target.json marks the installed distribution, not personal data: with
+  // a separate data root it must be read from the program directory, otherwise
+  // the data root would silently fall back to the legacy Codex branch.
+  const target = clientTarget(process.env.STUDY_DATA_ROOT ? programRoot : root);
+  const path = join(root, 'Study/_System/state.json');
+  if (!existsSync(path)) {
+    const artifacts = recoveryArtifacts(root);
+    if (artifacts.length) {
+      throw new Error(
+        `学习档案主状态缺失，但仍检测到可恢复记录（${artifacts.join('、')}）。为保证不覆盖最后备份，已停止创建空白档案；请先备份 Study/_System，再由助手核对并从备份恢复。`,
+      );
+    }
+  }
   for (const dir of ['Study/_System', 'Study/_Inbox', '.private', ...(target === 'codex' ? ['.codex'] : [])]) mkdirSync(join(root, dir), {recursive: true});
   const configPath = join(root, 'config.local.json');
   if (!existsSync(configPath)) atomicJSON(configPath, {moodle_url: 'https://moodle.hku.hk', timezone: 'Asia/Hong_Kong'});
-  const path = join(root, 'Study/_System/state.json');
   if (!existsSync(path)) {
     const state = {schema_version: 1, revision: 0, timezone: 'Asia/Hong_Kong',
       study_root: 'Study', created_at: new Date().toISOString(), settings: {
@@ -55,7 +87,7 @@ export function initialize(root) {
   const mcpPath = join(root, '.codex/config.toml');
   if (target === 'codex' && !existsSync(mcpPath)) writeFileSync(mcpPath,
     '[mcp_servers.moodle_study]\ncommand = ' + JSON.stringify(process.execPath.replaceAll('\\', '/')) +
-    '\nargs = [' + JSON.stringify(join(root, 'tools/moodle/run.mjs').replaceAll('\\', '/')) + ', "mcp"]\nstartup_timeout_sec = 60\ntool_timeout_sec = 180\n', 'utf8');
+    '\nargs = [' + JSON.stringify(join(programRoot, 'tools/moodle/run.mjs').replaceAll('\\', '/')) + ', "mcp"]\nstartup_timeout_sec = 60\ntool_timeout_sec = 180\n', 'utf8');
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 

@@ -12,10 +12,13 @@ import math
 import os
 from pathlib import Path
 import re
-import tempfile
+import state_io
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_STATE = ROOT / "Study" / "_System" / "state.json"
+# Personal data may live outside the installed program directory (STUDY_DATA_ROOT);
+# without the override the data root is the program root, exactly as before.
+DATA_ROOT = Path(os.environ.get("STUDY_DATA_ROOT") or ROOT).resolve()
+DEFAULT_STATE = DATA_ROOT / "Study" / "_System" / "state.json"
 HK = timezone(timedelta(hours=8))
 VIEW_NAMES = ("Today Plan.md", "Weekly View.md", "Upcoming.md")
 VERSION = 1
@@ -512,10 +515,11 @@ def render_views(state, now=None):
 
 
 @study_time.state_timezone
-def check_freshness(state, views, now=None):
-    """Check date/source revision and content, including same-day end-time rollover."""
+def check_freshness(state, views, now=None, *, expected=None):
+    """Check against this round's rendering, or render once for standalone callers."""
     now = local_now(now)
-    expected = render_views(state, now)
+    if expected is None:
+        expected = render_views(state, now)
     issues = []
     for name in VIEW_NAMES:
         content = views.get(name)
@@ -538,17 +542,7 @@ def write_views(views, output_dir):
     directory = Path(output_dir)
     directory.mkdir(parents=True, exist_ok=True)
     for name, text in views.items():
-        destination = directory / name
-        if destination.exists() and destination.read_text(encoding="utf-8-sig") == text:
-            continue
-        fd, temporary = tempfile.mkstemp(prefix=".plan-", suffix=".tmp", dir=directory)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-                handle.write(text)
-            os.replace(temporary, destination)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+        state_io.atomic_text(directory / name, text, skip_unchanged=True)
 
 
 def main():

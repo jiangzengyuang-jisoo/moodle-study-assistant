@@ -56,8 +56,7 @@ def _evidence(payload):
 
 @study_time.state_timezone
 def _due_items(state, now, course=None):
-    # Same due/priority rules as review.due, before its legacy prompt selection
-    # and estimate limit, so unprepared legacy entries cannot hide usable ones.
+    # Filter before selecting verified variants; unprepared entries cannot hide usable ones.
     today = now.astimezone(study_time.local_zone()).date()
     items = []
     for item in state.get("review_queue", []):

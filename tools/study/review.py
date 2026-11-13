@@ -2,21 +2,23 @@
 import state_io
 import argparse
 import study_time
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from importlib.metadata import version
 import json
 import os
 from pathlib import Path
 import sys
-import tempfile
+from state_io import atomic_text
 
 from fsrs import Card, Rating, Scheduler
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_STATE = ROOT / "Study" / "_System" / "state.json"
+# Personal data may live outside the installed program directory (STUDY_DATA_ROOT);
+# without the override the data root is the program root, exactly as before.
+DATA_ROOT = Path(os.environ.get("STUDY_DATA_ROOT") or ROOT).resolve()
+DEFAULT_STATE = DATA_ROOT / "Study" / "_System" / "state.json"
 HK = timezone(timedelta(hours=8))
 RATINGS = {"again": Rating.Again, "hard": Rating.Hard, "good": Rating.Good, "easy": Rating.Easy}
-LABELS = {"again": "未独立答出", "hard": "独立答出但困难", "good": "独立答出", "easy": "独立轻松答出"}
 
 
 def timestamp(value=None):
@@ -24,6 +26,19 @@ def timestamp(value=None):
     if result.tzinfo is None or result.utcoffset() is None:
         raise ValueError("时间必须包含时区，例如 +08:00")
     return result.astimezone(timezone.utc)
+
+
+def _package_version(name):
+    """Probe an optional package without failing initialization when absent.
+
+    The plugin's minimal runtime installs fsrs and the document readers; the
+    mathematical verification package (sympy) is optional and only needed by
+    math_check.py, so a missing one must not block review initialization.
+    """
+    try:
+        return version(name)
+    except Exception:
+        return None
 
 
 @study_time.state_timezone
@@ -43,7 +58,8 @@ def initialize(state):
             "mastery_is_not_inferred_from_schedule": True,
         }
     state.setdefault("integrations", {}).setdefault("study_tools", {}).update({
-        "status": "configured", "fsrs_version": version("fsrs"), "sympy_version": version("sympy"),
+        "status": "configured", "fsrs_version": _package_version("fsrs"),
+        "sympy_version": _package_version("sympy"),
         "review_entry": "tools/study/review.py",
         "math_entry": "tools/study/math_check.py",
         "instructions": "docs/TOOLS.md", "local_only": True,
@@ -93,86 +109,6 @@ def record(state, payload):
             "feedback": payload["feedback"], "mastery_updated": False}
 
 
-def questions(item, mistake):
-    # Existing legacy 'prompt' sometimes contains the answer, so prefer test prompts.
-    return item.get("independent_prompts") or ([mistake["check_question"]] if mistake.get("check_question")
-                                              else [item.get("prompt", "请先准备独立检查题")])
-
-
-@study_time.state_timezone
-def due(state, now, minutes=15, course=None):
-    if not 0 <= minutes <= 30:
-        raise ValueError("单次复习预算应为 0–30 分钟，计入当天原有预算")
-    mistakes = {m["id"]: m for m in state.get("mistakes", [])}
-    candidates = []
-    for item in state["review_queue"]:
-        if course and item["course_id"] != course:
-            continue
-        if item.get("status") in {"Completed", "completed", "suspended", "archived"}:
-            continue
-        card = item.get("fsrs", {}).get("card")
-        if card and timestamp(card["due"]) > now:
-            continue
-        if not card and item.get("due_date") and date.fromisoformat(item["due_date"]) > now.astimezone(study_time.local_zone()).date():
-            continue
-        candidates.append(item)
-    candidates.sort(key=lambda x: (0 if x.get("priority") == "High" else 1,
-                                  x.get("due_date") or "9999-12-31", x.get("review_order", 999), x["id"]))
-    chosen, total = [], 0
-    for item in candidates:
-        estimate = item.get("estimated_minutes")
-        cost = estimate.get("max", 5) if isinstance(estimate, dict) else 5
-        if not isinstance(cost, (int, float)) or isinstance(cost, bool) or cost <= 0:
-            cost = 5
-        if total + cost > minutes:
-            continue
-        mistake = mistakes.get(item.get("mistake_id"), {})
-        chosen.append({"id": item["id"], "course_id": item["course_id"],
-                       "title": mistake.get("display_title", item["id"]),
-                       "questions": questions(item, mistake), "estimated_minutes": cost,
-                       "estimate_basis": "助手估算，包含在当天复习预算内",
-                       "material_id": item.get("material_id"), "pages": item.get("pages"),
-                       "first_independent_check": not bool(item.get("fsrs"))})
-        total += cost
-    return {"date": now.astimezone(study_time.local_zone()).date().isoformat(), "budget_minutes": minutes,
-            "estimated_minutes": total, "remaining_candidates": len(candidates) - len(chosen), "items": chosen}
-
-
-@study_time.state_timezone
-def render(state):
-    mistakes = {m["id"]: m for m in state.get("mistakes", [])}
-    lines = ["# 智能复习", "", "每天在原有复习预算内选取约 15–30 分钟。先独立作答，再核对并调整下次复习；讲过不等于掌握。", ""]
-    for item in state["review_queue"]:
-        mistake = mistakes.get(item.get("mistake_id"), {})
-        lines += ["## " + mistake.get("display_title", item["id"]), ""]
-        for prompt in questions(item, mistake):
-            lines += ["- " + prompt]
-        card = item.get("fsrs", {}).get("card")
-        if card:
-            history = item["fsrs"]["history"]
-            lines += ["", "最近表现：" + LABELS[history[-1]["rating"]],
-                      "", "下次复习：" + timestamp(card["due"]).astimezone(study_time.local_zone()).strftime("%Y-%m-%d %H:%M") + "（学习时区；消息触发时安排）"]
-        else:
-            lines += ["", "状态：待首次独立检查，尚未计算个人复习间隔。"]
-        lines += [""]
-    return "\n".join(lines)
-
-
-def atomic_text(path, content):
-    handle, name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        if path.suffix == ".json":
-            json.loads(Path(name).read_text(encoding="utf-8"))
-        os.replace(name, path)
-    finally:
-        if Path(name).exists():
-            Path(name).unlink()
-
-
 @state_io.locked
 def save(path, state, original):
     state_io.prepare_state(path)
@@ -202,42 +138,37 @@ def main():
     commands.add_parser("record")
     commands.add_parser("render")
     args = parser.parse_args()
+    if args.command == "record":
+        raise ValueError("旧作答入口已退役：请用 daily.py attempt 关联具体日包和变式，以核对答案曝光并同步计划")
     with state_io.workspace_lock(args.state):
         state_io.prepare_state(args.state)
+        if not args.state.exists():
+            raise ValueError(
+                '学习档案主状态缺失；不会创建空白档案，也不会覆盖 state.previous.json。'
+                '请先备份 Study/_System，再由助手核对并恢复主状态后继续。')
         original = args.state.read_bytes()
         state = json.loads(original.decode("utf-8-sig"))
-        loop_enabled = state.get("settings", {}).get("learning_loop", {}).get("enabled") is True
-        if loop_enabled and args.command == "record":
-            raise ValueError("复习闭环已启用：请用 daily.py attempt 关联具体日包和变式，以核对答案曝光并同步计划")
         if args.command == "due":
-            if loop_enabled:
-                import copy
-                import learning_loop
-                import planning
-                now = timestamp(args.at)
+            import copy
+            import learning_loop
+            import planning
+            now = timestamp(args.at)
+            with study_time.using_state(state):
                 output = learning_loop.prepare(copy.deepcopy(state), now,
                                                planning.review_budget_limit(state, now, args.minutes), args.course,
                                                remaining_minutes=planning.remaining_study_minutes(state, now))
-                output["read_only_preview"] = True
-                output["next_step"] = "正式题包请运行 daily.py run；此预览未保存新题或修改学习状态"
-            else:
-                output = due(state, timestamp(args.at), args.minutes, args.course)
+            output["read_only_preview"] = True
+            output["next_step"] = "正式题包请运行 daily.py run；此预览未保存新题或修改学习状态"
         else:
-            before = json.dumps(state, sort_keys=True)
             if args.command == "init":
+                before = json.dumps(state, sort_keys=True)
                 initialize(state)
-                output = {"status": "configured", "review_history_created": False}
-            elif args.command == "record":
-                output = record(state, json.load(sys.stdin))
-            else:
-                output = {"status": "rendered"}
-            if json.dumps(state, sort_keys=True) != before:
-                save(args.state, state, original)
-            if loop_enabled:
-                import daily
-                daily.execute(args.state, "render", timestamp())
-            else:
-                atomic_text(args.state.with_name("Review Queue.md"), render(state))
+                if json.dumps(state, sort_keys=True) != before:
+                    save(args.state, state, original)
+            import daily
+            daily.execute(args.state, "render", timestamp())
+            output = ({"status": "configured", "review_history_created": False}
+                      if args.command == "init" else {"status": "rendered"})
         print(json.dumps(output, ensure_ascii=False))
 
 
