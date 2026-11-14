@@ -8,6 +8,7 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 | Date | Main changes |
 | --- | --- |
+| [2026-11-15](#2026-11-15) | Make the browser login refresh tip prominent in the Chinese PDF tutorial |
 | [2026-11-14](#2026-11-14) | Pair new concepts with English terms; prominently disclose AI-targeted instructions found in materials |
 | [2026-11-12](#2026-11-12) | Consolidate review and file writes; skip unchanged pages |
 | [2026-11-10](#2026-11-10) | Unify progress and verify saves; preserve practice and Feynman checks after important concepts |
@@ -23,6 +24,14 @@ Existing users should first read the [upgrade steps that preserve learning recor
 | [2026-10-16](#2026-10-16) | Built-in self-study tutor with graded hints, Feynman explanations, transfer practice, and independent checks |
 | [2026-10-11](#2026-10-11) | Daily review questions, learning feedback, weekly reviews, exam coverage checks, and mock exams |
 | [2026-09-22](#2026-09-22) | Initial release: Windows installation, school account connection, course information, and learning records |
+
+## 2026-11-15
+
+### Prominent login tip in the Chinese tutorial
+
+- Page 8 now uses an orange callout and larger bold text for a spinning browser login page: press F5 or click Refresh, refresh only the web page, and keep the installation task running.
+- Usage: download the Chinese PDF again. The English PDF and application behavior are unchanged.
+- Validation: inspected the rendered page, 14-page count, unchanged text on other pages, and preserved link counts. No new live login test was performed; refreshing does not resolve every login failure.
 
 ## 2026-11-14
 
