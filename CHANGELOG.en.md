@@ -8,6 +8,7 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 | Date | Main changes |
 | --- | --- |
+| [2026-11-16](#2026-11-16) | Verify current teacher notices for exams and deadlines; match the class and lead with uncertainty when verification fails |
 | [2026-11-15](#2026-11-15) | Make the browser login refresh tip prominent in the Chinese PDF tutorial |
 | [2026-11-14](#2026-11-14) | Pair new concepts with English terms; prominently disclose AI-targeted instructions found in materials |
 | [2026-11-12](#2026-11-12) | Consolidate review and file writes; skip unchanged pages |
@@ -24,6 +25,16 @@ Existing users should first read the [upgrade steps that preserve learning recor
 | [2026-10-16](#2026-10-16) | Built-in self-study tutor with graded hints, Feynman explanations, transfer practice, and independent checks |
 | [2026-10-11](#2026-10-11) | Daily review questions, learning feedback, weekly reviews, exam coverage checks, and mock exams |
 | [2026-09-22](#2026-09-22) | Initial release: Windows installation, school account connection, course information, and learning records |
+
+## 2026-11-16
+
+### Verify current exam and deadline notices
+
+- Read relevant teacher announcements, edits and replies before comparing older course pages, calendars and local records. Match the class, timezone, start/end time, venue and scope; apply explicit later corrections field by field.
+- A reported change, explicit latest-information request or conflicting evidence requires another scoped check even in the same chat. On failure, lead with “The latest arrangement has not been confirmed”; label old records as historical references with their verification date.
+- Preserve old/new values and evidence through existing guarded saves. Scoped queries do not advance full-course review; ordinary teaching does not trigger extra school refreshes.
+- Usage: update source instructions and reread AGENTS.md and docs/NOTICE_VERIFICATION.md; no learning-profile reset is needed. Existing installed packages do not update with source edits. No plugin package is rebuilt, installed or published in this change.
+- Validation: reviewed seven scenarios (same-class correction, other-class/student messages, same-chat correction, missing body/pagination, connection failure, platform conflict, and partial-field changes), entry links, cross-version rules and diffs. Instructions/docs only; no new model end-to-end test or guarantee against stale answers.
 
 ## 2026-11-15
 
