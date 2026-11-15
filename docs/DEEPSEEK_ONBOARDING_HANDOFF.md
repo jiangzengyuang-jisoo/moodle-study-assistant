@@ -12,7 +12,7 @@
 
 Codex 版已在本机源码目录实现共同部分：
 
-`C:\Users\Peter Jiang\Desktop\workspace\HKU学习\GitHub发布\moodle-study-assistant`
+`D:\workspace-d盘\HKU学习\GitHub发布\moodle-study-assistant`
 
 先读该目录最新 Git 提交及 `docs/CHAT_ONBOARDING.md`、`tools/study/product_tour.py`、`tools/moodle/course-selection.mjs`、相关测试，再对照你当前项目的 `AGENTS.md` 和 Git 状态逐项移植。该目录是参考源码，不含本任务对个人学习档案的修改；不要读取参考目录的 Study、.private 或本机配置。若当前 Harness 不能访问此参考源码，明确指出所需代码文件，不假装已经读过。
 
