@@ -174,9 +174,9 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
+| [2026-11-16](CHANGELOG.en.md#2026-11-16) | Verify current teacher notices for exams and deadlines; match the class and lead with uncertainty when verification fails |
 | [2026-11-14](docs/UPDATE_TERMS_ALERTS_2026-11-14.md) | Additional candidate `trial.8` adds bilingual terms and prominent AI-targeted instruction alerts to the checkout and plugin; see the [update note](docs/UPDATE_TERMS_ALERTS_2026-11-14.md). Not installed or published. |
 | [2026-11-13](CHANGELOG.en.md#2026-11-13) | Plugin candidate `0.6.0-trial.6` rebuild: packages the 2026-11-12 source-maintenance fixes (retired legacy review write path, shared atomic writers that keep unchanged pages, CLI argument preflight). After an independent unpack, 99 packaged source files match the working tree byte-for-byte; Node **299**, `tests/` Python **133** and `tools/study` Python **686** tests pass, and the unpacked artifact passes `verify-plugin` 36/36 and `verify-study-tools` 12/12 (`npm audit`: 0 vulnerabilities). The package was **not installed into the current Harness and not published** this round; the real DSH/school acceptance record still belongs to `0.6.0-trial.4`, and real SSO/MFA sign-in plus the desktop mouse-click install walkthrough remain unverified |
-| [2026-11-12](docs/UPDATE_REPORT_2026-11-12-maintenance-deepseek.md) | Source maintenance: legacy profiles now use guarded read-only review previews; direct legacy recording is retired; shared atomic writers retain recovery protections; unchanged pages keep mtimes and freshness checks generate plans once; CLI syntax errors stop before credentials/network. Existing teaching progress stays, absent personal scripts are not added. Target tests: **1,118 passed**. No trial package rebuild or real-school validation this round; local commit only, not pushed |
 
 Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.en.md) for validation details and known limitations.
 
