@@ -28,6 +28,13 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-16
 
+### Consolidate instructions and clarify boundaries
+
+- Consolidate repeated exam-notice instructions while retaining mandatory checks for the first current answer, reported changes, latest-information requests and conflicts. Chapter receipts do not verify notices.
+- Clarify timely, read-back-verified teaching saves and distinguish cache building, read-only context and authorized archive maintenance. Preserve this client's collection, authorization, teaching and safety rules.
+- Usage: update source documents and reread AGENTS.md and the relevant workflow; no profile reset is needed. No new skill, program or personal-data change, plugin rebuild or installation is included.
+- Validation: review diffs, links and six scenarios (teaching, direct answers, exam changes, real-answer saves, full discussion review and connection failures), and verify programs and pre-existing edits are preserved. Static checks only; no new model end-to-end or live-school test.
+
 ### Verify current exam and deadline notices
 
 - Read relevant teacher announcements, edits and replies before comparing older course pages, calendars and local records. Match the class, timezone, start/end time, venue and scope; apply explicit later corrections field by field.

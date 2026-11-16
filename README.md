@@ -174,7 +174,7 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
-| [2026-11-16](CHANGELOG.en.md#2026-11-16) | Verify current teacher notices for exams and deadlines; match the class and lead with uncertainty when verification fails |
+| [2026-11-16](CHANGELOG.en.md#2026-11-16) | Verify current teacher notices for exams and deadlines; match the class and lead with uncertainty when verification fails; consolidate rules and clarify notice rechecks, timely saves and read-only maintenance |
 | [2026-11-14](CHANGELOG.en.md#2026-11-14) | Pair new concepts with English terms and prominently disclose AI-targeted instructions found in materials |
 | [2026-11-12](docs/UPDATE_REPORT_2026-11-12.en.md) | Publish verified teaching saves and review simplification; skip unchanged pages, with validation and upgrade notes |
 
