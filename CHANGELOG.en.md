@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-17 · Narrow-screen formulas
+
+- Add short notation, nearby symbol definitions, split long equations, and step-by-step text fallbacks for complex formulas to reduce clipping in narrow chats.
+- Assistants use the policy after reading the updated project rules and tutoring guide. Checked policy parity across editions, links and Git diffs. Documentation only; actual client rendering was not tested, and clipping cannot be ruled out on every device. No plugin was packaged, installed or published in this update.
+
 **English** · [简体中文](CHANGELOG.md)
 
 This log records how each update affects studying. Dates follow code commits in Hong Kong time (UTC+8). Earlier entries were reconstructed from commit history on 2026-10-30; they do not imply that separate installation packages were released on those dates. Entries describe behavior at the time of each update; later entries may supersede it. Linked detailed guides are primarily in Chinese.
