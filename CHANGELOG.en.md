@@ -35,6 +35,13 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-16
 
+### Fix the courseware rules actually loaded by the DeepSeek plugin
+
+- Add the reviewed-body prerequisite, pause conditions and reviewed-material limits for targeted practice to the always-on plugin rules and plugin skill entry, without relying on source-root rules being loaded.
+- Disclose failed update verification briefly before first continuing in a chat for a material scope. Do not repeat footers for unchanged scope and circumstances; explain new scope, changed circumstances or learner questions accurately. Align source teaching, response and recovery guidance.
+- Usage and limits: reread updated source rules; plugin resource sources are fixed, but installed plugins need a later rebuild and upgrade. No plugin build, installation, publication, live-school or model end-to-end validation is performed in this change.
+- Checks: verify plugin registration paths, internal resource links, obsolete wording and isolated staging; run existing request-routing rule checks.
+
 ### Require courseware body review before teaching
 
 - Pause affected teaching until the required courseware body has been obtained and reviewed; do not substitute general knowledge. Filenames, catalogs and outlines do not count as reading.
