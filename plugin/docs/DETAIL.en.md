@@ -67,4 +67,3 @@ Each step reports its status in chat. After a successful sign-in or a data-locat
 ## Uninstall and recover
 
 Uninstall from **Plugins**. Your data folder and the Harness support folder are kept. Reinstall the plugin, choose the same data folder and reconnect the school account if the saved sign-in has expired. Upgrading in the middle of setup does not lose progress either: reopening the chat continues from the current step.
-

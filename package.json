@@ -5,7 +5,9 @@
   "type": "module",
   "description": "Local Moodle learning loop, current study plans and source-grounded exam practice",
   "license": "MIT",
-  "engines": {"node": ">=22"},
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "postinstall": "node tools/moodle/patch-upstream.mjs",
     "init": "node tools/moodle/run.mjs init",

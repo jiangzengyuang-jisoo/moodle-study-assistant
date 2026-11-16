@@ -6,6 +6,12 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
+**Download the beginner tutorial (PDF): [English](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf) · [简体中文](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf)**
+
+Preview on GitHub: [English](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/blob/deepseek/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf) · [简体中文](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/blob/deepseek/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf). If a PDF opens in your browser, use its download button or Ctrl+S to save it.
+
+The 14-page tutorial covers both Codex and DeepSeek Harness: choosing an edition, installing the app and dependencies, creating a workspace, school sign-in, daily study, separate chats for different topics, and GitHub feedback. The English edition includes translated setup prompts and explanations of the Chinese screenshot labels.
+
 [Why use it?](#why-use-it) · [Study examples](#study-examples) · [Get started](#get-started) · [FAQ and privacy](#faq-and-privacy) · [Updates](#recent-updates)
 
 A personal course workspace used through a **DeepSeek Harness chat**. Keep slides, handouts, exercises, and learning records on your computer. Connect Moodle to bring in assignment requirements, deadlines, announcements, and discussions, then use that context for explanations, practice, and exam preparation.
@@ -176,13 +182,15 @@ This source maintenance fixes chapter verification, missing-version recovery and
 
 Current public version: **0.5.0**.
 
+This update covers source installations; no Harness plugin is published. Preserve your learning profile and local credentials, rerun setup after updating, then fully restart Harness.
+
 Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANGELOG.md).
 
 | Date | Change |
 | --- | --- |
+| [2026-11-17](docs/UPDATE_REPORT_2026-11-17-deepseek.en.md) | Publish chapter timestamp sync, authorized acquisition, failure recovery and scanned-page reading; preserve public tutorials. Source only, no new plugin package |
 | [2026-11-16](CHANGELOG.en.md#2026-11-16) | Verify current teacher notices for exams and deadlines; match the class and lead with uncertainty when verification fails; consolidate rules and clarify notice rechecks, timely saves and read-only maintenance; require reviewed courseware content before teaching and limit partial practice to reviewed materials; align plugin-loaded courseware rules and first-only update notices; Automatically acquire missing lesson materials under existing course grants, without repeated download permission prompts Fix ambiguous chapter discovery and acquisition across mixed-grant pages; align release materials with the frozen trial.8 package without claiming it contains today's source fixes. |
 | [2026-11-14](docs/UPDATE_TERMS_ALERTS_2026-11-14.md) | Additional candidate `trial.8` adds bilingual terms and prominent AI-targeted instruction alerts to the checkout and plugin; see the [update note](docs/UPDATE_TERMS_ALERTS_2026-11-14.md). Not installed or published. |
-| [2026-11-13](CHANGELOG.en.md#2026-11-13) | Plugin candidate `0.6.0-trial.6` rebuild: packages the 2026-11-12 source-maintenance fixes (retired legacy review write path, shared atomic writers that keep unchanged pages, CLI argument preflight). After an independent unpack, 99 packaged source files match the working tree byte-for-byte; Node **299**, `tests/` Python **133** and `tools/study` Python **686** tests pass, and the unpacked artifact passes `verify-plugin` 36/36 and `verify-study-tools` 12/12 (`npm audit`: 0 vulnerabilities). The package was **not installed into the current Harness and not published** this round; the real DSH/school acceptance record still belongs to `0.6.0-trial.4`, and real SSO/MFA sign-in plus the desktop mouse-click install walkthrough remain unverified |
 
 Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.en.md) for validation details and known limitations.
 
@@ -195,8 +203,3 @@ Detailed guides are currently primarily in Chinese:
 For a bug report or improvement, [open an issue](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/issues). Describe the expected behavior, actual result, and reproduction steps without credentials, private course content, or learning records. Code changes should follow [AGENTS.md](AGENTS.md) and the checks in [docs/TOOLS.md](docs/TOOLS.md#验证与发布).
 
 Licensed under the [MIT License](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md) for dependencies. This project is not officially affiliated with OpenAI, HKU, or Moodle.
-
-
-## 2026-11-16 — Scanned lesson reading
-
-Scanned PDFs now validate rendered pages separately from text extraction, retain the successful timestamp, and report required visual reading. No OCR or mastery claim is implied; corrupt/blank originals still fail. Validation includes raster PDF tests and actual Chapter 9 files in isolated update/failure scenarios. Source update only; no plugin package or installation.

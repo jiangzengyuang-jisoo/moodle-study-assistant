@@ -6,6 +6,12 @@
 
 [English](README.md) · **简体中文**
 
+**下载零基础教程（PDF）：[Moodle学习助手教程 · 中文](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf) · [English](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf)**
+
+也可先在 GitHub 预览：[中文版](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/blob/deepseek/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf) · [English](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/blob/deepseek/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf)。如果浏览器直接打开 PDF，点击下载按钮或按 Ctrl+S 保存到电脑。
+
+14 页教程同时介绍 Codex 与 DeepSeek Harness 两条路线，包括版本选择、客户端与环境安装、工作区、学校登录、日常学习、不同话题分开聊天，以及 GitHub 问题反馈。英文版已适配安装提示词，并解释截图中的中文按钮。
+
 [为什么使用](#为什么使用) · [学习示例](#学习示例) · [安装与开始使用](#安装与开始使用) · [常见问题与隐私](#常见问题与隐私) · [最近更新](#最近更新)
 
 这是一个在 **DeepSeek Harness 聊天窗口里使用的个人课程学习工作区**。课件、讲义、习题和学习记录保存在自己的电脑上，再结合 Moodle 中的作业要求、截止日期、公告和讨论，为讲解、练习和备考提供依据。
@@ -172,13 +178,15 @@
 
 当前公开版本：**0.5.0**。
 
+本次同步源码安装版，未发布 Harness 插件。升级前保留学习档案与本机授权，更新后重跑设置并完整重启 Harness。
+
 完整历史：[中文更新日志](CHANGELOG.md) · [English changelog](CHANGELOG.en.md)。
 
 | 日期 | 更新内容 |
 | --- | --- |
+| [2026-11-17](docs/UPDATE_REPORT_2026-11-17-deepseek.md) | 推送章节时间戳同步、授权补齐、失败恢复和扫描原页阅读；保留公开教程，仅更新源码 |
 | [2026-11-16](CHANGELOG.md#2026-11-16) | 考试与截止先核对教师最新通知；按班级识别变更，失败时先说明未确认；精简重复规则，明确通知重查、及时保存与只读维护边界；教学须先核读课件正文，缺资料时专项练习仅限已核读范围；补齐插件实际加载的课件规则，统一首次提示与后续去重; 自动补齐学习所需课件，已授权课程不再逐份或逐聊天询问下载许可 修复新增课件归属含糊与混合授权页面的补齐边界；发布材料对齐冻结 trial.8 包，明确该包不含今天的源码修复。 |
 | [2026-11-14](docs/UPDATE_TERMS_ALERTS_2026-11-14.md) | 本轮另新增 `trial.8`：本体和插件补齐中英术语及 AI 定向指令醒目提醒，见[更新记录](docs/UPDATE_TERMS_ALERTS_2026-11-14.md)；尚未安装或发布。 |
-| [2026-11-13](CHANGELOG.md#2026-11-13) | 插件候选包 `0.6.0-trial.6` 重建：把 2026-11-12 的源码维护修复（旧复习写入口退役、公共原子写入与不变页面不重写、CLI 参数前置校验）纳入插件包。独立解包后包内 99 个源码文件与工作区逐字节一致；Node **299**、`tests/` Python **133**、`tools/study` Python **686** 项测试通过，解包产物 `verify-plugin` 36/36、`verify-study-tools` 12/12（`npm audit` 0 漏洞）。本包**未安装到当前 Harness、未对外发布**；真实 DSH/学校验收记录仍属于 `0.6.0-trial.4`，真实 SSO/MFA 页面登录与桌面鼠标点击安装仍未验证 |
 
 离线测试不代表真实学校登录或所有安装环境已验证。具体检查和已知限制见[更新日志](CHANGELOG.md)。
 

@@ -18,7 +18,10 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 | Date | Main changes |
 | --- | --- |
+| [2026-11-17](#2026-11-17) | DeepSeek source update: chapter timestamps, recovery, scanned-page reading and retained tutorials |
 | [2026-11-16](#2026-11-16) | Verify current teacher notices for exams and deadlines; match the class and lead with uncertainty when verification fails |
+| [2026-11-15](#2026-11-15) | Make the browser login refresh tip prominent in the Chinese PDF tutorial |
+| [2026-11-14](#2026-11-14) | Sync DeepSeek core: teaching saves and continuity, review and safe writes, setup/login recovery, material synchronization and encoding fixes |
 | [2026-11-13](#2026-11-13) | Plugin candidate `0.6.0-trial.6` rebuild: packages the 2026-11-12 source-maintenance fixes (retired legacy review write path, shared atomic writers with unchanged-page preservation, CLI argument preflight); 99 packaged source files match the working tree byte-for-byte after an independent unpack, 1,118 regressions pass, and the unpacked artifact passes `verify-plugin` 36/36 and `verify-study-tools` 12/12. This package was **not installed into the current Harness and not published**; the real DSH/school acceptance record still belongs to `0.6.0-trial.4`, and the old `0.6.0-trial.5` package is kept for rollback |
 | [2026-11-12](#2026-11-12) | Source maintenance: retire legacy review branches, share safe writers, keep unchanged pages and preflight CLI arguments (1,118 passing tests; no plugin rebuild this round). Supplementary-audit fixes and final plugin rebuild: reinstalling no longer replaces the last `state.previous.json` backup with a blank profile; schools deployed under a subpath are no longer treated as a different school; inline images in HTML bodies are no longer silently missed (already-installed pages, failed-image retry and multi-source dedupe included); the plugin gains the official `study_teaching_save` entry and data-directory protection; `0.6.0-trial.4` is rebuilt and verified with a real DSH install, real school connection/incremental sync, teaching save, continuation after a full restart, and downgrade/upgrade data retention. Pre-release audit fixes on the same date: data-directory protection now covers the whole installed plugin package, `study_job_status` looks up the requested job id, dependency advisories are cleared (SDK and zod upgrades; `npm audit` reports 0 vulnerabilities) and release verification now uses one target; `0.6.0-trial.5` is rebuilt and passes offline tests plus isolated-unpack verification (the real DSH/school acceptance record still belongs to `0.6.0-trial.4`) |
 | [2026-11-11](#2026-11-11) | Fix missed and misreported learning progress: overview, course continuation and memory queries share one `teaching_progress` reader ordered by actual occurrence time; add a `teaching-save` entry that appends occurrence time, chat/turn source and real original answers, then verifies the readback; answered, skipped and answer-shown questions no longer remain current pending prompts. Student availability fixes: a source-installed MCP server starts and registers all 16 tools before school login and recovers in the same chat after login without another restart; `install` now reports a configuration conflict with zero writes and a non-zero exit instead of a false "Setup complete"; the plugin runtime uses graded local health checks and can rebuild a missing pip, a stale success marker or a corrupted interpreter with accurate next steps. Recovery-loop follow-up: a damaged dependency is really reinstalled; the sign-in component is graded after a venv rebuild instead of trusting the old marker; the installer rejects duplicate same-name MCP entries, a missing skills directory and corrupted generated blocks (and the setup.ps1 fallback verifies status, not just the install exit code); re-login recovery refreshes the connection, cached API support and account parameters; cold-start chapter receipts are bound to the saved connection; the host fallback diagnosis matches the MCP one; the plugin package is rebuilt as 0.6.0-trial.4 |
@@ -37,7 +40,19 @@ Existing users should first read the [upgrade steps that preserve learning recor
 | [2026-10-11](#2026-10-11) | Daily review questions, learning feedback, weekly reviews, exam coverage checks, and mock exams |
 | [2026-09-22](#2026-09-22) | Initial release: Windows installation, school account connection, course information, and learning records |
 
+## 2026-11-17
+
+### Publish the DeepSeek source update
+
+- [Update report](docs/UPDATE_REPORT_2026-11-17-deepseek.en.md): merge development through `47f6799` with public `5c46a81`, preserving tutorials; timestamp-based acquisition, recovery and scanned-page reading.
+- Validation: **1,150 distinct tests passed: 323 Node, 133 installation-entry Python and 694 study-tool Python; zero skips**. The first Node run passed 322/323 because one test requires `STUDY_PYTHON`; after setting it, all 9 tests in the affected suite passed (not counted twice). The test instructions now include that setting. Synthetic profiles and simulated school responses; no live Harness, school login or online download verification.
+- Source, tests and documentation only. No plugin rebuild, npm publication or GitHub Release; frozen trial.8 does not contain the latest engine changes. Existing development-document edits remain excluded.
+
 ## 2026-11-16
+
+### Scanned lesson reading
+
+Scanned PDFs now validate rendered pages separately from text extraction, retain the successful timestamp, and report required visual reading. No OCR or mastery claim is implied; corrupt/blank originals still fail. Validation includes raster PDF tests and actual Chapter 9 files in isolated update/failure scenarios. Source update only; no plugin package or installation.
 
 ### Chapter verification and learning-flow combination fixes
 
@@ -94,6 +109,14 @@ Existing users should first read the [upgrade steps that preserve learning recor
 - Usage: update source instructions and reread AGENTS.md and docs/NOTICE_VERIFICATION.md; no learning-profile reset is needed. Existing installed packages do not update with source edits. No plugin package is rebuilt, installed or published in this change.
 - Validation: reviewed seven scenarios (same-class correction, other-class/student messages, same-chat correction, missing body/pagination, connection failure, platform conflict, and partial-field changes), entry links, cross-version rules and diffs. Instructions/docs only; no new model end-to-end test or guarantee against stale answers.
 
+## 2026-11-15
+
+### Prominent login tip in the Chinese tutorial
+
+- Page 8 now uses an orange callout and larger bold text for a spinning browser login page: press F5 or click Refresh, refresh only the web page, and keep the installation task running.
+- Usage: download the Chinese PDF again. The English PDF and application behavior are unchanged.
+- Validation: inspected the rendered page, 14-page count, unchanged text on other pages, and preserved link counts. No new live login test was performed; refreshing does not resolve every login failure.
+
 ## 2026-11-14
 
 ### Bilingual terminology and AI-targeted instruction alerts (checkout and plugin)
@@ -102,6 +125,27 @@ Existing users should first read the [upgrade steps that preserve learning recor
 - Distinguish uncertain text, ordinary assignment requirements, course AI restrictions and quoted examples. Neither execute nor silently ignore targeted instructions or assert instructor intent. Original-page and OCR readability limit detection; complete detection is not guaranteed.
 - The new candidate is `0.6.0-trial.8`; older packages are retained. Only behavior rules and the plugin package version change, not engine code or personal learning records. Checkout users update the rule files; plugin users must load the new package and restart the plugin.
 - Validation scope and package checks are recorded in the [update note](docs/UPDATE_TERMS_ALERTS_2026-11-14.md). This is not a classroom detection-rate or model-compliance evaluation. Not installed into the current Harness, pushed or published. Earlier trial.7 results under this date remain historical.
+
+
+### Bilingual terminology and material instruction alerts (core)
+
+- Pair key concepts, technical terms, methods and chart names with English on first use, expand abbreviations and prefer course wording. Connect English questions to previously learned concepts and check for omitted terms before responding.
+- Prominently disclose AI-targeted output instructions found in assignments or other materials before the affected explanation or answer, including an excerpt, location and possible effect. Neither execute nor silently ignore them. Mark uncertainty and distinguish ordinary requirements, course AI policies and quoted examples without asserting instructor intent.
+- Checked the three rule entry points, documentation consistency, skill format and Git diff. Only core instructions and documentation changed, not runtime code. No model-behavior or real-material detection evaluation was performed; complete hidden-instruction detection is not guaranteed.
+- After updating the checkout, read `AGENTS.md`, `SKILL.md` and `docs/TUTORING.md`. No learning-profile reset or full Moodle refresh is needed.
+
+### DeepSeek core update (source installation)
+
+This update brings previously local core changes to the `deepseek` branch. It excludes the Harness plugin, marketplace materials and trial packages; the source version remains 0.5.0.
+
+- Teaching continuity and saves: overview, course context and memory queries share progress selection based on when learning actually happened. The new `library.cmd teaching-save --course ID` appends teaching events, original answers and next steps, then reads back the saved result. Repeated requests are idempotent and stale revisions cannot overwrite newer data. Existing answers, grades and FSRS history remain intact.
+- Tutoring and review: interpret requests to continue, ask for help, skip or switch by intent; retain alternating explanations and practice plus Feynman checks after important concepts. Review previews and pages use shared paths. Retire the legacy `review.py record` writer in favor of `daily.py attempt`; answered, skipped and answer-exposed questions no longer appear as pending work.
+- Files and encoding: state, caches, material versions and generated pages share safe writes; unchanged pages are not rewritten. Legacy UTF-8 BOM and Windows line endings no longer make an unchanged page appear stale, while real content changes remain detectable. Initialization stops when the primary profile is missing but its recovery backup exists.
+- Setup and connection: Harness configuration conflicts now produce a failure, and setup checks persisted configuration before reporting completion. The Moodle service starts and registers tools before login; users can retry in the same chat after login. Fix reuse of older connections and cached API-support answers during re-login, and bind chapter receipts to the current saved school connection.
+- Materials and arguments: preserve school subpath identity and improve synchronization and source handling for embedded HTML resources. Validate CLI arguments before reading a profile or connecting to school. Update locked MCP/Zod and related Node dependencies.
+- Validation: all 243 Node tests, 131 setup/entry Python tests and 688 study-tool Python tests passed in an isolated core-only copy: 1,062 total with zero skips; the Node production dependency audit reported zero vulnerabilities. Tests use synthetic courses and temporary profiles. Real school SSO/MFA, full installation on a new computer and Harness desktop restart continuity were not revalidated and still require separate live checks.
+- Upgrade: back up and preserve `Study/`, `.private/` and local configuration, update the source and run `setup.ps1` to update dependencies and client integration. Resolve any reported path conflicts, then fully restart Harness. Do not delete learning records, replace them with a blank profile or mix data from another account.
+
 
 ## 2026-11-13
 
@@ -651,8 +695,3 @@ Installation and usage start from an empty profile, with each student using thei
 Follow the [beginner guide](docs/新手使用指南.md) to install and connect. The school must enable the relevant Moodle services. Browser-assisted login remains experimental. The project requires your own AI client and does not include a model or subscription.
 
 [Initial commit ec32b60](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/commit/ec32b6077facd4734f00a330330c42487de6cab3)
-
-
-## 2026-11-16 — Scanned lesson reading
-
-Scanned PDFs now validate rendered pages separately from text extraction, retain the successful timestamp, and report required visual reading. No OCR or mastery claim is implied; corrupt/blank originals still fail. Validation includes raster PDF tests and actual Chapter 9 files in isolated update/failure scenarios. Source update only; no plugin package or installation.
