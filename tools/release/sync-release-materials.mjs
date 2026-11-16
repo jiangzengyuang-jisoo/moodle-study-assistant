@@ -29,7 +29,6 @@ function sourceFiles(root, relativeDir) {
 
 function copyTarget(source) {
   if (source === 'docs/PLUGIN_TRIAL_GUIDE.md') return 'release/使用说明.md'
-  if (source === 'docs/PLUGIN_RELEASE_NOTES.md') return 'release/发布说明.md'
   if (source.startsWith('docs/market/')) return source.replace('docs/market/', 'release/市场提交材料/')
   return source
 }
@@ -91,7 +90,7 @@ export function syncReleaseMaterials({ root = defaultRoot, check = false } = {})
 
   // Prepare everything, including input validation, before writing any output.
   const files = new Map()
-  const sources = ['docs/PLUGIN_TRIAL_GUIDE.md', 'docs/PLUGIN_RELEASE_NOTES.md', ...sourceFiles(root, 'docs/market')]
+  const sources = ['docs/PLUGIN_TRIAL_GUIDE.md', ...sourceFiles(root, 'docs/market')]
   for (const source of sources) {
     const target = copyTarget(source)
     const bytes = readFileSync(join(root, source))
@@ -128,14 +127,14 @@ export function syncReleaseMaterials({ root = defaultRoot, check = false } = {})
     '# 发布材料与本地候选', '',
     '> 本目录由 `npm run sync:release` 从当前文档与已冻结的安装包生成。',
     '> 同步只整理本地材料，不执行或证明 npm/Pages 已发布，也不代表通过运行或真机验收。',
-    '> 公开状态、验收结果及发布操作以 [发布说明](发布说明.md) 和 [发布清单](市场提交材料/PUBLISH_PLAN.md) 为准。', '',
+    '> 公开状态、验收结果及发布操作以 [当前候选](市场提交材料/CURRENT_CANDIDATE.md) 和 [发布清单](市场提交材料/PUBLISH_PLAN.md) 为准。', '',
     `当前候选：**${manifest.name}@${candidate.version}**。`, '',
     `- 安装包：[${candidate.tarball}](${candidate.tarball})`,
     `- 大小：${candidate.sizeBytes} 字节；${candidate.entries} 个 tar 条目；${candidate.bundledDependencies} 个内置依赖包。`,
     `- SHA-256：\`${candidate.sha256}\``,
     `- 构建来源：\`${candidate.builtFromCommit ?? '未记录'}\`；构建时间：\`${candidate.builtAt ?? '未记录'}\`。`,
     '- 机器可读元数据：[release-manifest.json](release-manifest.json)；校验清单：[SHA256SUMS.txt](SHA256SUMS.txt)。',
-    '- 学生说明：[使用说明](使用说明.md)；发布说明：[发布说明](发布说明.md)。',
+    '- 学生说明：[使用说明](使用说明.md)；版本历史：[更新日志](../CHANGELOG.md)。',
     '- 社区目录材料：[市场提交材料](市场提交材料/README.md)。',
     pagesExist ? `- 站点准备文件：\`pages/\`；保留的时间戳 ${pageTimestamp} 仅为准备值，不证明已发布。正式发布时按发布清单重新生成。` : '- 站点尚未生成；正式发布时按发布清单生成 `pages/`，本次同步不创建站点。', '',
     '## 历史安装包', '',
@@ -150,7 +149,7 @@ export function syncReleaseMaterials({ root = defaultRoot, check = false } = {})
     ...candidate,
     verificationStatus: 'unverified',
     publicationStatus: 'unverified',
-    note: 'Metadata and hashes only. Runtime acceptance and public release are not verified by this command; consult the release notes and publishing plan.',
+    note: 'Metadata and hashes only. Runtime acceptance and public release are not verified by this command; consult the current candidate and publishing plan.',
     pages: { generated: pagesExist, preparationTimestamp: pageTimestamp },
     managedFiles: [...files.keys(), 'release-manifest.json', 'SHA256SUMS.txt'].sort(),
   }))

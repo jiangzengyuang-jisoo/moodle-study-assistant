@@ -173,7 +173,7 @@ node tools/moodle/run.mjs chapter-check --course 课程ID --section "Topic 5" [-
 - 只调用学校只读 API；不开始测验尝试、不提交作业、不替用户作答学校测验、不发帖、不发邮件、不修改学校完成状态。
 - 不读取或导出浏览器 Cookie；密码和 MFA 只由本人在学校网页输入；Token 不写进聊天、状态、日志或 Git。
 - 下载内容和文本捕获只保存在本地被 Git 忽略的 `Study/`，不上传；AI 读取内容时可能发送给模型服务商，见 [PRIVACY.md](PRIVACY.md)。
-- 不导入或合并其他电脑、作者或他人的个人资料、学习记录与凭据；换电脑或换 Windows 账户按 [使用须知](使用须知.md) 重新登录。
+- 不导入或合并其他电脑、作者或他人的个人资料、学习记录与凭据；换电脑或换 Windows 账户按 [学习接续](CHAT_ONBOARDING.md#学习接续) 重新登录。
 - 失败时如实说明，不绕过学校限制、不额外登录、不抓取授权范围外的内容。
 
 ## DeepSeek Harness 沙箱
@@ -183,4 +183,4 @@ node tools/moodle/run.mjs chapter-check --course 课程ID --section "Topic 5" [-
 
 ## 相关文档
 
-[TOOLS.md](TOOLS.md) · [LIBRARY.md](LIBRARY.md) · [MATERIAL_VERSIONS.md](MATERIAL_VERSIONS.md) · [WORKFLOW.md](WORKFLOW.md) · [START.md](START.md) · [PRIVACY.md](PRIVACY.md) · [DSH.md](DSH.md) · [使用须知.md](使用须知.md)
+[TOOLS.md](TOOLS.md) · [LIBRARY.md](LIBRARY.md) · [MATERIAL_VERSIONS.md](MATERIAL_VERSIONS.md) · [WORKFLOW.md](WORKFLOW.md) · [START.md](START.md) · [PRIVACY.md](PRIVACY.md) · [DSH.md](DSH.md) · [学习接续](CHAT_ONBOARDING.md#学习接续)

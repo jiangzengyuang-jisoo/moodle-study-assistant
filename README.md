@@ -25,7 +25,7 @@ approve access or choose my courses, then show me how to use it.
 >
 > If you have completed school sign-in but the page keeps loading, wait a moment, then press **F5** or click the browser’s **Refresh** button. **Refresh only the current web page; keep the AI’s setup task running.** If there is still no progress, describe what you see to the AI so it can investigate.
 
-[Illustrated setup guide](docs/新手使用指南.md) · [Upgrade without losing records](docs/新手使用指南.md#从旧版更新)
+[PDF tutorial](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf) · [Upgrade without losing records](docs/CHAT_ONBOARDING.md#upgrade)
 
 **Source edition:** this download is a Harness workspace, not an installable plugin. The frozen trial.8 package does not contain the latest source changes. [Plugin status](docs/market/CURRENT_CANDIDATE.md).
 
@@ -62,31 +62,13 @@ Ordinary requirements addressed to students are still followed. Course AI-use ru
 - Moodle tools are read-only: no assignment submission, school quiz answers, posts or email. File downloads require your course authorization.
 - Downloading and indexing are not content review; an explanation is not proof of mastery. Scans, formulas and model answers still need checking.
 
-[Privacy](docs/PRIVACY.md) · [School connection help](docs/新手使用指南.md#连接失败或已有官方-token)
+[Privacy](docs/PRIVACY.md) · [School connection help](docs/CHAT_ONBOARDING.md#登录只进入学校网页)
 
 </details>
 
 ## Recent updates
 
-Scanned PDFs now keep successful sync timestamps and explicitly request original-page visual reading; rendering is not a claim of review or mastery.
-
-2026-11-16: Teaching uses chapter timestamps to avoid unchanged downloads, pauses on sync failures, and retires replaced originals only after validating the new body. [Details](CHANGELOG.en.md). Source update only; no plugin package/install.
-
-This source maintenance fixes chapter verification, missing-version recovery and failed receipts, and aligns learning-flow rules; plugins remain unchanged.
-
-Current public version: **0.5.0**.
-
-This update covers source installations; no Harness plugin is published. Preserve your learning profile and local credentials, rerun setup after updating, then fully restart Harness.
-
-Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANGELOG.md).
-
-| Date | Change |
-| --- | --- |
-| [2026-11-17](docs/UPDATE_REPORT_2026-11-17-deepseek.en.md) | Publish chapter timestamp sync, authorized acquisition, failure recovery and scanned-page reading; preserve public tutorials. Source only, no new plugin package; add assignment-instruction warnings and pauses |
-| [2026-11-16](CHANGELOG.en.md#2026-11-16) | Verify current teacher notices for exams and deadlines; match the class and lead with uncertainty when verification fails; consolidate rules and clarify notice rechecks, timely saves and read-only maintenance; require reviewed courseware content before teaching and limit partial practice to reviewed materials; align plugin-loaded courseware rules and first-only update notices; Automatically acquire missing lesson materials under existing course grants, without repeated download permission prompts Fix ambiguous chapter discovery and acquisition across mixed-grant pages; align release materials with the frozen trial.8 package without claiming it contains today's source fixes. |
-| [2026-11-14](docs/UPDATE_TERMS_ALERTS_2026-11-14.md) | Additional candidate `trial.8` adds bilingual terms and prominent AI-targeted instruction alerts to the checkout and plugin; see the [update note](docs/UPDATE_TERMS_ALERTS_2026-11-14.md). Not installed or published. |
-
-Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.en.md) for validation details and known limitations.
+Changes, validation and upgrade notes: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANGELOG.md).
 
 ---
 

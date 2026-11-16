@@ -10,7 +10,7 @@
 
 下文的旧版本号、命令、哈希及验收均是历史记录，其中“当前”仅指记录当时。不要直接执行旧版本发布命令；当前候选以本页开头和 CURRENT_CANDIDATE.md 为准。
 
-本目录给维护者用，面向 DeepSeek Harness（DSH）插件生态。学生试用说明见 [插件试用说明](../PLUGIN_TRIAL_GUIDE.md)，插件发布说明见 [插件发布说明](../PLUGIN_RELEASE_NOTES.md)，第二阶段发布执行清单见 [PUBLISH_PLAN.md](PUBLISH_PLAN.md)，目录说明页源码见 [pages/index.html](pages/index.html)。
+本目录给维护者用，面向 DeepSeek Harness（DSH）插件生态。学生试用说明见 [插件试用说明](../PLUGIN_TRIAL_GUIDE.md)，版本历史见 [更新日志](../../CHANGELOG.md)，第二阶段发布执行清单见 [PUBLISH_PLAN.md](PUBLISH_PLAN.md)，目录说明页源码见 [pages/index.html](pages/index.html)。
 
 > **当前状态（截至 2026-11-13，当前准备版本 `0.6.0-trial.6`）：未发布，本地候选；仅完成本地打包、离线回归与隔离解包验证，未安装进当前 DeepSeek Harness、未发布到 npm、未上架任何线上目录。**
 > 没有执行 `npm publish`，没有创建 `gh-pages` 分支，没有启用 GitHub Pages，也没有对外分享任何目录 URL。文中“预计 URL”目前**不可访问**；不得把本目录写成已上线、已上架或已被官方收录。
@@ -168,4 +168,4 @@ $env:ELECTRON_RUN_AS_NODE = '1'
 - [PUBLISH_PLAN.md](PUBLISH_PLAN.md)：第二阶段精确执行清单（npm publish + gh-pages + Pages 启用 + 验证 + 回滚）
 - [LISTING.md](LISTING.md)：条目标题、描述、关键词、图标与截图说明
 - 构建脚本：`tools/release/build-plugin.mjs`、`tools/release/pack-plugin.mjs`、`tools/release/build-market-site.mjs`、`tools/release/validate-market-index.mjs`
-- 学生与发布文档：[插件试用说明](../PLUGIN_TRIAL_GUIDE.md)、[插件发布说明](../PLUGIN_RELEASE_NOTES.md)
+- 学生与发布文档：[插件试用说明](../PLUGIN_TRIAL_GUIDE.md)、[更新日志](../../CHANGELOG.md)

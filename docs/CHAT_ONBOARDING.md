@@ -26,13 +26,13 @@ Before opening the school browser, proactively give the following tip in the lea
 >
 > If you have completed school sign-in but the page keeps loading, wait a moment, then press **F5** or click the browser’s **Refresh** button. **Refresh only the current web page; keep the AI’s setup task running.** If there is still no progress, describe what you see to the AI so it can investigate.
 
-先确认学校地址。默认 HKU 不能当作其他学校用户的选择。有已有加密授权时先检查是否需要重新连接，不要求每次登录。
+先确认学校地址，并在连接前核对 `config.local.json` 的 `moodle_url` 是本人学校的干净 HTTPS 首页地址（不含课程路径或登录参数）。默认 HKU 不能当作其他学校用户的选择。有已有加密授权时先检查是否需要重新连接，不要求每次登录。
 
 重启后第一次调用联网工具若返回 `STUDY_LOGIN_REQUIRED`（或 `study_check_chapter` 返回同样的登录提示），这是预期状态而不是工具损坏：MCP 已经启动并注册了工具，只是尚未保存学校登录。已下载资料在此期间仍可本地学习；按要求完成下面的浏览器登录后，让助手在**同一聊天直接重试同一个工具**即可，不需要重启 Harness、重装或重建学习档案。
 
 助手执行 `.venv/Scripts/python.exe tools/moodle/auth.py --browser msedge`（或用户选择的 Chrome），保持该进程运行，告诉用户在弹出的学校网页完成登录和验证；用 Harness 的后台任务（`run_in_background`）启动并继续等待，再用 `job_output`（必要时 `wait: true`）读取结果；不要在前台反复启动同一条命令，也不要把“同一消息发两条命令”当作并行。收到成功结果后自动继续列课程，不让用户打开 CMD、输入命令或处理进程编号。不得读取 `.private/`、索取密码/验证码/Token 或读取浏览器 Cookie。
 
-如果浏览器登录失败，准确说明失败步骤；本人选择官方 Token 备用方式时才使用隐藏输入的本机界面，绝不让其把 Token 发进聊天。真实 SSO/MFA 仍需现场验证，不保证所有学校都支持。
+如果浏览器登录失败，准确说明失败步骤；本人选择官方 Token 备用方式时才使用隐藏输入的本机界面，绝不让其把 Token 发进聊天。真实 SSO/MFA 仍需现场验证，不保证所有学校都支持。学校未提供官方 API / 移动服务时联系学校 IT，不猜 Token 或绕过权限。授权失效或学校地址不一致时重新核对连接；只有返回 API 已验证结果才算成功。
 
 ## 课程在聊天中选择
 
@@ -91,6 +91,26 @@ node tools/moodle/run.mjs courses --select-file tmp/course-selection.json
 只有本人明确说跳过引导时改为 `skipped`。状态通过共享锁与安全写入保存到 `settings.product_onboarding.events`；重复登记同一事件不重复写入。不更改学科掌握状态，不清空历史。若同一次教学位置变化也要保存，可把 `onboarding: "shown"` 合并进该次 `teaching-event`（同一事务、已登记不重复），不必单独再存一次；但仍须等教程**实际展示后**才登记，不要在尚未输出时提前标记 shown。保存引导状态后按原规则重建并检查视图；如果本次已由 `teaching-event` 在同一事务内重建视图，则不需再单独跑 `daily.py run/check`。
 
 已经讲过则继续用户任务，不在每个聊天重复整份教程。用户说“再教我怎么用”时随时重讲。未完成的安装/登录/选课仍依真实文件和诊断接续，与是否讲过用法分开。
+
+## 学习接续
+
+首次学习、换聊天或升级时，只提示与当前任务有关的要点，完整图文教程由用户按需下载。
+
+- 同题追问留在原聊天；独立任务可以换聊天，但仍打开同一项目，不重新建档。上下文压缩不要求立即重开；接续不准时先重读记录和原题，不虚构客户端剩余容量。
+- 实际讲解或作答后及时保存进度、原答、卡点和下一步；换聊天先从最新记录恢复。不同时在两段聊天修改同一学习任务，冲突先读取最新版合并。
+- 课件按当前章节核对，同聊天复用；需要作业、通知、计划等学校信息时按本分支的 [请求类型路由](WORKFLOW.md#当前请求决定任务) 采集与核读，不为普通章节教学全量刷新。下载、索引、核读与独立掌握分别判断，公式与图表核对原页；失败保留旧记录并说明未更新范围。
+- 分享公开仓库链接即可，不分享个人学习目录、凭据或完整状态。换电脑或 Windows 账户须重新登录，不复制凭据；本地保存不等于离线推理。
+
+## Upgrade
+
+升级由助手在原项目内完成，保留本人已有学习记录和客户端配置：
+
+1. 先暂停档案写入，在安全位置备份 `Study/` 与 `config.local.json`，核对本地改动和当前客户端分支。
+2. Git 安装先检查并合并改动，再更新对应分支，不强制重置。ZIP 安装先解压到临时目录，再更新公开程序文件；保留 `Study/`、`.private/`、`config.local.json`、`.codex/` 及本人客户端配置，不删除原项目。自定义规则和代码先比较合并。
+3. 在原目录运行上文无交互安装入口，补齐依赖并保留档案；按需重启本项目 MCP 连接。DeepSeek 源码和冻结插件包分别升级，不能把更新源码当作更新了已安装插件。
+4. 读取新版规则，核对学习位置、错题与授权仍在，按现有状态入口重建并检查视图。新版源码不会自动更新电脑上的另一份安装，也不自动开启旧资料清理。
+
+For upgrades, pause writes and back up your study data and configuration. Merge local changes before updating the matching branch; preserve `Study/`, `.private/`, `config.local.json` and client settings. Run setup in the existing project, restart its MCP connection if needed, and verify your records. Updating source does not update a frozen or installed plugin package.
 
 ## 客户端边界
 

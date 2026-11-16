@@ -271,6 +271,6 @@ if __name__ == '__main__':
         sys.exit(1)
     except Exception as error:
         # Browser/network error strings may contain an authorization URL; never print them.
-        message = str(error) if isinstance(error, ValueError) else '连接未完成。确认已安装 Edge/Chrome、网络可用，并查看 docs/新手使用指南.md。'
+        message = str(error) if isinstance(error, ValueError) else '连接未完成。确认已安装 Edge/Chrome、网络可用，并查看 docs/CHAT_ONBOARDING.md。'
         print(message, file=sys.stderr)
         sys.exit(1)

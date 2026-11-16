@@ -20,7 +20,7 @@ AI 在需要校务信息或用户明确要求时调用 `continue/refresh`，不�
 
 MCP 暴露原有 15 个课程、作业、测验、论坛、日历、成绩、通知、资源目录和站点信息读取工具，并新增 `study_check_chapter`（项目服务合计 16 个工具）；全论坛分页用 `study_all_discussions`，回复用 `study_discussion_posts`。上游 recent discussions 只有最近20条，不能替代完整采集。不注册学校写操作；普通查询不下载文件，章节教学核对在已有 full 授权内补齐缺失或更新的本章文件、登记和索引，再保存严格回执。正常刷新在采集后为有课程级完整授权的范围自动下载、归档和索引；没有授权的范围只同步信息。选课授权、结果和重试入口见 [COURSE_CONTENT.md](COURSE_CONTENT.md)。
 
-`moodle_get_calendar_events` 支持课程、时间范围和分页限制，先看 `complete` 再判断是否覆盖所选事件；分页不前进或到页数上限返回 `complete:false`，应缩小时间范围继续查，不能把部分结果当成全部。`moodle_get_notifications` 用 `limit/offset`、`has_more`/`next_offset` 续读，不把通知标为已读。成绩只查当前账号；资源目录只列可见 resource/folder/url 模块元数据，不下载、不扩大授权；站点信息只返回必要身份与能力字段并脱敏凭据。接口未启用时返回 `api_not_enabled`，不等于没有数据。完整性只描述所选接口和时间范围，不等于所有类型的学校事件，也不等于 AI 已核读。升级后需重启本项目 MCP 连接。范围与限制见[更新报告](UPDATE_REPORT_2026-11-07-deepseek.md#按需只读学校查询)。
+`moodle_get_calendar_events` 支持课程、时间范围和分页限制，先看 `complete` 再判断是否覆盖所选事件；分页不前进或到页数上限返回 `complete:false`，应缩小时间范围继续查，不能把部分结果当成全部。`moodle_get_notifications` 用 `limit/offset`、`has_more`/`next_offset` 续读，不把通知标为已读。成绩只查当前账号；资源目录只列可见 resource/folder/url 模块元数据，不下载、不扩大授权；站点信息只返回必要身份与能力字段并脱敏凭据。接口未启用时返回 `api_not_enabled`，不等于没有数据。完整性只描述所选接口和时间范围，不等于所有类型的学校事件，也不等于 AI 已核读。升级后需重启本项目 MCP 连接。范围与限制见[对应更新日志](../CHANGELOG.md#2026-11-07)。
 
 ### 章节核对工具（study_check_chapter）
 
@@ -267,7 +267,7 @@ Get-Content -Raw -Encoding UTF8 'tmp/teaching-event.json' | .\study.cmd --chat "
 
 ### 插件试用版的运行依赖（study_setup_runtime）
 
-`study_setup_runtime` 是插件设置阶段运行依赖的**重新验证/修复入口**（2026-11-11 起的仓库源码与 `0.6.0-trial.4`、`0.6.0-trial.5`、`0.6.0-trial.6` 试用包均为此逻辑；`0.6.0-trial.3` 及更早的包仍是旧逻辑）。重新调用不会只信旧 `runtime.json` 标记：会分级本地检查 venv 目录、解释器能否运行并返回预期探测、pip 是否可用、`requirements-core.txt` 每个依赖能否导入，只有依赖清单版本与 SHA-256 指纹匹配才视为 ready；依赖文件存在但导入失败或指纹不符时会**真正重新安装**（`--force-reinstall`），不会只补“缺失”后误报完成。登录组件（Playwright）单独分级检查：解释器可运行、`playwright.sync_api` 可导入、登录依赖指纹匹配才视为已安装；重建 venv 会移除登录组件，旧 `login.installed` 标记不再单独作数。修复尽量只动缺失或损坏的部分：创建中断缺 pip 先用离线 `ensurepip --upgrade`；解释器损坏时把旧 venv 改名 `venv.broken-<时间>` 保留诊断后重建；依赖或标记过期则重新安装并验证。健康检查通过前不报告完成，失败返回准确下一步（关闭重开 Harness / 修复或重装自带 Python / 设置 `MOODLE_STUDY_BASE_PYTHON` / 不要删除学习档案），下次调用重新尝试。`study_setup_status` 的 `runtimeStatus`/`runtimeHealth` 展示同一诊断；插件 Host 侧 `moodle_study_status` 也加载同一分级诊断模块，不靠 venv 文件是否存在推断。健康检查每次只做一次合并本地探测，正常学习不会重复联网安装；安装或升级到 `0.6.0-trial.6` 后生效。发布前审计同时收紧了资料位置校验：安装包目录（含包内任意子目录与包含包的父目录）不能再被选为资料位置，`study_job_status` 传入 `job_id` 时只返回该任务、未知 ID 返回 `JOB_NOT_FOUND`；详见 [PLUGIN_RELEASE_NOTES](PLUGIN_RELEASE_NOTES.md) 的 §0（当前候选包）与 §1（发布前审计修复历史记录）。
+`study_setup_runtime` 是插件设置阶段运行依赖的**重新验证/修复入口**（2026-11-11 起的仓库源码与 `0.6.0-trial.4`、`0.6.0-trial.5`、`0.6.0-trial.6` 试用包均为此逻辑；`0.6.0-trial.3` 及更早的包仍是旧逻辑）。重新调用不会只信旧 `runtime.json` 标记：会分级本地检查 venv 目录、解释器能否运行并返回预期探测、pip 是否可用、`requirements-core.txt` 每个依赖能否导入，只有依赖清单版本与 SHA-256 指纹匹配才视为 ready；依赖文件存在但导入失败或指纹不符时会**真正重新安装**（`--force-reinstall`），不会只补“缺失”后误报完成。登录组件（Playwright）单独分级检查：解释器可运行、`playwright.sync_api` 可导入、登录依赖指纹匹配才视为已安装；重建 venv 会移除登录组件，旧 `login.installed` 标记不再单独作数。修复尽量只动缺失或损坏的部分：创建中断缺 pip 先用离线 `ensurepip --upgrade`；解释器损坏时把旧 venv 改名 `venv.broken-<时间>` 保留诊断后重建；依赖或标记过期则重新安装并验证。健康检查通过前不报告完成，失败返回准确下一步（关闭重开 Harness / 修复或重装自带 Python / 设置 `MOODLE_STUDY_BASE_PYTHON` / 不要删除学习档案），下次调用重新尝试。`study_setup_status` 的 `runtimeStatus`/`runtimeHealth` 展示同一诊断；插件 Host 侧 `moodle_study_status` 也加载同一分级诊断模块，不靠 venv 文件是否存在推断。健康检查每次只做一次合并本地探测，正常学习不会重复联网安装；安装或升级到 `0.6.0-trial.6` 后生效。发布前审计同时收紧了资料位置校验：安装包目录（含包内任意子目录与包含包的父目录）不能再被选为资料位置，`study_job_status` 传入 `job_id` 时只返回该任务、未知 ID 返回 `JOB_NOT_FOUND`；当前包范围见 [候选说明](market/CURRENT_CANDIDATE.md)，历史修复与验证见 [更新日志](../CHANGELOG.md#2026-11-12)。
 
 ## 验证与发布
 
