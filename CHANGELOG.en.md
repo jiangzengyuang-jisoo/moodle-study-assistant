@@ -28,6 +28,13 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-16
 
+### Require courseware body review before teaching
+
+- Pause affected teaching until the required courseware body has been obtained and reviewed; do not substitute general knowledge. Filenames, catalogs and outlines do not count as reading.
+- If update verification fails, continue only from a readable local version whose relevant content has been reviewed, and disclose that updates were not verified. Targeted practice uses reviewed materials only and identifies uncovered scope.
+- Usage: update the source and reread the root rules, skill entry and relevant operating guides; no learning-profile reset is needed. This rules-only change does not rebuild, install or publish plugin packages.
+- Validation: static checks of both editions, operating guides, links and commit diffs, preserving existing edits; no model end-to-end or live-school validation was run.
+
 ### Consolidate instructions and clarify boundaries
 
 - Consolidate repeated exam-notice instructions while retaining mandatory checks for the first current answer, reported changes, latest-information requests and conflicts. Chapter receipts do not verify notices.
