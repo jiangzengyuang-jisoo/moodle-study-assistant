@@ -170,6 +170,8 @@ Ask the assistant to back up and preserve `Study/`, configuration, credentials, 
 
 ## Recent updates
 
+This source maintenance checks reading indexes before reusing chapter receipts and validates acquisition, body reading and cross-chat continuation.
+
 Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANGELOG.md).
 
 | Date | Change |

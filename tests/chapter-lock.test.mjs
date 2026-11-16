@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {ensureChapter} from '../tools/moodle/chapter-ensure.mjs';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
@@ -156,4 +157,48 @@ test('helper loss during a chapter check stops further receipt, installation and
   assert.deepEqual(readFileSync(receiptPath), beforeReceipt);
   const next = await acquireChapterLock(f.lockPath, python);
   assert.equal(next.status, 'acquired'); await next.release();
+});
+
+
+test('interrupted acquisition resumes with a real index and then reuses the same chat offline', async t => {
+  const f = fixture(t), moduleUrl = new URL('../tools/moodle/chapter-ensure.mjs', import.meta.url).href;
+  const script = `import {ensureChapter} from ${JSON.stringify(moduleUrl)};
+    const timer = setInterval(() => {}, 1000);
+    await ensureChapter({baseUrl:${JSON.stringify(site)},userId:7,
+      async call(){console.log('ACQUISITION_STARTED');return new Promise(() => {});}}, JSON.parse(process.argv[1]));
+    clearInterval(timer);`;
+  const child = spawn(process.execPath, ['--input-type=module', '--eval', script, JSON.stringify(f.options)],
+    {windowsHide: true, stdio: ['ignore', 'pipe', 'pipe']});
+  const exited = new Promise(resolve => child.once('exit', resolve));
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Acquisition never reached its simulated school call')), 15000);
+      child.stdout.on('data', bytes => {if (bytes.toString().includes('ACQUISITION_STARTED')) {clearTimeout(timer); resolve();}});
+      child.once('error', error => {clearTimeout(timer); reject(error);});
+      exited.then(() => {clearTimeout(timer); reject(new Error('Acquisition owner exited early'));});
+    });
+  } finally {child.kill('SIGKILL'); await exited;}
+  const before = readFileSync(f.statePath);
+  let calls = 0, downloads = 0;
+  const client = {baseUrl: site, userId: 7,
+    async call() {calls++; return [{id: 1, modules: [{id: 500, modname: 'resource', name: 'lesson',
+      contents: [{type: 'file', filename: 'lesson.txt', filepath: '/', fileurl: site + '/pluginfile.php/lesson.txt'}]}]}];},
+    async transport() {downloads++; return new Response('ORIGINAL', {headers: {'content-type': 'text/plain'}});}};
+  let result;
+  for (let i = 0; i < 30; i++) {
+    result = await ensureChapter(client, f.options);
+    if (result.reason !== 'chapter_acquisition_busy') break;
+    await delay(25);
+  }
+  assert.equal(result.ready_for_teaching, true, JSON.stringify(result));
+  assert.equal(downloads, 1);
+  const count = calls;
+  assert.equal((await ensureChapter(client, {...f.options, force: false})).ready_for_teaching, true);
+  assert.equal(calls, count);
+  assert.equal(downloads, 1);
+  assert.deepEqual(readFileSync(f.statePath), before);
+  const catalog = JSON.parse(readFileSync(join(f.root, '_System/Library/catalog.json')));
+  const cached = catalog.materials.find(m => m.id === 'M1');
+  const data = JSON.parse(readFileSync(join(f.root, '_System/Library', cached.cache)));
+  assert.equal(data.pages[0].text, 'ORIGINAL');
 });

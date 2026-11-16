@@ -28,6 +28,14 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-16
 
+### Cached indexes and learning-flow acceptance
+
+- Before reusing a chapter receipt, check the selected materials' reading index offline and repair missing or stale entries as needed. Unreadable content cannot be reported as ready for teaching; this does not reconnect to the school.
+- Clarify that chapter acquisition under existing full grants does not need another download permission request; separate downloads outside those grants keep their original boundary.
+- Validation: Node 135, setup-entry Python 92 and study Python 579: 806 passed with no skips. Added combinations cover damaged or missing-page indexes, module-to-chapter scope, equal-length modifications and explicit recovery after partial failure. Readiness requires actual readable body text.
+- Independent assistants following this edition's rules completed empty-library acquisition, actual PDF text and page review, teaching, verified saving, same-chat follow-ups, chapter switching and fresh-chat continuation; they paused teaching when no body was available. These used a simulated school, synthetic profiles and the available Codex model, with no real-school connection. Acquisition, review, explanation and independent mastery remain distinct.
+- Update the corresponding source while retaining study data and grants. Nothing is pushed or published.
+
 ### Remote updates when the previous original is missing
 
 - Fixed chapter acquisition when a registered original is missing locally and the school has updated the same source. The new bytes receive a new ID and separate path. The old ID, hash, path and historical references remain unchanged and are marked missing, without claiming the original was archived.

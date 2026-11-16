@@ -255,5 +255,42 @@ class CourseContentTests(unittest.TestCase):
         self.assertFalse((self.study / first['relative_path']).exists())
 
 
+    def test_ensure_index_reuses_valid_payload_without_rebuilding_or_writing(self):
+        from library import Library
+        item = install_download(self.path, self.data())
+        index_course(self.path, 'A', [item['material_id']])
+        catalog = self.study / '_System/Library/catalog.json'
+        before = catalog.read_bytes(), self.path.read_bytes()
+        with patch.object(Library, 'sync', side_effect=AssertionError('valid index must not be rebuilt')):
+            result = index_course(self.path, 'A', [item['material_id']], ensure=True)
+        self.assertEqual(result['status_counts'], {'indexed': 1})
+        self.assertEqual(result['extracted'], 0)
+        self.assertEqual(result['reused'], 1)
+        self.assertEqual((catalog.read_bytes(), self.path.read_bytes()), before)
+
+    def test_ensure_index_repairs_only_selected_payload_and_keeps_other_index(self):
+        from learning_library.extract import extract_document
+        first = install_download(self.path, self.data())
+        second = install_download(self.path, self.data(b'Other original', module=502, filename='other.txt'))
+        index_course(self.path, 'A')
+        catalog = self.study / '_System/Library/catalog.json'
+        rows = json.loads(catalog.read_bytes())['materials']
+        first_row = next(m for m in rows if m['id'] == first['material_id'])
+        other_row = next(m for m in rows if m['id'] == second['material_id'])
+        cache_root = catalog.parent
+        other_bytes = (cache_root / other_row['cache']).read_bytes()
+        (cache_root / first_row['cache']).unlink()
+        before = self.path.read_bytes()
+        with patch('learning_library.extract.extract_document', wraps=extract_document) as extract:
+            result = index_course(self.path, 'A', [first['material_id']], ensure=True)
+        self.assertEqual(result['extracted'], 1)
+        self.assertEqual(extract.call_count, 1)
+        self.assertEqual(Path(extract.call_args.args[0]), self.study / first['relative_path'])
+        self.assertEqual((cache_root / other_row['cache']).read_bytes(), other_bytes)
+        self.assertEqual(next(m for m in json.loads(catalog.read_bytes())['materials'] if m['id'] == second['material_id']), other_row)
+        self.assertEqual(self.path.read_bytes(), before)
+
+
+
 if __name__ == '__main__':
     unittest.main()

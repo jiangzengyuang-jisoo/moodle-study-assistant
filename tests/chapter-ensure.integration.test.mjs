@@ -1,4 +1,6 @@
 import test from 'node:test';
+import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync} from 'node:fs';
 import {join, resolve, relative, isAbsolute} from 'node:path';
@@ -130,4 +132,130 @@ test('missing old bytes and a remote update install a separate version in the sa
     assert.equal(outputs.at(-1).materials[0].material_id, current.id);
   }
   assert.deepEqual({connections, transfers}, count);
+});
+
+
+test('same-chat cached checks repair only missing local index data before reporting ready', async t => {
+  const directory = mkdtempSync(join(import.meta.dirname, '.cache-recovery-'));
+  t.after(() => {const child = relative(realpathSync(import.meta.dirname), realpathSync(directory));
+    assert.ok(child && !child.startsWith('..') && !isAbsolute(child)); rmSync(directory, {recursive: true});});
+  const studyRoot = join(directory, 'Study'), statePath = join(studyRoot, '_System/state.json');
+  mkdirSync(join(studyRoot, '_System'), {recursive: true});
+  writeFileSync(statePath, JSON.stringify(grantCourseContent({revision: 1,
+    courses: [{id: 'TEST', moodle_course_ids: [10]}], settings: {}, materials: [], mistakes: [{answer: 'preserve'}]},
+  {site: 'https://school.test', userId: 7, courseIds: [10], mode: 'full'})));
+  let connections = 0, calls = 0, transfers = 0;
+  const client = {baseUrl: 'https://school.test', userId: 7, token: 'synthetic',
+    async call() {calls++; return [{id: 1, modules: [{id: 100, name: 'Chapter 8', modname: 'resource',
+      contents: [{type: 'file', filename: 'Chapter 8.txt', filepath: '/',
+        fileurl: 'https://school.test/pluginfile.php/77/mod_resource/content/1/Chapter%208.txt'}]}]}];},
+    async transport() {transfers++; return new Response('Readable lesson body', {headers: {'content-type': 'text/plain'}});}};
+  const outputs = [], paths = {studyRoot, statePath, studyToolsDir: resolve(import.meta.dirname, '../tools/study'), python: choosePython(resolve(import.meta.dirname, '..'))};
+  const options = {paths, connectionIdentity: () => ({site: client.baseUrl, credentialKey: 'synthetic'}),
+    environment: {STUDY_CHAT_ID: 'same-chat', CODEX_THREAD_ID: 'same-chat'},
+    createClient: async () => {connections++; return client;}, output: value => outputs.push(value)};
+  const args = ['--ensure', '--course', 'TEST', '--chapter', '8'];
+  assert.equal(await runChapterCommand(args, options), 0, JSON.stringify(outputs.at(-1)));
+  const counts = {connections, calls, transfers}, originalState = readFileSync(statePath);
+  const first = outputs.at(-1), material = read(statePath).materials[0];
+  const folder = join(studyRoot, '_System/Library'), catalog = join(folder, 'catalog.json');
+  const body = () => {
+    const script = 'import sys,json;sys.path.insert(0,sys.argv[1]);from library import Library;print(json.dumps(Library(sys.argv[2]).read(sys.argv[3])))';
+    const result = spawnSync(paths.python, ['-X', 'utf8', '-B', '-c', script, paths.studyToolsDir, statePath, material.id],
+      {encoding: 'utf8', windowsHide: true});
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Readable lesson body/);
+  };
+  const readyOffline = async () => {
+    assert.equal(await runChapterCommand(args, options), 0, JSON.stringify(outputs.at(-1)));
+    assert.equal(outputs.at(-1).verified_at, first.verified_at);
+    assert.equal(outputs.at(-1).reused, true);
+    assert.deepEqual({connections, calls, transfers}, counts);
+    assert.deepEqual(readFileSync(statePath), originalState);
+    body();
+  };
+  const unchanged = readFileSync(catalog);
+  await readyOffline();
+  assert.deepEqual(readFileSync(catalog), unchanged, 'valid index is not rebuilt on each follow-up');
+  unlinkSync(catalog);
+  await readyOffline();
+  let cache = join(folder, read(catalog).materials[0].cache);
+  unlinkSync(cache);
+  await readyOffline();
+  cache = join(folder, read(catalog).materials[0].cache);
+  writeFileSync(cache, '{broken payload');
+  await readyOffline();
+  const emptyPayload = JSON.parse(readFileSync(cache, 'utf8'));
+  emptyPayload.pages = [];
+  writeFileSync(cache, JSON.stringify(emptyPayload));
+  const misleadingCatalog = read(catalog);
+  misleadingCatalog.materials[0].cache_sha256 = createHash('sha256').update(readFileSync(cache)).digest('hex');
+  writeFileSync(catalog, JSON.stringify(misleadingCatalog));
+  await readyOffline();
+  const recovered = readFileSync(catalog);
+  writeFileSync(catalog, '{broken catalog');
+  assert.equal(await runChapterCommand(args, options), 1);
+  assert.equal(outputs.at(-1).ready_for_teaching, false);
+  assert.equal(outputs.at(-1).materials[0].reason, 'local_index_unavailable');
+  assert.deepEqual({connections, calls, transfers}, counts, 'index failure never falls back to school networking');
+  writeFileSync(catalog, recovered);
+  await readyOffline();
+  writeFileSync(join(studyRoot, material.relative_path), 'MY ANNOTATION');
+  assert.equal(await runChapterCommand(args, options), 1);
+  assert.equal(outputs.at(-1).materials[0].reason, 'local_material_changed_since_verification');
+  assert.equal(readFileSync(join(studyRoot, material.relative_path), 'utf8'), 'MY ANNOTATION');
+  assert.deepEqual(readFileSync(catalog), recovered);
+});
+
+
+test('module selection, whole-chapter continuation, equal-size edits and partial failures preserve scope', async t => {
+  const directory = mkdtempSync(join(import.meta.dirname, '.chapter-combinations-'));
+  t.after(() => {const child = relative(realpathSync(import.meta.dirname), realpathSync(directory));
+    assert.ok(child && !child.startsWith('..') && !isAbsolute(child)); rmSync(directory, {recursive: true});});
+  const studyRoot = join(directory, 'Study'), statePath = join(studyRoot, '_System/state.json');
+  mkdirSync(join(studyRoot, '_System'), {recursive: true});
+  writeFileSync(statePath, JSON.stringify(grantCourseContent({revision: 1,
+    courses: [{id: 'TEST', moodle_course_ids: [10]}], settings: {}, materials: []},
+  {site: 'https://school.test', userId: 7, courseIds: [10], mode: 'full'})));
+  const names = ['Chapter 8 A.txt', 'Chapter 8 B.txt'];
+  const bytes = ['AAAA', 'BBBB']; let failSecond = false, calls = 0;
+  const downloads = [], outputs = [];
+  const client = {baseUrl: 'https://school.test', userId: 7, token: 'synthetic',
+    async call() {calls++; return [{id: 1, modules: names.map((name, i) => ({id: 100+i, name, modname: 'resource',
+      contents: [{type: 'file', filename: name, filepath: '/',
+        fileurl: `https://school.test/pluginfile.php/${100+i}/mod_resource/content/1/${encodeURIComponent(name)}`}]}))}];},
+    async transport(url) {const i = Number(new URL(url).pathname.match(/pluginfile.php\/(\d+)/)[1])-100;
+      downloads.push(i); if (i === 1 && failSecond) throw new Error('simulated second-part outage');
+      return new Response(bytes[i], {headers: {'content-type': 'text/plain'}});}};
+  const paths = {studyRoot, statePath, studyToolsDir: resolve(import.meta.dirname, '../tools/study'), python: choosePython(resolve(import.meta.dirname, '..'))};
+  const options = {paths, connectionIdentity: () => ({site: client.baseUrl, credentialKey: 'synthetic'}),
+    environment: {STUDY_CHAT_ID: 'one', CODEX_THREAD_ID: 'one'}, createClient: async () => client,
+    output: value => outputs.push(value)};
+  const args = ['--ensure', '--course', 'TEST', '--chapter', '8'];
+  assert.equal(await runChapterCommand([...args, '--module', '10:100'], options), 0);
+  assert.equal(await runChapterCommand(args, options), 0);
+  assert.equal(outputs.at(-1).materials.length, 2, 'whole chapter includes both named parts after module selection');
+  const original = read(statePath).materials.find(m => m.filename === names[0]);
+  const count = {calls, transfers: downloads.length};
+  writeFileSync(join(studyRoot, original.relative_path), 'ZZZZ');
+  assert.equal(await runChapterCommand(args, options), 1);
+  assert.equal(outputs.at(-1).materials[0].reason, 'local_material_changed_since_verification');
+  assert.deepEqual({calls, transfers: downloads.length}, count);
+  assert.equal(readFileSync(join(studyRoot, original.relative_path), 'utf8'), 'ZZZZ');
+  writeFileSync(join(studyRoot, original.relative_path), 'AAAA');
+  bytes[0] = 'CCCC'; failSecond = true;
+  const next = {...options, environment: {STUDY_CHAT_ID: 'two', CODEX_THREAD_ID: 'two'}};
+  assert.equal(await runChapterCommand(args, next), 1);
+  assert.equal(outputs.at(-1).materials[0].status, 'updated');
+  assert.equal(outputs.at(-1).materials[1].status, 'needs_review');
+  const failed = {calls, transfers: downloads.length};
+  failSecond = false;
+  assert.equal(await runChapterCommand(args, next), 1);
+  assert.equal(outputs.at(-1).ready_for_teaching, false);
+  assert.deepEqual({calls, transfers: downloads.length}, failed, 'ordinary follow-up does not retry partial failure');
+  assert.equal(await runChapterCommand([...args, '--force'], next), 0);
+  const old = read(statePath).materials.find(m => m.id === original.id);
+  assert.equal(readFileSync(join(studyRoot, old.relative_path), 'utf8'), 'AAAA');
+  const current = read(statePath).materials.find(m => m.id === old.superseded_by);
+  assert.equal(readFileSync(join(studyRoot, current.relative_path), 'utf8'), 'CCCC');
 });

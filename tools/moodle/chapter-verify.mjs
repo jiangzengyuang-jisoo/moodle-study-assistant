@@ -111,6 +111,11 @@ async function cachedEntry(entry, selected, options, state) {
     return {...entry, status: 'needs_review', reason: 'local_material_changed_since_verification', reused: true,
       verified_at: null, previous_verified_at: entry.verified_at};
   }
+  try {await ensureIndex(options, material.id, true);}
+  catch {
+    return {...entry, status: 'needs_review', reason: 'local_index_unavailable', reused: true,
+      verified_at: null, previous_verified_at: entry.verified_at};
+  }
   return {...entry, reused: true};
 }
 
@@ -171,19 +176,19 @@ export async function readCachedChapterCheck(input) {
   return resultFor(options, rows, (receipt.related_candidates ?? []).filter(candidate => !candidateKnown(candidate, state, options)));
 }
 
-async function indexMaterials(options, ids) {
+async function indexMaterials(options, ids, ensure = false) {
   options.assertLockHeld?.();
-  if (options.indexMaterials) return options.indexMaterials(options.courseId, ids);
+  if (options.indexMaterials) return options.indexMaterials(options.courseId, ids, {ensure});
   const child = spawnSync(options.python, [join(options.studyToolsDir, 'course_content.py'), '--state', options.statePath,
-    'index', '--course', options.courseId, ...ids.flatMap(id => ['--material', id])],
+    'index', '--course', options.courseId, ...(ensure ? ['--ensure'] : []), ...ids.flatMap(id => ['--material', id])],
   {encoding: 'utf8', windowsHide: true, timeout: 900000, maxBuffer: 16 * 1024 * 1024,
     env: {...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1'}});
   if (child.error || child.status !== 0) throw new Error('index_failed');
   return JSON.parse(child.stdout);
 }
 
-async function ensureIndex(options, materialId) {
-  const indexed = await indexMaterials(options, [materialId]);
+async function ensureIndex(options, materialId, ensure = false) {
+  const indexed = await indexMaterials(options, [materialId], ensure);
   const entry = indexed.materials?.find(m => m.id === materialId);
   if (!entry || entry.status !== 'indexed' || !(entry.text_units > 0)) throw new Error('index_failed');
 }

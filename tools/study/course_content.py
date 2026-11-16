@@ -89,11 +89,28 @@ def restore_missing(study, row, staged):
     return True
 
 
-def index_course(state_path, course, material_ids=None):
+def index_course(state_path, course, material_ids=None, ensure=False):
     from library import Library
     from learning_library.versions import current
     lib = Library(state_path)
-    result = lib.sync(course, material_ids=material_ids)
+    if ensure:
+        if not material_ids:
+            raise ValueError('Local index checks require explicit material IDs')
+        repair = []
+        for mid in set(material_ids):
+            try:
+                _, available, _ = lib.fresh_rows(course=course, mid=mid)
+                row = next((m for m in available if m['id'] == mid), None)
+                if not row or row.get('status') != 'indexed' or not row.get('text_units'):
+                    raise ValueError('Index not ready')
+                # Read through the same path used by teaching, including payload checks.
+                lib.read(mid, end=row['units'], around=0, include_solutions=True)
+            except (ValueError, OSError, KeyError, TypeError, IndexError):
+                repair.append(mid)
+        result = lib.sync(course, force=True, material_ids=repair) if repair else {'extracted': 0, 'reused': 0}
+        result['reused'] += len(set(material_ids)) - len(repair)
+    else:
+        result = lib.sync(course, material_ids=material_ids)
     state = lib.state()
     selected = set(material_ids) if material_ids is not None else None
     registered = [m for m in state.get('materials', []) if m.get('course_id') == course and current(m)
@@ -112,6 +129,12 @@ def index_course(state_path, course, material_ids=None):
             row['status'] = 'extraction_error'
         elif row['status'] == 'indexed' and not row.get('text_units'):
             row['status'] = 'not_text_indexed'
+        if ensure and row['status'] == 'indexed':
+            try:
+                lib.read(row['id'], end=row['units'], around=0, include_solutions=True)
+            except (ValueError, OSError, KeyError, TypeError, IndexError):
+                row['status'] = 'stale_index'
+                row['warnings'] = [*(row.get('warnings') or []), 'selected_index_not_readable']
     return {'course_id': course, 'materials': rows,
             'status_counts': {key: sum(r['status'] == key for r in rows) for key in sorted({r['status'] for r in rows})},
             'extracted': result['extracted'], 'reused': result['reused'],
@@ -126,8 +149,9 @@ def main():
     index.add_argument('--course', required=True)
     index.add_argument('--material', action='append', dest='material_ids',
                        help='Index only this current material ID; repeat for several files')
+    index.add_argument('--ensure', action='store_true', help='Validate locally; rebuild only missing or stale selected indexes')
     args = parser.parse_args()
-    print(json.dumps(index_course(args.state, args.course, args.material_ids), ensure_ascii=False))
+    print(json.dumps(index_course(args.state, args.course, args.material_ids, ensure=args.ensure), ensure_ascii=False))
 
 
 if __name__ == '__main__':
