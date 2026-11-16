@@ -8,7 +8,7 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 | Date | Main changes |
 | --- | --- |
-| [2026-11-16](#2026-11-16) | Verify current teacher notices for exams and deadlines; match the class and lead with uncertainty when verification fails |
+| [2026-11-16](#2026-11-16) | Timestamp-based chapter sync, authorized acquisition, failure recovery and scanned-page reading; 821 tests passed |
 | [2026-11-15](#2026-11-15) | Make the browser login refresh tip prominent in the Chinese PDF tutorial |
 | [2026-11-14](#2026-11-14) | Pair new concepts with English terms; prominently disclose AI-targeted instructions found in materials |
 | [2026-11-12](#2026-11-12) | Consolidate review and file writes; skip unchanged pages |
@@ -27,6 +27,16 @@ Existing users should first read the [upgrade steps that preserve learning recor
 | [2026-09-22](#2026-09-22) | Initial release: Windows installation, school account connection, course information, and learning records |
 
 ## 2026-11-16
+
+### Publication summary and revalidation
+
+- [Full update report](docs/UPDATE_REPORT_2026-11-16.en.md): timestamp-based chapter sync, authorized acquisition, recovery, scanned-page reading and upgrade instructions.
+- Current public source: **141 Node + 92 Python installation-entry + 588 Python study-tool tests = 821 passed, zero skips**. Tests use synthetic records and simulated school responses; no live school login/download or clean-machine installation was verified.
+- This source push targets only `codex`; no new tag, GitHub Release or plugin package. Earlier same-day “not pushed” statements record previous local runs.
+
+### Scanned lesson reading
+
+Scanned PDFs now validate rendered pages separately from text extraction, retain the successful timestamp, and report required visual reading. No OCR or mastery claim is implied; corrupt/blank originals still fail. Validation includes raster PDF tests and actual Chapter 9 files in isolated update/failure scenarios. Source update only; no plugin package or installation.
 
 ### Timestamp-based lesson sync and two audit rounds
 
@@ -478,8 +488,3 @@ Installation and usage start from an empty profile, with each student using thei
 Follow the [beginner guide](docs/新手使用指南.md) to install and connect. The school must enable the relevant Moodle services. Browser-assisted login remains experimental. The project requires your own AI client and does not include a model or subscription.
 
 [Initial commit ec32b60](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/commit/ec32b6077facd4734f00a330330c42487de6cab3)
-
-
-## 2026-11-16 — Scanned lesson reading
-
-Scanned PDFs now validate rendered pages separately from text extraction, retain the successful timestamp, and report required visual reading. No OCR or mastery claim is implied; corrupt/blank originals still fail. Validation includes raster PDF tests and actual Chapter 9 files in isolated update/failure scenarios. Source update only; no plugin package or installation.

@@ -170,15 +170,13 @@ Ask the assistant to back up and preserve `Study/`, configuration, credentials, 
 
 ## Recent updates
 
-Scanned PDFs now keep successful sync timestamps and explicitly request original-page visual reading; rendering is not a claim of review or mastery.
-
-This source maintenance checks reading indexes before reusing chapter receipts and validates acquisition, body reading and cross-chat continuation.
+Chapter sync now reuses source timestamps, acquires missing authorized materials and recovers from failed updates. Scanned lessons explicitly require original-page review. All 821 automated checks passed; see the [update report](docs/UPDATE_REPORT_2026-11-16.en.md) for upgrade steps and limits.
 
 Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANGELOG.md).
 
 | Date | Change |
 | --- | --- |
-| [2026-11-16](CHANGELOG.en.md#2026-11-16) | Timestamp-based chapter sync avoids repeated downloads; verified replacements remove only their old original while preserving history; gaps, error responses, account collisions and onboarding guidance fixed |
+| [2026-11-16](docs/UPDATE_REPORT_2026-11-16.en.md) | Timestamp-based chapter sync, authorized acquisition, failure recovery and scanned-page reading; 821 checks passed |
 | [2026-11-14](CHANGELOG.en.md#2026-11-14) | Pair new concepts with English terms and prominently disclose AI-targeted instructions found in materials |
 | [2026-11-12](docs/UPDATE_REPORT_2026-11-12.en.md) | Publish verified teaching saves and review simplification; skip unchanged pages, with validation and upgrade notes |
 
@@ -194,8 +192,3 @@ Detailed guides are currently primarily in Chinese:
 For a bug report or improvement, [open an issue](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/issues). Describe the expected behavior, actual result, and reproduction steps without credentials, private course content, or learning records. Code changes should follow [AGENTS.md](AGENTS.md) and the checks in [docs/TOOLS.md](docs/TOOLS.md#验证与发布).
 
 Licensed under the [MIT License](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md) for dependencies. This project is not officially affiliated with OpenAI, HKU, or Moodle.
-
-
-## 2026-11-16 — Scanned lesson reading
-
-Scanned PDFs now validate rendered pages separately from text extraction, retain the successful timestamp, and report required visual reading. No OCR or mastery claim is implied; corrupt/blank originals still fail. Validation includes raster PDF tests and actual Chapter 9 files in isolated update/failure scenarios. Source update only; no plugin package or installation.
