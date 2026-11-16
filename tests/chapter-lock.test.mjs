@@ -182,7 +182,7 @@ test('interrupted acquisition resumes with a real index and then reuses the same
   let calls = 0, downloads = 0;
   const client = {baseUrl: site, userId: 7,
     async call() {calls++; return [{id: 1, modules: [{id: 500, modname: 'resource', name: 'lesson',
-      contents: [{type: 'file', filename: 'lesson.txt', filepath: '/', fileurl: site + '/pluginfile.php/lesson.txt'}]}]}];},
+      contents: [{type: 'file', timemodified: 100, filename: 'lesson.txt', filepath: '/', fileurl: site + '/pluginfile.php/lesson.txt'}]}]}];},
     async transport() {downloads++; return new Response('ORIGINAL', {headers: {'content-type': 'text/plain'}});}};
   let result;
   for (let i = 0; i < 30; i++) {
@@ -196,7 +196,7 @@ test('interrupted acquisition resumes with a real index and then reuses the same
   assert.equal((await ensureChapter(client, {...f.options, force: false})).ready_for_teaching, true);
   assert.equal(calls, count);
   assert.equal(downloads, 1);
-  assert.deepEqual(readFileSync(f.statePath), before);
+  assert.equal(JSON.parse(readFileSync(f.statePath)).materials[0].moodle_file_sources[0].timemodified, 100);
   const catalog = JSON.parse(readFileSync(join(f.root, '_System/Library/catalog.json')));
   const cached = catalog.materials.find(m => m.id === 'M1');
   const data = JSON.parse(readFileSync(join(f.root, '_System/Library', cached.cache)));

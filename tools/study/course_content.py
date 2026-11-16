@@ -56,7 +56,9 @@ def prepare_batch(state, data, row):
     source = data['source']
     scope = authorize(state, source)
     row['moodle_file_sources'][0].update(scope)
-    for key in ('post_id', 'discussion_id', 'forum_id', 'section_id', 'mimetype'):
+    for key in ('post_id', 'discussion_id', 'forum_id', 'section_id', 'mimetype', 'timemodified', 'timecreated'):
+        if source.get('chapter_timestamp_update') is True and key in ('timemodified', 'timecreated'):
+            continue  # A failed index must never establish a successful time baseline.
         if source.get(key) is not None:
             row['moodle_file_sources'][0][key] = source[key]
     if data.get('source_subdirectory') is True:
@@ -65,6 +67,8 @@ def prepare_batch(state, data, row):
     if data.get('retain_unparsed') is True:
         row['structure_validation'] = 'deferred'
     row['content_reviewed'] = False
+    if source.get('chapter_timestamp_update') is True:
+        row['chapter_timestamp_update'] = True
 
 
 def restore_missing(study, row, staged):

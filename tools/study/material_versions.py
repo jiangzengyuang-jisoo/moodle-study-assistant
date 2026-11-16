@@ -94,6 +94,8 @@ def install_download(path, data):
         prepare_batch(state, data, row)
     versions.verify(path.parent.parent, row)
     matches = [m for m in state.get("materials", []) if versions.current(m) and versions.keys(m) & versions.keys(row)]
+    for matched in matches:
+        versions.assert_source_identity(matched, row)
     if batch and any(m.get("sha256") != row["sha256"] and versions.keys(m) - versions.keys(row) for m in matches):
         raise ValueError("Shared material source changed; retain original and review source version relationship")
     identical = next((m for m in state.get("materials", []) if versions.current(m)

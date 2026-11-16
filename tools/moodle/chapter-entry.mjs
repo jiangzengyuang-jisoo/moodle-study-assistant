@@ -113,14 +113,15 @@ export async function runChapterCommand(args, {
     } catch (error) {
       const failure = {operation: 'verify_chapter', course_id: command.courseId, chapter: command.chapter,
         status: 'unverified', ready_for_teaching: false, reused: false, attempted_at: new Date().toISOString(),
-        ...diagnostic(error), message_suffix: '本次未核实更新；可使用已存本地版。明确重查时使用 --force。'};
+        ...diagnostic(error), teaching_paused: true,
+        message_suffix: '同步未完成，暂停教学；处理适用权限或由本人完成登录，再用 --force 明确重试。不得改用通用知识或未同步本地版。'};
       saveEnvelope(path, {startup_failure: failure}); output(failure); return 1;
     }
     saveEnvelope(path, {account_scope: {site: identity.site, user_id: client.userId}});
     const result = await verify(client, {...paths, ...command});
     output(result); return result.ready_for_teaching === true ? 0 : 1;
   } catch (error) {
-    output({operation: 'verify_chapter', status: 'unverified', ready_for_teaching: false,
+    output({operation: 'verify_chapter', status: 'unverified', ready_for_teaching: false, teaching_paused: true,
       ...(error.code === 'CHAPTER_USAGE' ? {category: 'configuration', message: error.message} : diagnostic(error))});
     return 1;
   }

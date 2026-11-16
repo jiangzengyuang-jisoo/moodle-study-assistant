@@ -93,7 +93,8 @@ export function enumerateCourseContent(sections, {pageId, courseId, site, snapsh
     if (!safeName(filename)) {gaps.push({...parent, filename, source_url: fileurl, reason: 'unsafe_filename'}); return;}
     try {fileEndpoint(site, fileurl);} catch {gaps.push({...parent, filename, source_url: fileurl, reason: 'external_or_unsupported_download'}); return;}
     const item = {...parent, filename, fileurl, filepath: file.filepath || new URL(fileurl).pathname.slice(0, -encodeURIComponent(filename).length),
-      filesize: Number.isFinite(file.filesize) ? file.filesize : null, timemodified: file.timemodified ?? file.timecreated ?? null};
+      filesize: Number.isFinite(file.filesize) ? file.filesize : null,
+      timemodified: file.timemodified ?? null, timecreated: file.timecreated ?? null};
     const key = `${parent.module_id}|${parent.post_id ?? ''}|${fileurl}`;
     if (!files.has(key) || item.filesize !== null) files.set(key, item);
   }
@@ -209,6 +210,16 @@ export async function stageDownload(client, item, {studyRoot, site, timeoutMs, m
     }
     await handle.sync(); await handle.close(); handle = null;
     if (!size || (item.filesize > 0 && item.filesize !== size)) throw new Error('size_mismatch');
+    // Moodle file endpoints can report authentication errors with HTTP 200.
+    // A text extension permits JSON content, but never an API error envelope.
+    if (size <= 1024 * 1024 && (/application\/json/i.test(mime) || /^\s*\{/.test(first.toString()))) {
+      let payload;
+      try {payload = JSON.parse(readFileSync(temporary, 'utf8').replace(/^\uFEFF/, ''));} catch {}
+      if (payload && typeof payload === 'object' && !Array.isArray(payload)
+          && (typeof payload.errorcode === 'string' || typeof payload.exception === 'string')
+          && (typeof payload.error === 'string' || typeof payload.message === 'string'))
+        throw new Error('moodle_error_response');
+    }
     if (extname(item.filename).toLowerCase() === '.pdf' && !first.includes(Buffer.from('%PDF-'))) throw new Error('invalid_pdf');
     if (/\.(docx|pptx|xlsx|odt)$/i.test(item.filename) && first.subarray(0, 2).toString() !== 'PK') throw new Error('invalid_office_file');
     if (/text\/html/i.test(mime) && /name=["'](?:username|password)|loginform|login\/index\.php/i.test(first.toString())) throw new Error('login_page');
@@ -268,7 +279,7 @@ export async function syncCourseContent(client, state, options = {}) {
     if (!permitted(item.page_id, item.course_id)) {result.skipped.push({...row, reason: 'authorization_revoked'}); continue;}
     touched.add(item.course_id);
     const key = digest(JSON.stringify([site, userId, item.course_id, item.page_id, item.module_id, item.post_id ?? null, item.filepath, item.filename, item.fileurl]));
-    const fingerprint = digest(JSON.stringify([item.filesize, item.timemodified, item.text]));
+    const fingerprint = digest(JSON.stringify([item.filesize, item.timemodified, item.timecreated, item.text]));
     const previous = manifest.files[key];
     try {
       // No modification stamp => fetch again to detect same-size replacements.

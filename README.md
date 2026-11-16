@@ -74,7 +74,7 @@ An example request combining materials, scope, and progress:
 
 This is a sample prompt, not a transcript or a claim that a course has already been checked.
 
-Before teaching a chapter, the assistant checks only the selected lecture files against newly downloaded bytes, then teaches from the local library. The same chat reuses those checks; a newly requested file is checked once. Planning and latest-notice requests query only the relevant school information. A full Moodle refresh runs only when explicitly requested or needed for the whole task. Unrelated questions and connection diagnostics do not start it. There is no background monitoring. [Chapter checks](docs/CHAPTER_CHECK.md).
+Before teaching, check the selected chapter’s cloud source timestamps. Existing readable originals with the same timestamp are not downloaded again. Changed timestamps trigger download and indexing; only this replacement’s old original is deleted after the new file is readable. Unknown timestamps or synchronization failures pause teaching until permissions or login are resolved. [Chapter checks](docs/CHAPTER_CHECK.md).
 
 ## Get started
 
@@ -162,7 +162,7 @@ The tools are read-only. They do not submit work, answer school quizzes, post, c
 
 Missing permissions, incomplete materials, scanned pages, and complex formulas require attention. Collection is separate from review; software validation cannot prove that an explanation is correct or that you have mastered a topic.
 
-Normal material archiving now preserves original-answer bindings. Records already damaged by older versions still need individual comparison with backups; upgrading does not automatically repair them. Reusing one profile for another school can still collide on numeric course IDs. See the [current scope and limitations](docs/UPDATE_REPORT_2026-11-07.md).
+Existing original-answer bindings remain preserved. Switching schools or accounts in an existing profile is now rejected; use a separate directory. Older already-damaged records still require review against backups.
 
 **How do I upgrade without losing my work?**
 
@@ -176,7 +176,7 @@ Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANG
 
 | Date | Change |
 | --- | --- |
-| [2026-11-16](CHANGELOG.en.md#2026-11-16) | Verify current teacher notices for exams and deadlines; match the class and lead with uncertainty when verification fails; consolidate rules and clarify notice rechecks, timely saves and read-only maintenance; require reviewed courseware content before teaching and limit partial practice to reviewed materials; Automatically acquire missing lesson materials under existing course grants, without repeated download permission prompts; recover newer same-source materials when the old original is missing while preserving historical identity |
+| [2026-11-16](CHANGELOG.en.md#2026-11-16) | Timestamp-based chapter sync avoids repeated downloads; verified replacements remove only their old original while preserving history; gaps, error responses, account collisions and onboarding guidance fixed |
 | [2026-11-14](CHANGELOG.en.md#2026-11-14) | Pair new concepts with English terms and prominently disclose AI-targeted instructions found in materials |
 | [2026-11-12](docs/UPDATE_REPORT_2026-11-12.en.md) | Publish verified teaching saves and review simplification; skip unchanged pages, with validation and upgrade notes |
 

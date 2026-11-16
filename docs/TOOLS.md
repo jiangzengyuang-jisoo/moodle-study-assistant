@@ -20,14 +20,14 @@ MCP 暴露课程、作业、测验、论坛、日历、成绩、通知、资源�
 
 `moodle_get_calendar_events` 支持课程、时间范围与分页限制，检查 `complete` 后再判断是否覆盖全部所选事件；`moodle_get_notifications` 用 `limit/offset`、`has_more/next_offset` 继续读取，不标已读。接口缺失不等于没有事件。新增查询的具体范围与限制见 [按需学校查询](UPDATE_REPORT_2026-11-07.md#按需学校查询)。
 
-### 教学前严格核对当前章节
+### 教学前按来源时间核对当前章节
 
 ```powershell
 study.cmd --chat "original-user-chat-id" ensure-chapter --course TEST --chapter 8 --material TEST-CH8-A --material TEST-CH8-B
 node tools/moodle/run.mjs ensure-chapter --chat "original-user-chat-id" --course TEST --chapter 8 --material TEST-CH8-A
 ```
 
-示例 ID 为占位，必须先用本地索引找到真实资料。`--material` 可重复或用逗号分隔；`--force` 仅供明确重查。只下载选定课件，比较实际字节；同聊天成功/失败回执复用，不解密凭据或连接学校来重复核对。章节回执不等于全量采集/审阅，不触发考试来源同步。详细合同、权限和异常处理见 [CHAPTER_CHECK.md](CHAPTER_CHECK.md)。
+示例 ID 为占位，必须先用本地索引找到真实资料。`--material` 可重复或用逗号分隔；`--force` 仅供明确重查。新聊天查云目录；来源时间一致不下载，变化或本地缺基线时才下载，完整索引成功后仅清理本次同源旧原件；未知远端时间或失败暂停教学；同聊天成功/失败回执复用，不解密凭据或连接学校来重复核对。章节回执不等于全量采集/审阅，不触发考试来源同步。详细合同、权限和异常处理见 [CHAPTER_CHECK.md](CHAPTER_CHECK.md)。
 
 ### 明确授权的资料下载
 

@@ -24,7 +24,7 @@
 
 ## 刷新与证据
 
-1. 每轮学习按 [统一入口](SESSION.md) 显式传入原始用户聊天 ID，运行 `study.cmd --chat "ID" continue` 读取本地接续。内部任务继承原 ID 并加 `--subtask`，不联网。教学前先用本地 `context/search/outline` 确认课程、章节和全部所需课件 ID，再按 [章节核对](CHAPTER_CHECK.md) 调用 `ensure-chapter`；同聊天成功/失败回执复用，新增课件只检查新增范围。元数据不代替字节比较，变化后核读新版原页；来源不明保留原件。明确重查才 `--force`，不因跨日、压缩、重开或普通追问重查。计划和最新通知用 MCP 按需查相关范围，只有明确完整检查或任务确需时才 `refresh`。
+1. 每轮学习按 [统一入口](SESSION.md) 显式传入原始用户聊天 ID，运行 `study.cmd --chat "ID" continue` 读取本地接续。内部任务继承原 ID 并加 `--subtask`，不联网。教学前先用本地 `context/search/outline` 确认课程、章节和全部所需课件 ID，再按 [章节核对](CHAPTER_CHECK.md) 调用 `ensure-chapter`；同聊天成功/失败回执复用，新增课件只检查新增范围。新聊天先查云目录，来源时间一致且本地完整可读时不重新下载；时间变化才下载，缺本地基线可一次下载建立。云端时间未知或同步失败暂停教学，处理权限/本人登录后重试；不得用未同步旧版或通用知识继续。新版验证与索引成功后仅删除本次被替换的同源旧原件，保留历史元数据与原答；来源不明保留原件。明确重查才 `--force`，不因跨日、压缩、重开或普通追问重查。计划和最新通知用 MCP 按需查相关范围，只有明确完整检查或任务确需时才 `refresh`。
 2. 实际完整采集后，比较入口返回的独立 `snapshot_path` 与 state 中来源/内容哈希，逐项核读新增和修改内容，再通过 `review --snapshot-hash` 提交完整草稿及最新基准哈希。完整采集和 AI 已核读分开；章节回执和局部查询不作为全量快照，不推进完整核验水位。`refresh-latest.json` 只兼容旧入口，不能用于绑定在途核读。
 3. 提取 ACTION / DEADLINE / COURSE UPDATE / KNOWLEDGE / OTHER IMPORTANT。教师/TA 的结论、学生猜测、未答复和 AI 推断分开保存。原文证据包括 URL、课程/活动 ID、帖子 ID 或原资料物理页码；面向用户不堆内部信息。
 4. 需要完整讨论审阅时，所需论坛列表须全部分页和回复；仅查相关通知则限定课程、主题及必要回复。MCP 上游“recent discussions”只作预览，完整核读使用本地刷新结果或 `study_all_discussions`/`study_discussion_posts`。图片正文无法从文本判断时标待确认，核读已有授权下可用的原页，不把缺失当没有内容。

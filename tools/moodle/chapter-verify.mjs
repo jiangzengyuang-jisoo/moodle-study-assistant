@@ -139,6 +139,11 @@ function findCandidates(listings, state, options) {
   for (const [pageId, sections] of listings) for (const section of (sections ?? []).filter(visible)) {
     for (const module of (section.modules ?? []).filter(visible)) {
       if (!['resource', 'folder'].includes(module.modname)) continue;
+      if (pattern.test(module.name ?? '') && !(module.contents ?? []).some(file => file.type === 'file')) {
+        const gap = {page_id: pageId, module_id: Number(module.id), filename: null,
+          reason: 'empty_or_unavailable_related_module'};
+        result.set(JSON.stringify(gap), gap);
+      }
       for (const file of module.contents ?? []) {
         if (file.type !== 'file' || !/\.(?:pdf|pptx?|docx?|txt)$/i.test(file.filename ?? '')
             || !pattern.test(`${module.name ?? ''} ${file.filename ?? ''}`)) continue;
@@ -187,7 +192,7 @@ async function indexMaterials(options, ids, ensure = false) {
   return JSON.parse(child.stdout);
 }
 
-async function ensureIndex(options, materialId, ensure = false) {
+export async function ensureIndex(options, materialId, ensure = false) {
   const indexed = await indexMaterials(options, [materialId], ensure);
   const entry = indexed.materials?.find(m => m.id === materialId);
   if (!entry || entry.status !== 'indexed' || !(entry.text_units > 0)) throw new Error('index_failed');

@@ -31,6 +31,17 @@ function matchesScope(grant, site, userId) {
   try { return normalizeSite(grant.site) === site; } catch { return false; }
 }
 
+export function assertProfileAccount(state, {site, userId}) {
+  const expected = normalizeSite(site);
+  const identities = [...(state.settings?.course_content_sync?.grants ?? []),
+    ...(state.materials ?? []).flatMap(m => m.moodle_file_sources ?? [])];
+  for (const identity of identities) {
+    if (identity.site && (normalizeSite(identity.site) !== expected
+        || identity.user_id != null && identity.user_id !== userId))
+      throw new Error('学校或账号与已有学习档案不同；请使用独立目录，原档案和资料保留。');
+  }
+}
+
 export function authorizedCoursePages(state, {site, userId}) {
   const result = new Map();
   if (!validId(userId)) return result;
@@ -48,6 +59,7 @@ export function authorizedCoursePages(state, {site, userId}) {
 
 export function grantCourseContent(state, {site, userId, courseIds, mode, authorizedAt = new Date().toISOString()}) {
   const normalized = normalizeSite(site);
+  assertProfileAccount(state, {site, userId});
   const selected = selectedCoursePages(state);
   if (!validId(userId) || !Array.isArray(courseIds) || !courseIds.length
       || courseIds.some(id => !validId(id) || !selected.has(id))

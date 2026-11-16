@@ -55,6 +55,27 @@ def keys(row):
     return result
 
 
+def assert_source_identity(old, incoming):
+    """Reject conflicting account provenance without breaking unbound legacy IDs."""
+    from course_content import site_key
+    for prior in old.get('moodle_file_sources', []):
+        for fresh in incoming.get('moodle_file_sources', []):
+            if not keys({'course_id': old['course_id'], 'moodle_file_sources': [prior]}) & keys(
+                    {'course_id': incoming['course_id'], 'moodle_file_sources': [fresh]}):
+                continue
+            for field in ('site', 'user_id', 'page_id'):
+                left, right = prior.get(field), fresh.get(field)
+                if left is not None and right is not None:
+                    if (site_key(left) if field == 'site' else left) != (site_key(right) if field == 'site' else right):
+                        raise ValueError('Source belongs to another school/account/page; preserve original')
+            for source in (prior, fresh):
+                address = source.get('url') or source.get('activity_url')
+                other = fresh if source is prior else prior
+                reference = other.get('site') or other.get('url') or other.get('activity_url')
+                if address and reference and urlparse(address).netloc.lower() != urlparse(reference).netloc.lower():
+                    raise ValueError('Source belongs to another school; preserve original')
+
+
 def verify(study, row):
     path = safe(study, row["relative_path"])
     if any(p.casefold() in {"_system", "backups", "错题本"} for p in path.relative_to(study).parts):
@@ -237,6 +258,8 @@ def promote(state_path, incoming, old_id=None, at=None, *, allow_missing_previou
             raise ValueError("Multiple source matches; version relationship needs review")
         else:
             old = None
+        if old:
+            assert_source_identity(old, incoming)
         if old and old["sha256"] == incoming["sha256"]:
             verify(study, old)
             return {"status": "identical", "material_id": old["id"], "state_written": False}

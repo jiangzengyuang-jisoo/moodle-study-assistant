@@ -55,7 +55,7 @@ export async function selectCoursesInChat({client, readState, writeState, select
   // The assistant continues in its ORIGINAL chat using the normal session
   // protocol; selection never invents a chat, refreshes, or claims review.
   return {status: 'saved', mode: selection.mode, course_ids: ids, reviewed: false,
-    next: '使用当前原始聊天 ID 执行 study.cmd continue；已有采集后改变选课用 refresh。核读返回的独立快照后主动讲解系统用法。'};
+    next: '使用当前原始聊天 ID 执行 study.cmd refresh，完成已授权的首次初始化或选课变更；核读独立快照后主动讲解系统用法。continue 只读本地接续，不执行初始化。'};
 }
 
 function saveSelection({client, original, available, ids, mode, writeState}) {

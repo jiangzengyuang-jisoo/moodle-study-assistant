@@ -28,6 +28,17 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-16
 
+### Timestamp-based lesson sync and two audit rounds
+
+- Checks: all 140 Node tests and all 582 study-tool Python tests passed with zero skips. An additional unchanged-timestamp recovery case was then added; all 10 relevant Node tests and 21 Python tests passed. The subsequent A → unreadable B → readable C recovery fix passed 6 relevant Node tests and 23 Python tests, covering ancestor deletion, retry past deleted nodes, ordinary archive retention and annotated-ancestor protection. Historical cross-account lineage errors cannot authorize deletion. Tests initially blocked by the system temporary directory were rerun successfully with a workspace temporary directory.
+
+- Teaching now checks the cloud modification timestamp, falling back to creation time. An intact readable local original with the same timestamp is not downloaded again. Missing legacy local baselines may be established with one transfer; unknown remote timestamps or failed sync pause teaching until permissions or login are resolved.
+- Commit a new source timestamp baseline only after the file and index are readable. An indexing failure can therefore be explicitly retried at the same remote timestamp after its cause is resolved.
+- Delete only the old original replaced by this operation after the replacement is readable and indexed. Preserve old IDs, source metadata, hashes and original learning answers with an explicit deleted state. Preserve failed replacements, annotations and unrelated sources; do not sweep historical archives.
+- Fix hidden empty chapter resources, HTTP 200 JSON errors accepted as TXT lessons, cross-school source collisions, and the stale continue instruction after first course selection. Initial setup now points to refresh.
+- Validation uses the real installation, indexing, full reading and teaching-save paths with synthetic schools, including same/new chats, updates, gaps, annotations, account changes and interrupted deletion recovery. No live school was contacted. Timestamp checks cannot detect content changes with unchanged server timestamps; explicit verify-chapter remains available for strict diagnosis.
+- Update source files while preserving personal data. This change is committed locally only, without pushing, packaging or installing.
+
 ### Cached indexes and learning-flow acceptance
 
 - Before reusing a chapter receipt, check the selected materials' reading index offline and repair missing or stale entries as needed. Unreadable content cannot be reported as ready for teaching; this does not reconnect to the school.
