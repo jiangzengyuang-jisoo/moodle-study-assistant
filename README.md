@@ -1,5 +1,7 @@
 <p align="center"><strong>Codex edition</strong> · Windows 10/11 · Open source</p>
 
+![Moodle Study Assistant — scarlet flower on black silk, with ivory lettering.](docs/assets/flower-banner.png)
+
 <h1 align="center">Moodle Study Assistant</h1>
 <p align="center">Turn your course materials into explanations, practice and a study record you can return to.</p>
 <p align="center"><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>

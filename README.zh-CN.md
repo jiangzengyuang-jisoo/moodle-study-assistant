@@ -1,5 +1,7 @@
 <p align="center"><strong>Codex 版</strong> · Windows 10/11 · 开源</p>
 
+![Moodle 学习助手：红色花朵、黑色绸缎与米白标题。](docs/assets/flower-banner.png)
+
 <h1 align="center">Moodle 学习助手</h1>
 <p align="center">用你的课程资料讲解、练习，把每次学习的进度留下来。</p>
 <p align="center"><a href="README.md">English</a> · <strong>简体中文</strong></p>
