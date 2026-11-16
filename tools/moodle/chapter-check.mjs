@@ -1581,6 +1581,9 @@ export async function runChapterCheck(options) {
       const checked = (options.finalize ?? finalizeChapter)({root: options.root, statePath: join(options.root, 'Study/_System/state.json'),
         payload: {material_ids: ids, previous_ids: result.acquisition ? previousIds : []}});
       result.teaching_ready = true; result.local_index = checked;
+      result.sync_complete = true; result.reading_required = true;
+      result.visual_review_required = !!checked.visual_review_required;
+      result.reading_instruction = "同步成功不等于核读完成；讲解前核读正文，reading_routes 中 visual_units 所列页必须查看原图。";
     } catch {
       result.verified = {...result.verified, complete: false, reason: 'chapter_body_unavailable'};
       result.verdict = 'incomplete'; result.teaching_ready = false; result.reuse = {eligible: false, reason: 'chapter_body_unavailable'};

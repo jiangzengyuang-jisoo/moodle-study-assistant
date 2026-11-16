@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 
 from library import Library
+from chapter_readiness import reading_route
 from learning_library import versions
 from course_library import load, save_state
 from state_io import workspace_lock, prepare_state, atomic
@@ -22,21 +23,14 @@ def finalize(state_path, payload):
         state = load(path)
         materials = {m['id']: m for m in state.get('materials', [])}
         library = Library(path)
+        reading_routes = {}
         for mid in set(ids):
             material = materials.get(mid)
             if not material or not versions.current(material):
                 raise ValueError('Current chapter material is unavailable')
             versions.verify(path.parent.parent, material)
             def readable():
-                _, rows, _ = library.fresh_rows(mid=mid)
-                row = next((row for row in rows if row['id'] == mid), None)
-                if not row or row.get('status') != 'indexed' or not row.get('text_units') or not row.get('units'):
-                    raise ValueError('No readable chapter body')
-                data = library.read(mid, end=row['units'], around=0, include_solutions=True)
-                pages = data.get('pages', [])
-                if (len(pages) != row['units'] or [page.get('page') for page in pages] != list(range(1, row['units'] + 1))
-                        or not any(page.get('text', '').strip() for page in pages)):
-                    raise ValueError('Chapter index is incomplete')
+                reading_routes[mid] = reading_route(library, mid)
             try:
                 readable()
             except (ValueError, OSError, KeyError, TypeError, IndexError):
@@ -128,7 +122,9 @@ def finalize(state_path, payload):
                 if row['id'] in completed_updates:
                     row['chapter_timestamp_update']['pending_retirement'] = False
             save_state(path, after, before)
-        return {'ready': True, 'material_ids': ids, 'deleted_original_ids': deleted,
+        return {'ready': True, 'sync_complete': True, 'reading_required': True,
+                'visual_review_required': any(r['visual_review_required'] for r in reading_routes.values()),
+                'reading_routes': reading_routes, 'material_ids': ids, 'deleted_original_ids': deleted,
                 'mastery_updated': False, 'state_written': bool(deleted or completed_updates)}
 
 

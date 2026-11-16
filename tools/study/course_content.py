@@ -91,6 +91,7 @@ def restore_missing(study, row, staged):
 
 def index_course(state_path, course):
     from library import Library
+    from chapter_readiness import reading_route
     from learning_library.versions import current
     lib = Library(state_path)
     result = lib.sync(course)
@@ -108,8 +109,11 @@ def index_course(state_path, course):
     for row in rows:
         if 'extraction_failed' in (row.get('warnings') or []):
             row['status'] = 'extraction_error'
-        elif row['status'] == 'indexed' and not row.get('text_units'):
-            row['status'] = 'not_text_indexed'
+        elif row['status'] == 'indexed':
+            try:
+                row.update(reading_route(lib, row['id']))
+            except (ValueError, OSError, KeyError, TypeError, IndexError):
+                row['status'] = 'not_readable'
     return {'course_id': course, 'materials': rows,
             'status_counts': {key: sum(r['status'] == key for r in rows) for key in sorted({r['status'] for r in rows})},
             'extracted': result['extracted'], 'reused': result['reused'],

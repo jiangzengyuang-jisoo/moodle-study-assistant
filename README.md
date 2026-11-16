@@ -168,6 +168,8 @@ Ask the assistant to back up and preserve `Study/`, configuration, credentials, 
 
 ## Recent updates
 
+Scanned PDFs now keep successful sync timestamps and explicitly request original-page visual reading; rendering is not a claim of review or mastery.
+
 2026-11-16: Teaching uses chapter timestamps to avoid unchanged downloads, pauses on sync failures, and retires replaced originals only after validating the new body. [Details](CHANGELOG.en.md). Source update only; no plugin package/install.
 
 This source maintenance fixes chapter verification, missing-version recovery and failed receipts, and aligns learning-flow rules; plugins remain unchanged.
@@ -193,3 +195,8 @@ Detailed guides are currently primarily in Chinese:
 For a bug report or improvement, [open an issue](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/issues). Describe the expected behavior, actual result, and reproduction steps without credentials, private course content, or learning records. Code changes should follow [AGENTS.md](AGENTS.md) and the checks in [docs/TOOLS.md](docs/TOOLS.md#验证与发布).
 
 Licensed under the [MIT License](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md) for dependencies. This project is not officially affiliated with OpenAI, HKU, or Moodle.
+
+
+## 2026-11-16 — Scanned lesson reading
+
+Scanned PDFs now validate rendered pages separately from text extraction, retain the successful timestamp, and report required visual reading. No OCR or mastery claim is implied; corrupt/blank originals still fail. Validation includes raster PDF tests and actual Chapter 9 files in isolated update/failure scenarios. Source update only; no plugin package or installation.

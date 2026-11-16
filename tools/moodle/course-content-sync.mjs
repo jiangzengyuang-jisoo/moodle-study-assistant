@@ -311,7 +311,7 @@ export async function syncCourseContent(client, state, options = {}) {
         indexed = JSON.parse(child.stdout);
       }
       result.index.push({course_id: courseId, ...indexed});
-      for (const material of indexed.materials ?? []) if (material.status !== 'indexed' || material.text_units === 0)
+      for (const material of indexed.materials ?? []) if (material.status !== 'indexed' || (material.text_units === 0 && !material.visual_review_required))
         result.skipped.push({course_id: courseId, material_id: material.id, reason: material.status === 'indexed' ? 'no_searchable_text' : material.status});
     } catch {result.errors.push({course_id: courseId, reason: 'index_failed_downloads_retained'});}
   }
