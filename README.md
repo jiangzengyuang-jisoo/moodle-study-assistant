@@ -20,6 +20,11 @@ Preserve existing learning records. Tell me when I need to sign in,
 approve access or choose my courses, then show me how to use it.
 ```
 
+> [!TIP]
+> **First Moodle connection stuck loading at the last step?**
+>
+> If you have completed school sign-in but the page keeps loading, wait a moment, then press **F5** or click the browser’s **Refresh** button. **Refresh only the current web page; keep the AI’s setup task running.** If there is still no progress, describe what you see to the AI so it can investigate.
+
 [Illustrated setup guide](docs/新手使用指南.md) · [Upgrade without losing records](docs/新手使用指南.md#从旧版更新)
 
 **Source edition:** this download is a Harness workspace, not an installable plugin. The frozen trial.8 package does not contain the latest source changes. [Plugin status](docs/market/CURRENT_CANDIDATE.md).

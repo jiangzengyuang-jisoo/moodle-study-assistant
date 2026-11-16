@@ -12,6 +12,20 @@
 
 ## 登录只进入学校网页
 
+打开学校浏览器前，按学生使用的语言主动给出下面的提示；仅说明这个可尝试的处理方法，不保证刷新能解决所有登录问题。保持原登录任务运行，不因页面转圈重复启动安装或登录；刷新后仍须等待原任务返回真实成功结果，不能把页面变化当作连接已验证。
+
+Before opening the school browser, proactively give the following tip in the learner’s language. Present it as a workaround to try, not a guaranteed fix. Keep the original sign-in task running; do not start another setup or sign-in merely because the page is loading. Still wait for the original task’s verified success result after a refresh.
+
+> [!TIP]
+> **首次连接 Moodle，最后一步一直转圈？**
+>
+> 如果已经完成学校登录，但页面仍一直加载，可以先稍等，再按 **F5** 或点击浏览器的**刷新**按钮。**只刷新当前网页，保持 AI 的安装任务继续运行。** 如果刷新后仍无进展，把当前现象告诉 AI，继续排查。
+
+> [!TIP]
+> **First Moodle connection stuck loading at the last step?**
+>
+> If you have completed school sign-in but the page keeps loading, wait a moment, then press **F5** or click the browser’s **Refresh** button. **Refresh only the current web page; keep the AI’s setup task running.** If there is still no progress, describe what you see to the AI so it can investigate.
+
 先确认学校地址。默认 HKU 不能当作其他学校用户的选择。有已有加密授权时先检查是否需要重新连接，不要求每次登录。
 
 重启后第一次调用联网工具若返回 `STUDY_LOGIN_REQUIRED`（或 `study_check_chapter` 返回同样的登录提示），这是预期状态而不是工具损坏：MCP 已经启动并注册了工具，只是尚未保存学校登录。已下载资料在此期间仍可本地学习；按要求完成下面的浏览器登录后，让助手在**同一聊天直接重试同一个工具**即可，不需要重启 Harness、重装或重建学习档案。

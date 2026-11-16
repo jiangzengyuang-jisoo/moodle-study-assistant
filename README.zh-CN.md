@@ -19,6 +19,11 @@ https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/deepseek
 需要我登录、确认权限或选择课程时告诉我，完成后教我怎么用。
 ```
 
+> [!TIP]
+> **首次连接 Moodle，最后一步一直转圈？**
+>
+> 如果已经完成学校登录，但页面仍一直加载，可以先稍等，再按 **F5** 或点击浏览器的**刷新**按钮。**只刷新当前网页，保持 AI 的安装任务继续运行。** 如果刷新后仍无进展，把当前现象告诉 AI，继续排查。
+
 [图文安装指南](docs/新手使用指南.md) · [保留记录升级](docs/新手使用指南.md#从旧版更新)
 
 **这是源码版：** 下载后作为 Harness 工作区使用，并非可直接安装的插件包；冻结的 trial.8 包不包含最新源码改进。[查看插件状态](docs/market/CURRENT_CANDIDATE.md)。
