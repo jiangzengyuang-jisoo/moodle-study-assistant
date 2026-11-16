@@ -84,3 +84,50 @@ test('lesson acquisition uses real installer/index, restores missing originals, 
   assert.equal(await runChapterCommand(unlabelled, options), 1);
   assert.equal(outputs.at(-1).reason, 'no_matching_materials_select_module');
 });
+
+
+test('missing old bytes and a remote update install a separate version in the same chat', async t => {
+  const directory = mkdtempSync(join(import.meta.dirname, '.missing-version-'));
+  t.after(() => {
+    const child = relative(realpathSync(import.meta.dirname), realpathSync(directory));
+    assert.ok(child && !child.startsWith('..') && !isAbsolute(child));
+    rmSync(directory, {recursive: true});
+  });
+  const studyRoot = join(directory, 'Study'), statePath = join(studyRoot, '_System/state.json');
+  mkdirSync(join(studyRoot, '_System'), {recursive: true});
+  writeFileSync(statePath, JSON.stringify(grantCourseContent({revision: 1,
+    courses: [{id: 'TEST', moodle_course_ids: [10]}], settings: {}, materials: []},
+  {site: 'https://school.test', userId: 7, courseIds: [10], mode: 'full'})));
+  let bytes = 'Original lesson', connections = 0, transfers = 0;
+  const client = {baseUrl: 'https://school.test', userId: 7, token: 'synthetic',
+    async call() {return [{id: 1, modules: [{id: 100, name: 'Chapter 8', modname: 'resource',
+      contents: [{type: 'file', filename: 'Chapter 8.txt', filepath: '/',
+        fileurl: 'https://school.test/pluginfile.php/77/mod_resource/content/1/Chapter%208.txt'}]}]}];},
+    async transport() {transfers++; return new Response(bytes, {headers: {'content-type': 'text/plain'}});}};
+  const outputs = [], paths = {studyRoot, statePath, studyToolsDir: resolve(import.meta.dirname, '../tools/study'), python: choosePython(resolve(import.meta.dirname, '..'))};
+  const options = {paths, connectionIdentity: () => ({site: client.baseUrl, credentialKey: 'synthetic'}),
+    environment: {STUDY_CHAT_ID: 'same-chat', CODEX_THREAD_ID: 'same-chat'},
+    createClient: async () => {connections++; return client;}, output: value => outputs.push(value)};
+  const args = ['--ensure', '--course', 'TEST', '--chapter', '8'];
+  assert.equal(await runChapterCommand(args, options), 0, JSON.stringify(outputs.at(-1)));
+  const old = read(statePath).materials[0];
+  unlinkSync(join(studyRoot, old.relative_path)); bytes = 'Updated lesson';
+  assert.equal(await runChapterCommand(args, options), 0, JSON.stringify(outputs.at(-1)));
+  const result = outputs.at(-1), state = read(statePath);
+  const historical = state.materials.find(m => m.id === old.id), current = state.materials.find(m => !m.superseded_by);
+  assert.equal(result.acquired[0].missing_original_id, old.id);
+  assert.equal(historical.version_status, 'missing');
+  assert.equal(historical.sha256, old.sha256);
+  assert.equal(historical.relative_path, old.relative_path);
+  assert.notEqual(current.relative_path, old.relative_path);
+  assert.equal(readFileSync(join(studyRoot, current.relative_path), 'utf8'), bytes);
+  const count = {connections, transfers};
+  assert.equal(await runChapterCommand(args, options), 0);
+  assert.deepEqual({connections, transfers}, count);
+  // Both material IDs resolve to the newly checked lineage without reconnecting.
+  for (const id of [old.id, current.id]) {
+    assert.equal(await runChapterCommand(['--course', 'TEST', '--chapter', '8', '--material', id], options), 0);
+    assert.equal(outputs.at(-1).materials[0].material_id, current.id);
+  }
+  assert.deepEqual({connections, transfers}, count);
+});

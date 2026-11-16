@@ -28,6 +28,13 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-16
 
+### Remote updates when the previous original is missing
+
+- Fixed chapter acquisition when a registered original is missing locally and the school has updated the same source. The new bytes receive a new ID and separate path. The old ID, hash, path and historical references remain unchanged and are marked missing, without claiming the original was archived.
+- Automatic continuation requires an active full-course grant and one matching account-bound course-page source. Multiple sources, incomplete identity, mismatched sources and local annotations still require review. Restoring identical bytes keeps the original ID.
+- Only the newly installed version is rechecked in the same chat; subsequent cached use and continuation from either material ID remain available. Update the source files and keep using ensure-chapter; explicitly retry an existing failed receipt with --force, without resetting learning records.
+- Validation: 132 Node and 577 Python study-tool tests passed. Added real installation, indexing, historical-reading, same-chat receipt and transaction-rollback regressions, first reproducing failures and then passing, using simulated school responses and temporary records. No live-school check, push or publication; missing historical bytes are not recreated.
+
 ### Acquire lesson materials on demand
 
 - Automatically acquire missing lesson materials under existing course grants, without repeated download permission prompts, including newly uploaded chapter parts and registered files missing locally. Local edits, historical references and learning evidence remain protected.

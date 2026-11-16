@@ -171,6 +171,89 @@ class CourseContentTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), before)
         self.assertEqual(local.read_bytes(), b'My local annotation')
 
+    def test_missing_old_original_accepts_new_version_without_rewriting_history(self):
+        first = install_download(self.path, self.data())
+        state = self.read()
+        old = copy.deepcopy(state['materials'][0])
+        state['mistakes'][0].update(material_id=old['id'], source=old['relative_path'])
+        self.save(state)
+        note = self.study / 'A/notes.md'
+        note.write_text('[original](' + old['relative_path'] + ')', encoding='utf-8')
+        original_note = note.read_bytes()
+        self.assertEqual(index_course(self.path, 'A')['status_counts'], {'indexed': 1})
+        missing = self.study / old['relative_path']
+        missing.unlink()
+        second = install_download(self.path, self.data(b'Updated original'))
+        after = self.read()
+        historical = next(m for m in after['materials'] if m['id'] == old['id'])
+        for key in ('id', 'sha256', 'relative_path', 'moodle_file_sources'):
+            self.assertEqual(historical[key], old[key])
+        self.assertEqual(historical['version_status'], 'missing')
+        self.assertEqual(historical['superseded_by'], second['material_id'])
+        self.assertIn('missing_detected_at', historical)
+        self.assertNotIn('archived_at', historical)
+        self.assertNotIn('archive_sha256', historical)
+        self.assertIsNone(second['archived_id'])
+        self.assertEqual(second['missing_original_id'], old['id'])
+        self.assertEqual(after['mistakes'], state['mistakes'])
+        self.assertEqual(after['courses'], state['courses'])
+        self.assertEqual(note.read_bytes(), original_note)
+        self.assertFalse(missing.exists())
+        self.assertNotEqual(second['relative_path'], old['relative_path'])
+        self.assertEqual((self.study / second['relative_path']).read_bytes(), b'Updated original')
+        self.assertEqual(index_course(self.path, 'A')['status_counts'], {'indexed': 1})
+        from library import Library
+        with self.assertRaisesRegex(ValueError, 'unavailable|stale'):
+            Library(self.path).read(old['id'], include_archived=True)
+        # A later ordinary update must not put different bytes at a historical missing path.
+        third = install_download(self.path, self.data(b'Third original'))
+        self.assertFalse(missing.exists())
+        self.assertEqual(third['archived_id'], second['material_id'])
+        self.assertEqual(next(m for m in self.read()['materials'] if m['id'] == old['id']), historical)
+        before = self.path.read_bytes()
+        self.assertEqual(install_download(self.path, self.data(b'Third original'))['status'], 'identical')
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_missing_update_requires_one_matching_account_bound_source(self):
+        first = install_download(self.path, self.data())
+        (self.study / first['relative_path']).unlink()
+        original = self.read()
+        for change in ('site', 'account', 'page', 'unbound', 'multiple', 'different_module'):
+            with self.subTest(change=change):
+                state = copy.deepcopy(original)
+                source = state['materials'][0]['moodle_file_sources'][0]
+                if change == 'site': source['site'] = 'https://other.example'
+                if change == 'account': source['user_id'] = 78
+                if change == 'page': source['page_id'] = 101
+                if change == 'unbound': source.pop('site')
+                if change == 'multiple':
+                    state['materials'][0]['moodle_file_sources'].append({**source, 'module_id': 999})
+                self.save(state)
+                incoming = self.data(b'New bytes', module=999 if change == 'different_module' else 501)
+                incoming['old_id'] = first['material_id']
+                before = self.path.read_bytes()
+                with self.assertRaises(ValueError):
+                    install_download(self.path, incoming)
+                self.assertEqual(self.path.read_bytes(), before)
+                self.assertTrue((self.study / incoming['relative_path']).is_file())
+
+    def test_missing_update_transaction_failure_restores_staged_file_and_state(self):
+        first = install_download(self.path, self.data())
+        (self.study / first['relative_path']).unlink()
+        incoming = self.data(b'Updated original')
+        before = self.path.read_bytes()
+        write = versions._write
+        def fail_state(path, value):
+            if Path(path) == self.path:
+                raise OSError('simulated state write failure')
+            return write(path, value)
+        with patch.object(versions, '_write', side_effect=fail_state):
+            with self.assertRaisesRegex(OSError, 'simulated'):
+                install_download(self.path, incoming)
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual((self.study / incoming['relative_path']).read_bytes(), b'Updated original')
+        self.assertFalse((self.study / first['relative_path']).exists())
+
 
 if __name__ == '__main__':
     unittest.main()

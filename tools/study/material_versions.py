@@ -110,7 +110,7 @@ def install_download(path, data):
     else:
         if any(m["id"] == row["id"] for m in state.get("materials", [])):
             row["id"] += "-" + versions.uuid.uuid4().hex[:10]
-        result = versions.promote(path, row, data.get("old_id"))
+        result = versions.promote(path, row, data.get("old_id"), allow_missing_previous=batch)
         if result["status"] == "identical":
             result = _reuse_identical(path, row, result["material_id"])
     result["state_written"] = bool(result.get("state_written") or cleanup.get("deleted"))

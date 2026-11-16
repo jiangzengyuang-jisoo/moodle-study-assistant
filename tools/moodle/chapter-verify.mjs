@@ -99,6 +99,9 @@ async function cachedEntry(entry, selected, options, state) {
   const grants = authorizedCoursePages(state, options);
   if ([...(entry.sources ?? []), ...(entry.source ? [entry.source] : [])].some(source => grants.get(source.page_id) !== options.courseId))
     return {...entry, status: 'needs_review', reason: 'authorization_changed', reused: true};
+  // A trusted missing-original installation created a new immutable version.
+  // Recheck that version only; ordinary local edits still invalidate the cache.
+  if (options.acquiredMaterialIds?.includes(material.id) && material.id !== entry.material_id) return null;
   if (!successful(entry)) return {...entry, reused: true};
   try {
     if (material.id !== entry.material_id || material.sha256 !== entry.sha256

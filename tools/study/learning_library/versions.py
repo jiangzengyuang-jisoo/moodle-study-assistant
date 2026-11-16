@@ -185,8 +185,27 @@ def _commit(path, before, state, moves=(), edits=(), at=None):
         raise
 
 
+def _same_authorized_source(state, old, incoming):
+    """Missing bytes cannot establish lineage; require one complete bound source."""
+    from course_content import authorize, site_key
+    previous, following = old.get("moodle_file_sources", []), incoming.get("moodle_file_sources", [])
+    if len(previous) != 1 or len(following) != 1 or len(keys(old)) != 1 or keys(old) != keys(incoming):
+        return False
+    prior, fresh = previous[0], following[0]
+    try:
+        if site_key(prior.get("site", "")) != site_key(fresh.get("site", "")):
+            return False
+        for field in ("user_id", "page_id"):
+            if type(prior.get(field)) is not int or prior[field] <= 0 or prior[field] != fresh.get(field):
+                return False
+        authorize(state, {"course_id": incoming["course_id"], "scope": fresh})
+    except (ValueError, TypeError, AttributeError):
+        return False
+    return True
+
+
 @locked
-def promote(state_path, incoming, old_id=None, at=None):
+def promote(state_path, incoming, old_id=None, at=None, *, allow_missing_previous=False):
     """Incoming is a registered local file or a verified download staged in Study."""
     from library import build_lock
     path = Path(state_path).resolve()
@@ -233,24 +252,42 @@ def promote(state_path, incoming, old_id=None, at=None):
         target = safe(study, Path(course) / category / subdir / name if subdir else Path(course) / category / name)
         moves, edits = [], []
         archived = None
+        missing_original = None
         if old:
             if not current(old) and old.get("superseded_by") != incoming["id"]:
                 raise ValueError("Old version has already been replaced by another material")
-            original = verify(study, old)
+            original = safe(study, old["relative_path"])
+            if not original.exists() and allow_missing_previous:
+                if not _same_authorized_source(state, old, incoming) or not re.fullmatch(r"[a-f0-9]{64}", old.get("sha256", "")):
+                    raise ValueError("Missing original needs one matching account-bound source before replacement")
+                if any(p.casefold() in {"_system", "backups", "错题本"} for p in original.relative_to(study).parts):
+                    raise ValueError("Learning records cannot be replaced as missing course originals")
+                missing_original = old["id"]
+            else:
+                original = verify(study, old)
             if any(r["id"] not in {old["id"], incoming["id"]} and r.get("relative_path") == old["relative_path"] for r in rows):
                 raise ValueError("File is shared by multiple registered materials; review before moving")
-            stamp = hashlib.sha256(old["id"].encode()).hexdigest()[:12]
-            archived = safe(study, Path(course) / "_Archive" / (stamp + "-" + old["sha256"][:12]) / original.name)
-            if original != archived:
-                moves.append((original, archived))
-                edits = _note_edits(study, original, archived)
-                # Historical records (including answer bindings and correction
-                # snapshots) keep their original content. Resolve the material
-                # ID through its catalog entry for the current physical path.
-            old.update(relative_path=archived.relative_to(study).as_posix(),
-                       version_status="archived", superseded_by=incoming["id"],
-                       archived_at=instant(at).isoformat(), archive_sha256=old["sha256"],
-                       original_relative_path=old.get("original_relative_path", original.relative_to(study).as_posix()))
+            if missing_original:
+                # No old bytes were archived. Keep the original path/hash/evidence
+                # intact, and never put the replacement at that historical path.
+                old.update(version_status="missing", superseded_by=incoming["id"],
+                           missing_detected_at=instant(at).isoformat())
+            else:
+                stamp = hashlib.sha256(old["id"].encode()).hexdigest()[:12]
+                archived = safe(study, Path(course) / "_Archive" / (stamp + "-" + old["sha256"][:12]) / original.name)
+                if original != archived:
+                    moves.append((original, archived))
+                    edits = _note_edits(study, original, archived)
+                    # Historical records keep their original content and IDs.
+                old.update(relative_path=archived.relative_to(study).as_posix(),
+                           version_status="archived", superseded_by=incoming["id"],
+                           archived_at=instant(at).isoformat(), archive_sha256=old["sha256"],
+                           original_relative_path=old.get("original_relative_path", original.relative_to(study).as_posix()))
+        if missing_original or any(r.get("version_status") == "missing" and r.get("relative_path") == target.relative_to(study).as_posix() for r in rows):
+            stamp = hashlib.sha256(incoming["id"].encode()).hexdigest()[:16]
+            target = safe(study, target.parent / ("version-" + stamp) / name)
+            if any(r.get("relative_path") == target.relative_to(study).as_posix() for r in rows):
+                raise ValueError("Replacement path is reserved by historical material evidence")
         vacated = {a for a, _ in moves}
         if source != target:
             if target.exists() and target not in vacated:
@@ -267,8 +304,11 @@ def promote(state_path, incoming, old_id=None, at=None):
             existing_new.update(incoming)
         else:
             rows.append(incoming)
+        if missing_original and original.exists():
+            raise ValueError("Missing original reappeared during installation; reread before replacing")
         _commit(path, before, state, moves, edits, at)
-        return {"status": "promoted", "material_id": incoming["id"], "archived_id": old["id"] if old else None,
+        return {"status": "promoted", "material_id": incoming["id"], "archived_id": old["id"] if archived else None,
+                **({"missing_original_id": missing_original} if missing_original else {}),
                 "references_relocated": len(edits), "state_written": True}
 
 

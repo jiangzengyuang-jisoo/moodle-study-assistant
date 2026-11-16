@@ -126,13 +126,15 @@ export async function ensureChapter(client, input) {
           stagedPath, deferIndex: true, sourceSubdirectory: true, retainUnparsed: true});
         await cleanOwnedStaging(options.root, stagedPath, installed);
         ids.add(installed.material_id);
-        acquired.push({material_id: installed.material_id, status: installed.status, filename: file.filename});
+        acquired.push({material_id: installed.material_id, status: installed.status, filename: file.filename,
+          ...(installed.missing_original_id ? {missing_original_id: installed.missing_original_id} : {})});
       } catch {return finish(failure(options, 'acquisition_failed_existing_materials_preserved', acquired));}
     }
     receipt.material_ids = [...ids];
     if (!ids.size) return finish(failure(options, 'no_matching_materials_select_module'));
     // The strict verifier checks all sources and indexes only this lesson's originals.
-    const checked = await verifyChapter(client, {...options, materialIds: [...ids]});
+    const checked = await verifyChapter(client, {...options, materialIds: [...ids],
+      acquiredMaterialIds: acquired.filter(m => m.missing_original_id).map(m => m.material_id)});
     return finish({...checked, operation: 'ensure_chapter', acquired});
   } finally {await lock.release();}
 }
