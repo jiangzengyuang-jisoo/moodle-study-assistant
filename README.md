@@ -1,6 +1,6 @@
 <p align="center"><strong>Codex edition</strong> · Windows 10/11 · Open source</p>
 
-![Moodle Study Assistant — scarlet flower on black silk, with ivory lettering.](docs/assets/flower-banner.png)
+![Illustrated workflow: course materials and requirements → explanations and independent practice → saved progress → planning and review.](docs/assets/flower-banner.png)
 
 <h1 align="center">Moodle Study Assistant</h1>
 <p align="center">Turn your course materials into explanations, practice and a study record you can return to.</p>
