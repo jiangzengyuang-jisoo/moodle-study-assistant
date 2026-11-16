@@ -26,9 +26,9 @@ async function main() {
   if (mode === 'init') { initialize(root); console.log('空白档案和本地 MCP 配置已准备好；已有档案保留。'); return; }
   const courseOptions = mode === 'courses' ? parseCourseOptions(process.argv.slice(3), process.stdin.isTTY) : null;
   if (!existsSync(statePath)) throw new Error('请先运行 setup.cmd');
-  if (mode === 'verify-chapter') {
+  if (['verify-chapter', 'ensure-chapter'].includes(mode)) {
     const {runChapterCommand} = await import('./chapter-entry.mjs');
-    process.exitCode = await runChapterCommand(process.argv.slice(3), {root,
+    process.exitCode = await runChapterCommand([...process.argv.slice(3), ...(mode === 'ensure-chapter' ? ['--ensure'] : [])], {root,
       createClient: async identity => {
         const config = json(join(root, 'config.local.json'));
         process.env.TZ = config.timezone;

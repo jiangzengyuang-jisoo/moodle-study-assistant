@@ -70,7 +70,7 @@ function saveReceipt(options, receipt) {
   finally {if (existsSync(temporary)) unlinkSync(temporary);}
 }
 
-function sources(material, site) {
+export function sources(material, site) {
   const input = [...(material.moodle_file_sources ?? [])];
   if (!input.length && material.moodle_url) {
     try {input.push({module_id: Number(new URL(material.moodle_url).searchParams.get('id')), activity_url: material.moodle_url});} catch {}
@@ -118,11 +118,11 @@ function candidateKnown(candidate, state, options) {
       && (source.filepath === undefined || source.filepath === candidate.filepath)));
 }
 
-function chapterPattern(chapter) {
+export function chapterPattern(chapter) {
   const number = chapter.trim().match(/^(?:chapter\s*|ch\.?\s*|第\s*)?(\d+)(?:\s*章)?$/i)?.[1];
   if (!number) return null; // A label without a known chapter marker has no safe fuzzy matching rule.
   const normalized = String(Number(number));
-  return new RegExp(`(?:\\b(?:chapter|ch)\\.?[\\s_-]*0*${normalized}(?![\\d.])|第\\s*0*${normalized}\\s*章)`, 'i');
+  return new RegExp(`(?:\\b(?:chapter|ch)\\.?[\\s_-]*0*${normalized}(?!\\d|\\.\\d)|第\\s*0*${normalized}\\s*章)`, 'i');
 }
 
 function findCandidates(listings, state, options) {

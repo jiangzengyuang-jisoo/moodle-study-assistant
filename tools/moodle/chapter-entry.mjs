@@ -26,7 +26,13 @@ export function parseChapterArgs(args, environment = process.env) {
   const names = {'--course': 'courseId', '--chapter': 'chapter', '--chat': 'sessionId'};
   for (let i = 0; i < args.length; i++) {
     const flag = args[i];
-    if (flag === '--force' && !result.force) result.force = true;
+    if (flag === '--ensure') result.ensure = true;
+    else if (flag === '--module') {
+      const value = args[++i];
+      if (!/^[1-9]\d*:[1-9]\d*$/.test(value ?? '')) throw usage('--module 格式为 页面ID:模块ID');
+      (result.moduleRefs ??= []).push(value);
+    }
+    else if (flag === '--force' && !result.force) result.force = true;
     else if (flag === '--material' || names[flag]) {
       const value = args[++i];
       if (!value || value.startsWith('--') || !value.trim()) throw usage('每个参数必须提供非空值。');
@@ -38,13 +44,14 @@ export function parseChapterArgs(args, environment = process.env) {
         if (result[names[flag]] !== undefined) throw usage('课程、章节和聊天参数不可重复。');
         result[names[flag]] = value.trim();
       }
-    } else throw usage('章节核对只接受 --chat --course --chapter --material 和 --force。');
+    } else throw usage('章节入口接受 --chat --course --chapter --material --module 和 --force。');
   }
   try {result.sessionId = resolveChatId(result.sessionId, environment)?.chat;}
   catch {throw usage('缺少原始用户聊天 ID；内部任务不能使用自己的会话 ID 触发核对。');}
   result.materialIds = [...new Set(result.materialIds)];
-  if (!result.courseId || !result.chapter || !result.materialIds.length)
+  if (!result.courseId || !result.chapter || (!result.ensure && !result.materialIds.length))
     throw usage('请指定课程、章节和从本地资料索引确认的本章课件 ID。');
+  if (result.moduleRefs && !result.ensure) throw usage('--module 仅用于 ensure-chapter');
   if (!result.sessionId) throw usage('缺少稳定的聊天 ID；请传 --chat，勿为每次调用新建 ID。');
   return result;
 }
@@ -81,9 +88,9 @@ export async function runChapterCommand(args, {
 } = {}) {
   try {
     const command = parseChapterArgs(args, environment);
-    const implementation = (!verify || !cached) ? await import('./chapter-verify.mjs') : {};
-    verify ??= implementation.verifyChapter;
-    cached ??= implementation.readCachedChapterCheck;
+    const implementation = (!verify || !cached) ? await import(command.ensure ? './chapter-ensure.mjs' : './chapter-verify.mjs') : {};
+    verify ??= command.ensure ? implementation.ensureChapter : implementation.verifyChapter;
+    cached ??= command.ensure ? implementation.readCachedChapterEnsure : implementation.readCachedChapterCheck;
     const identity = connectionIdentity();
     identity.site = normalizeSite(identity.site);
     const path = envelopePath(paths, command, identity);

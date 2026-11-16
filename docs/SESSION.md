@@ -17,9 +17,9 @@
 - `today`：本地接续加今日复习与页面更新，不自动联网。学校证据未核读时仍标明 `school_evidence_pending`；本地计划不能当作刚核验过的学校信息。
 - `refresh`：本人明确要求完整检查或当前任务确需全面覆盖时使用；学校初始化和完整采集失败后的明确重试也走此入口。
 - `status`：查看采集、待核读、中断、失败或已核读状态，不联网。
-- `verify-chapter`：教学前只下载并严格核对本章选定课件，同聊天复用成功/失败回执；见 [章节核对](CHAPTER_CHECK.md)。不会启动完整采集或推进其核读状态。
+- `ensure-chapter`：教学前只下载并严格核对本章选定课件，同聊天复用成功/失败回执；见 [章节核对](CHAPTER_CHECK.md)。不会启动完整采集或推进其核读状态。
 
-无关问答不调用学习入口，也不预读学习状态。只维修连接时使用 `diagnose.cmd`（已授权联网才加 `-Online -NoPause`）；确需了解接续时用 `status` 或 `tools/study/library.cmd context --read-only`，不启动 `refresh` 或 `verify-chapter`。诊断不算课件或全量学校内容检查。
+无关问答不调用学习入口，也不预读学习状态。只维修连接时使用 `diagnose.cmd`（已授权联网才加 `-Online -NoPause`）；确需了解接续时用 `status` 或 `tools/study/library.cmd context --read-only`，不启动 `refresh` 或 `ensure-chapter`。诊断不算课件或全量学校内容检查。
 
 任务范围由助手按请求判断。教学前先从本地资料索引选齐本章所需课件，再显式调用章节核对；计划和最新通知优先通过 MCP 查询相关作业、日历或公告/论坛，不能因说了“最新”就全科刷新。直接运行 `continue/today` 现在也不会自动联网。新版入口不清空已有档案、授权、会话和学习记录；旧规则中的自动全刷默认需同步为新任务范围规则，本人明确的其他安排仍保留。
 

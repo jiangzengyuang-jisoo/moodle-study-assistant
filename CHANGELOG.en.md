@@ -28,6 +28,14 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-16
 
+### Acquire lesson materials on demand
+
+- Automatically acquire missing lesson materials under existing course grants, without repeated download permission prompts, including newly uploaded chapter parts and registered files missing locally. Local edits, historical references and learning evidence remain protected.
+- Teaching uses `study.cmd --chat ID ensure-chapter --course ID --chapter CHAPTER`; local material IDs are optional and may be added with --material. Resolve ambiguous resources from the same course catalog and select explicit modules; missing files do not trigger a full refresh.
+- Validation: 58 Node and 10 Python tests passed with synthetic Moodle responses and the real local installer/index, covering empty libraries, restoration, same-chat reuse and authorization boundaries. No live school check was performed.
+- Upgrade source and rules. The original verify-chapter remains available for low-level verification. Nothing was pushed or published; acquisition is not content review or mastery.
+
+
 ### Require courseware body review before teaching
 
 - Pause affected teaching until the required courseware body has been obtained and reviewed; do not substitute general knowledge. Filenames, catalogs and outlines do not count as reading.

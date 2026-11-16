@@ -62,6 +62,14 @@ class ChapterSessionTests(unittest.TestCase):
         self.assertFalse(self.session.record.exists())
         self.assertFalse((self.session.runtime / 'latest-request.json').exists())
 
+    def test_ensure_accepts_no_local_ids_and_forwards_explicit_modules(self):
+        receipt = {'operation': 'ensure_chapter', 'ready_for_teaching': True}
+        child = subprocess.CompletedProcess([], 0, json.dumps(receipt).encode(), b'')
+        with patch('session.shutil.which', return_value='node'), patch('session.subprocess.run', return_value=child) as run:
+            self.assertEqual(self.session.verify_chapter('C', 'Topic', None, ensure=True, module_refs=['10:20']), receipt)
+        self.assertEqual(run.call_args.args[0][2:], ['ensure-chapter', '--chat', 'original-user-chat',
+            '--course', 'C', '--chapter', 'Topic', '--module', '10:20'])
+
     def test_invalid_chapter_selection_never_launches_child(self):
         with patch('session.subprocess.run') as child:
             for course, chapter, ids in [('', '8', ['A']), ('C', None, ['A']), ('C', '8', []), ('C', '8', [''])]:
