@@ -1,11 +1,25 @@
 <p align="center"><strong>DeepSeek Harness 版</strong> · Windows 10/11 · 开源</p>
 
-![读自己的课件、练真正的薄弱点、在新聊天接着学。学习流程示意。](docs/assets/study-journey.zh-CN.svg)
-
 <h1 align="center">Moodle 学习助手</h1>
 <p align="center">用你的课程资料讲解、练习，把每次学习的进度留下来。</p>
 <p align="center"><a href="README.md">English</a> · <strong>简体中文</strong></p>
-<p align="center"><a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/archive/refs/heads/deepseek.zip"><strong>下载 DeepSeek Harness 版</strong></a> · <a href="https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf">图文教程 PDF</a> · <a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/codex">Codex 版 →</a></p>
+<p align="center"><a href="#复制给-ai开始安装"><strong>复制安装指令</strong></a> · <a href="https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf">图文教程 PDF</a> · <a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/codex">Codex 版 →</a></p>
+
+## 复制给 AI，开始安装
+
+把下面整段复制给能操作本机文件的 **DeepSeek Harness**，让它带你完成安装：
+
+```text
+帮我安装并配置这个 Moodle 学习助手（DeepSeek Harness 版）：
+https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/deepseek
+
+先读仓库里的安装说明，直接执行能完成的设置步骤，保留已有学习记录。
+需要我登录、确认权限或选择课程时告诉我，完成后教我怎么用。
+```
+
+[图文安装指南](docs/新手使用指南.md) · [保留记录升级](docs/新手使用指南.md#从旧版更新)
+
+**这是源码版：** 下载后作为 Harness 工作区使用，并非可直接安装的插件包；冻结的 trial.8 包不包含最新源码改进。[查看插件状态](docs/market/CURRENT_CANDIDATE.md)。
 
 ## 围绕你的课，接着往下学
 
@@ -14,18 +28,6 @@
 ✍️ **卡在哪里，就练哪里。** 先看必要示范，再独立做新题；用你的实际作答安排反馈和复习。
 
 ↗ **换个聊天，也能接上。** 在同一工作区保留进度、错题和下一步；讲过什么与独立掌握什么分别记录。
-
-## 三步开始
-
-1. **下载并打开。** 将 `deepseek` 版 ZIP 解压到独立文件夹，在 **DeepSeek Harness** 中把含 `AGENTS.md` 的文件夹打开为本地工作区。
-2. **让助手完成设置。** 复制下面这句话，在聊天中选课程和同步方式；学校密码由你在学校网页输入。设置提示重启时，完整重启 Harness。
-3. **带着一章资料开始。** 选择“完整初始化”，获取已授权课程中可访问的资料；也可以把自有文件放进 `Study/_Inbox/`，再说想学什么。
-
-> 帮我安装这个 Moodle 学习助手，并教我怎么用。先读 AGENTS.md，保留已有学习记录，带我连接学校、选择课程，再开始第一次学习。
-
-[详细安装指南](docs/新手使用指南.md) · [聊天上手流程](docs/CHAT_ONBOARDING.md) · [保留记录升级](docs/新手使用指南.md#从旧版更新)
-
-**这是源码版：** 下载后作为 Harness 工作区使用，并非可直接安装的插件包；冻结的 trial.8 包不包含最新源码改进。[查看插件状态](docs/market/CURRENT_CANDIDATE.md)。
 
 ## 不知道怎么问？试试这三句
 
@@ -47,16 +49,25 @@
 
 </details>
 
-<details>
-<summary><strong>最近更新 · 三次功能更新</strong></summary>
+## 最近更新
 
-- [2026-11-17](docs/UPDATE_REPORT_2026-11-17-deepseek.md) · 最新源码改进与公开教程整合
-- [2026-11-16](CHANGELOG.md#2026-11-16) · 按章同步、失败恢复与扫描原页阅读
-- [2026-11-14](docs/UPDATE_TERMS_ALERTS_2026-11-14.md) · 中英术语对应与 AI 定向指令提醒
+2026-11-16：教学按本章云端时间戳更新，未变化不重复下载，失败暂停；新版正文可读后仅删除本次对应旧原件，历史学习记录保留。[详情](CHANGELOG.md)。本次仅源码更新，不打包或安装插件。
 
-[完整更新日志](CHANGELOG.md) · 各报告保留验证结果与限制。
+本次源码维护修复章节核对、版本缺件恢复与失败回执，并统一学习流程规则；插件保持不变。
 
-</details>
+当前公开版本：**0.5.0**。
+
+本次同步源码安装版，未发布 Harness 插件。升级前保留学习档案与本机授权，更新后重跑设置并完整重启 Harness。
+
+完整历史：[中文更新日志](CHANGELOG.md) · [English changelog](CHANGELOG.en.md)。
+
+| 日期 | 更新内容 |
+| --- | --- |
+| [2026-11-17](docs/UPDATE_REPORT_2026-11-17-deepseek.md) | 推送章节时间戳同步、授权补齐、失败恢复和扫描原页阅读；保留公开教程，仅更新源码 |
+| [2026-11-16](CHANGELOG.md#2026-11-16) | 考试与截止先核对教师最新通知；按班级识别变更，失败时先说明未确认；精简重复规则，明确通知重查、及时保存与只读维护边界；教学须先核读课件正文，缺资料时专项练习仅限已核读范围；补齐插件实际加载的课件规则，统一首次提示与后续去重; 自动补齐学习所需课件，已授权课程不再逐份或逐聊天询问下载许可 修复新增课件归属含糊与混合授权页面的补齐边界；发布材料对齐冻结 trial.8 包，明确该包不含今天的源码修复。 |
+| [2026-11-14](docs/UPDATE_TERMS_ALERTS_2026-11-14.md) | 本轮另新增 `trial.8`：本体和插件补齐中英术语及 AI 定向指令醒目提醒，见[更新记录](docs/UPDATE_TERMS_ALERTS_2026-11-14.md)；尚未安装或发布。 |
+
+离线测试不代表真实学校登录或所有安装环境已验证。具体检查和已知限制见[更新日志](CHANGELOG.md)。
 
 ---
 

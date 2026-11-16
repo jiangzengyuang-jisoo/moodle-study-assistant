@@ -42,6 +42,10 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-17
 
+### README follow-up
+
+- Remove the decorative illustration and three-step setup section. Lead with a copyable branch-specific GitHub URL and AI installation request; restore the previous visible update briefing and its report links. Existing reports remain unchanged. Check links and local rendering; no runtime code changes.
+
 ### README visual refresh
 
 - Replace the long homepage with a bilingual workflow illustration, three setup steps and three example requests. Keep detailed setup, privacy and update history linked or folded. Check local links, SVG validity and rendered layouts; runtime code is unchanged.

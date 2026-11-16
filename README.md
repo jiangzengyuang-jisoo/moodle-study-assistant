@@ -1,11 +1,26 @@
 <p align="center"><strong>DeepSeek Harness edition</strong> · Windows 10/11 · Open source</p>
 
-![Course materials → guided practice → continuity across sessions. Workflow illustration.](docs/assets/study-journey.en.svg)
-
 <h1 align="center">Moodle Study Assistant</h1>
 <p align="center">Turn your course materials into explanations, practice and a study record you can return to.</p>
 <p align="center"><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
-<p align="center"><a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/archive/refs/heads/deepseek.zip"><strong>Download DeepSeek Harness edition</strong></a> · <a href="https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf">Illustrated PDF guide</a> · <a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/codex">Codex edition →</a></p>
+<p align="center"><a href="#install-with-ai"><strong>Install with AI</strong></a> · <a href="https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf">Illustrated PDF guide</a> · <a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/codex">Codex edition →</a></p>
+
+## Install with AI
+
+Copy this into **DeepSeek Harness** with local file and command access:
+
+```text
+Help me install and set up this Moodle Study Assistant (DeepSeek Harness edition):
+https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/deepseek
+
+Read the repository's installation instructions and carry out setup.
+Preserve existing learning records. Tell me when I need to sign in,
+approve access or choose my courses, then show me how to use it.
+```
+
+[Illustrated setup guide](docs/新手使用指南.md) · [Upgrade without losing records](docs/新手使用指南.md#从旧版更新)
+
+**Source edition:** this download is a Harness workspace, not an installable plugin. The frozen trial.8 package does not contain the latest source changes. [Plugin status](docs/market/CURRENT_CANDIDATE.md).
 
 ## Your course. Your next step.
 
@@ -14,18 +29,6 @@
 ✍️ **Practise where you get stuck.** Start with an example, try a new problem, and use your actual answers to guide review.
 
 ↗ **Continue in another chat.** Keep your study position, mistakes and next step in the same workspace. Hearing an explanation is kept separate from independent mastery.
-
-## Start in three steps
-
-1. **Download & open.** Extract the `deepseek` ZIP into its own folder. Open the folder containing `AGENTS.md` in **DeepSeek Harness** as a local workspace.
-2. **Ask for setup.** Paste the request below. Enter your school password only on the school’s sign-in page; choose your courses and sync mode in chat. Restart Harness when setup asks you to.
-3. **Bring a chapter.** Choose full initialization to acquire accessible files for authorized courses, or add your own files to `Study/_Inbox/`. Then ask to learn a topic.
-
-> Install this Moodle Study Assistant and show me how to use it. Read AGENTS.md first, preserve my existing records, help me connect my school and choose courses, then guide my first study session.
-
-[Detailed setup](docs/新手使用指南.md) · [Chat onboarding](docs/CHAT_ONBOARDING.md) · [Upgrade without losing records](docs/新手使用指南.md#从旧版更新)
-
-**Source edition:** this download is a Harness workspace, not an installable plugin. The frozen trial.8 package does not contain the latest source changes. [Plugin status](docs/market/CURRENT_CANDIDATE.md).
 
 ## Try one of these
 
@@ -47,16 +50,27 @@
 
 </details>
 
-<details>
-<summary><strong>Recent updates · latest three</strong></summary>
+## Recent updates
 
-- [2026-11-17](docs/UPDATE_REPORT_2026-11-17-deepseek.en.md) · Latest source improvements and retained tutorials
-- [2026-11-16](CHANGELOG.en.md#2026-11-16) · Chapter sync, recovery and scanned-page reading
-- [2026-11-14](docs/UPDATE_TERMS_ALERTS_2026-11-14.md) · Bilingual terms and AI-instruction alerts
+Scanned PDFs now keep successful sync timestamps and explicitly request original-page visual reading; rendering is not a claim of review or mastery.
 
-[Full changelog](CHANGELOG.en.md) · Validation details and limits are in each report.
+2026-11-16: Teaching uses chapter timestamps to avoid unchanged downloads, pauses on sync failures, and retires replaced originals only after validating the new body. [Details](CHANGELOG.en.md). Source update only; no plugin package/install.
 
-</details>
+This source maintenance fixes chapter verification, missing-version recovery and failed receipts, and aligns learning-flow rules; plugins remain unchanged.
+
+Current public version: **0.5.0**.
+
+This update covers source installations; no Harness plugin is published. Preserve your learning profile and local credentials, rerun setup after updating, then fully restart Harness.
+
+Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANGELOG.md).
+
+| Date | Change |
+| --- | --- |
+| [2026-11-17](docs/UPDATE_REPORT_2026-11-17-deepseek.en.md) | Publish chapter timestamp sync, authorized acquisition, failure recovery and scanned-page reading; preserve public tutorials. Source only, no new plugin package |
+| [2026-11-16](CHANGELOG.en.md#2026-11-16) | Verify current teacher notices for exams and deadlines; match the class and lead with uncertainty when verification fails; consolidate rules and clarify notice rechecks, timely saves and read-only maintenance; require reviewed courseware content before teaching and limit partial practice to reviewed materials; align plugin-loaded courseware rules and first-only update notices; Automatically acquire missing lesson materials under existing course grants, without repeated download permission prompts Fix ambiguous chapter discovery and acquisition across mixed-grant pages; align release materials with the frozen trial.8 package without claiming it contains today's source fixes. |
+| [2026-11-14](docs/UPDATE_TERMS_ALERTS_2026-11-14.md) | Additional candidate `trial.8` adds bilingual terms and prominent AI-targeted instruction alerts to the checkout and plugin; see the [update note](docs/UPDATE_TERMS_ALERTS_2026-11-14.md). Not installed or published. |
+
+Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.en.md) for validation details and known limitations.
 
 ---
 
