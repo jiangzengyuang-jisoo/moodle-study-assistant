@@ -26,6 +26,12 @@ Existing users should first read the [upgrade steps that preserve learning recor
 | [2026-10-11](#2026-10-11) | Daily review questions, learning feedback, weekly reviews, exam coverage checks, and mock exams |
 | [2026-09-22](#2026-09-22) | Initial release: Windows installation, school account connection, course information, and learning records |
 
+## 2026-11-17
+
+### README visual refresh
+
+- Replace the long homepage with a bilingual workflow illustration, three setup steps and three example requests. Keep detailed setup, privacy and update history linked or folded. Check local links, SVG validity and rendered layouts; runtime code is unchanged.
+
 ## 2026-11-16
 
 ### Publication summary and revalidation
