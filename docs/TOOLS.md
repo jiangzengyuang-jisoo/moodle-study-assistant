@@ -283,8 +283,7 @@ npm test
 
 发布前从通用源码文件清单建立提交，检查 `git status`。不得加入 `Study/`、`.private/`、本地配置、依赖环境、个人附件、真实题库或状态备份，不用 `git add -f` 绕过忽略规则。Node 依赖锁在 package-lock.json；Python 固定版本见 requirements.txt。
 
-
-资料升级、历史引用与经授权的 30 天归档清理见 [MATERIAL_VERSIONS.md](MATERIAL_VERSIONS.md)。默认搜索只读当前版；`context/sync` 可触发已启用的归档维护，实际删除时会更新资料删除标记，学习证据保持不变。
+资料升级、历史引用和经授权的归档清理统一见 [MATERIAL_VERSIONS.md](MATERIAL_VERSIONS.md)；缓存与归档维护、只读上下文的区别见 [LIBRARY.md](LIBRARY.md#文件与恢复)。保留现有维护入口、学习证据及旧版保护条件，不新增后台任务。
 
 
 考试来源写入与统一聊天入口共用快照校验。已有较新轮次、范围改变或快照被修改时，旧的 `exam-sync/exam-profile` 会拒绝保存；重读最新独立快照并核读后再提交，不使用旧草稿回退已核验要求。

@@ -92,6 +92,8 @@
 
 需要校务信息的任务在每个新对话首次进入时完整检查一次，开始教某一章时只核对本章文件（优先 `study_check_chapter`，`chapter-check` 为异常 CLI 后备，见 [WORKFLOW.md](WORKFLOW.md#单章资料核对不触发完整采集)）；用户明确要求刷新或查询最新学校信息时再次完整检查。同一对话后续消息复用已核验结果，切换课程、跨日、上下文压缩和重新打开旧对话不另触发，不设固定间隔。网络只读采集使用全局最多4个并发请求，各论坛分页顺序、正文/回复数量和权限检查保留。需要刷新时，只有把刷新命令作为 Harness 后台任务（`run_in_background`）启动后，才能在等待期间用 `job_output` 读取结果并继续本地 context/chapter-prep 准备；前台 shell 调用是独占屏障，多个 `pwsh` 不会并行，别把“同一消息发两条命令”当作并行。依赖此次学校检查的结论须等刷新与变更核读完成。刷新成功不自动表示内容已审阅，复用旧结果不写成当前刚完成检查。
 
+考试与截止的首次当前答复、本人指出改期、要求最新或出现冲突时，必须执行 [NOTICE_VERIFICATION.md](NOTICE_VERIFICATION.md)；不能以同聊天复用或章节文件回执跳过通知原文核读。查询范围和可用入口仍遵循本端工作流，失败不记成功。
+
 ## 学科合并与缺口
 
 同一科的公共课程页和个人班级页可归入一个学科：MATH1013 页面 `146265`（主）+ `142648`（副）按 `moodle-146265` 组织，ECON1210 `146739`（主）+ `146748`（副）按 `moodle-146739` 组织。主学科课程记录保存 `linked_page_ids`，副页面用 `merged_into` 指向主学科；材料的 `course_id` 记主学科，`source_pages` 保留各页面来源。`search`、`outline` 的 `--course` 以及 `library.py sync --course` 传副页面或 state 课程 ID 时会沿 `merged_into` 解析到主学科再处理；`read`/`render` 用 material ID 读取，材料本身的 `course_id` 已是主学科。
@@ -118,5 +120,4 @@
 
 文档解析覆盖 PDF、PPTX、DOCX、HTML、文本与图像等支持格式；详见命令输出中的类型、遗漏和错误。归档后的材料须先登记到 state.materials；缓存不自动把文件目录当作完整课程范围。所有缓存和渲染保存在被 Git 忽略的 Study/_System/Library/，不应上传。
 
-
-资料升级、历史引用与经授权的 30 天归档清理见 [MATERIAL_VERSIONS.md](MATERIAL_VERSIONS.md)。默认搜索只读当前版；`context/sync` 可触发已启用的归档维护，实际删除时会更新资料删除标记，学习证据保持不变。
+资料升级、历史引用与经授权的 30 天归档清理见 [MATERIAL_VERSIONS.md](MATERIAL_VERSIONS.md)，默认搜索只读当前版。缓存构建不记录掌握；普通 `context/sync` 另可触发已启用的归档维护并更新资料删除标记。`context --read-only` 跳过维护；保持本端日常只读接续及独立维护入口，不将所有调用一律改为可写或只读。真实学习证据、保留期和受引用/本地修改版本的保护均不变。
