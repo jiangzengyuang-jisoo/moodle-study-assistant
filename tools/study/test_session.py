@@ -216,7 +216,7 @@ class SessionTests(unittest.TestCase):
 
 
 class ChapterCheckTests(unittest.TestCase):
-    """A chapter check is a narrow read: no state write, no full collection."""
+    """Chapter checks report actual local writes without full school collection."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='章节 test ', dir=HERE)
@@ -267,6 +267,21 @@ class ChapterCheckTests(unittest.TestCase):
         self.assertEqual(command[command.index('--chat-key') + 1], digest('user-chat'))
         self.assertNotIn('--force', command)
         self.assertEqual(before, self.session.state.read_bytes())
+
+    def test_acquisition_reports_actual_state_change_without_changing_prior_answers(self):
+        initial = {'revision': 1, 'courses': [], 'materials': [],
+                   'mistakes': [{'id': 'keep', 'answer': 'my original answer'}]}
+        atomic(self.session.state, initial)
+        def install(*_args, **_kwargs):
+            updated = copy.deepcopy(initial)
+            updated['materials'] = [{'id': 'downloaded', 'filename': 'Topic5.txt'}]
+            updated['revision'] += 1
+            atomic(self.session.state, updated)
+            return self.result(self.receipt())
+        with redirect_stderr(io.StringIO()), patch('session.stream_command', side_effect=install):
+            result = self.session.chapter_check('moodle-1', 'Topic 5')
+        self.assertFalse(result['learning_state_unchanged'])
+        self.assertEqual(read(self.session.state)['mistakes'], initial['mistakes'])
 
     def test_node_failure_surfaces_without_touching_state(self):
         atomic(self.session.state, {'revision': 1, 'courses': []})

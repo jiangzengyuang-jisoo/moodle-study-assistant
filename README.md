@@ -168,6 +168,8 @@ Ask the assistant to back up and preserve `Study/`, configuration, credentials, 
 
 ## Recent updates
 
+This source maintenance fixes chapter verification, missing-version recovery and failed receipts, and aligns learning-flow rules; plugins remain unchanged.
+
 Current public version: **0.5.0**.
 
 Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANGELOG.md).

@@ -35,6 +35,15 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-16
 
+### Chapter verification and learning-flow combination fixes
+
+- Strict checks verify actual local content instead of file size. A single-module receipt cannot satisfy a whole-chapter request. Receipts use schema 5, and older successful receipts cannot bypass the new checks.
+- An authorized single-source replacement can be installed when its previous original is missing. Use an independent new version while retaining the old ID, hash, missing status and historical evidence; protect local annotations. Ordinary follow-ups reuse partial acquisition failures instead of retrying them automatically, including an existing original being updated while another new file fails. Match the actual post-attempt file signature while retaining account, authorization and later local-edit guards; explicit rechecks and new chats follow their own rules.
+- Align the root skill, workflow, tutoring skill and tool explanations: existing full grants need no repeated permission; missing files do not trigger a full collection. Read the actual body before teaching. Disclose an unverified update once when readable reviewed content exists; pause relevant teaching when it does not.
+- Validation: Node 319, setup-entry Python 133 and study Python 689: 1,141 passed with no skips. Nine new combination scenarios are included, covering actual body recovery after index loss, authorization revocation during a download, real process interruption and historical-evidence preservation. Full regression also caught and fixed the new authorization check being incorrectly applied to the legacy general installer.
+- Independent assistants following this edition's rules completed empty-library acquisition, actual PDF text and page reading, teaching, verified saving, same-chat follow-ups, chapter switching and fresh-chat continuation; they paused teaching when no body was available. When update verification failed but readable local content existed, they disclosed that limitation first and taught from the reviewed local version without automatically retrying. These used a simulated school and synthetic profiles with the available Codex model, not the actual DeepSeek model, Harness UI or school connection. The CLI reports state changes from actual file comparison; internal post-acquisition checks no longer claim the user requested them.
+- Source and rules only: no plugin changes, packaging or push. Source users should update and restart the corresponding service while retaining study data and grants.
+
 ### Fix chapter-discovery boundaries and release-material consistency
 
 - Newly discovered courseware with an ambiguous chapter match now returns candidates and an incomplete result instead of verifying only older files and claiming completeness; explicit module selection remains available.

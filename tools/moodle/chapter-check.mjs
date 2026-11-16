@@ -33,7 +33,7 @@ import {
   authorizationReport, emptyTextSources, enumerateCourse, nowISO, planPage, readJSON, selectedPages, syncCourseLibrary,
 } from './course-library.mjs';
 
-export const CHAPTER_CHECK_SCHEMA = 4;
+export const CHAPTER_CHECK_SCHEMA = 5;
 export const MODES = Object.freeze({quick: 'quick', strict: 'strict'});
 export const STATUS = Object.freeze({
   unchanged: 'unchanged', changed: 'changed', no_baseline: 'no_baseline', error: 'error', skipped: 'skipped',
@@ -317,7 +317,7 @@ export function classifyItem({item, entry, material, mode, sha256 = null}) {
   return {status: STATUS.no_baseline, evidence: 'none', baseline, remote, differences: []};
 }
 
-export function localState(root, material) {
+export function localState(root, material, {verifyHash = false} = {}) {
   if (!material?.relative_path) return null;
   const study = resolve(root, 'Study');
   const target = resolve(study, material.relative_path);
@@ -325,6 +325,11 @@ export function localState(root, material) {
   if (!existsSync(target)) return {status: 'missing', relative_path: material.relative_path};
   try {
     const stat = statSync(target);
+    if (verifyHash) {
+      const sha256 = createHash('sha256').update(readFileSync(target)).digest('hex');
+      if (!material.sha256 || sha256 !== material.sha256) return {status: 'modified',
+        relative_path: material.relative_path, bytes: stat.size, sha256, expected_sha256: material.sha256 ?? null};
+    }
     return {status: Number.isFinite(material.bytes) && stat.size !== material.bytes ? 'size_mismatch' : 'present',
       relative_path: material.relative_path, bytes: stat.size};
   } catch {
@@ -355,7 +360,7 @@ function safeSegment(value) {
 }
 
 export function requestLabel(section, modules) {
-  if (section) return String(section);
+  if (!modules && section) return String(section);
   return 'modules-' + [...new Set((modules ?? []).map(Number).filter(Number.isInteger))].sort((a, b) => a - b).join('-');
 }
 
@@ -1011,7 +1016,7 @@ export function validateReceiptReuse({receipt, plan, state, root = null, chatKey
   const receiptModules = receipt.request?.modules ?? null;
   if (plan.intent?.kind === 'modules') {
     if (!sameModuleSet(receiptModules, expectedRequest.modules)) return no('scope_changed');
-  } else if (normalizeText(receipt.request?.section) !== normalizeText(expectedRequest.section)) {
+  } else if (receiptModules || normalizeText(receipt.request?.section) !== normalizeText(expectedRequest.section)) {
     return no('scope_changed');
   }
   const evidence = accountEvidence(state, root);
@@ -1025,11 +1030,21 @@ export function validateReceiptReuse({receipt, plan, state, root = null, chatKey
   const scopePages = scopePageIds?.length ? pages.filter(page => scopePageIds.includes(page.moodleCourseid)) : pages;
   const {blocked} = authorizationReport(state, scopePages, receipt.account_scope);
   if (blocked.length) return no('authorization_changed');
+  if (plan.status === 'ambiguous') return no('ambiguous_scope');
+  // A failed acquisition can already have replaced an existing version. Its
+  // post-attempt signature describes those current bytes; the original scope
+  // below still describes the pre-install check. Compare the newer evidence
+  // first, after account/authorization/scope guards, and only echo a failure.
+  // Later local edits change this signature and must pass the normal guards.
+  if (receipt.verified?.complete === false && receipt.acquisition?.status === 'incomplete'
+      && plan.localSignature && receipt.acquisition.local_signature_after_attempt === plan.localSignature) {
+    return {kind: 'reuse', reason: 'incomplete_previous',
+      message: '上次补齐未完成；本地范围仍是该次部分成功后的状态，保留失败回执，不自动重试。'};
+  }
   const localRows = hashScopeLocalFiles(root, receipt.scope?.local_files);
   if (localRows.some(row => !row.present || row.expected_sha256 !== row.actual_sha256)) {
     return no('local_file_changed');
   }
-  if (plan.status === 'ambiguous') return no('ambiguous_scope');
   if (plan.status === 'none') {
     // The catalog/section/module receipt did not depend on the local index; its
     // recorded local files (if any) were hash-checked above.
@@ -1328,7 +1343,7 @@ export async function checkChapter({
         && row.course_id === resolved.subject && !row.superseded_by
         && !['archived', 'deleted'].includes(row.version_status)) : null);
     const classification = classifyItem({item, entry, material, mode});
-    const local = localState(root, material);
+    const local = localState(root, material, {verifyHash: mode === MODES.strict});
     try {
       let row;
       if (mode !== 'strict' || !classification.baseline.sha256) {
@@ -1414,7 +1429,7 @@ export async function checkChapter({
     errors,
     summary: {...counts, skipped: scopedSkips.length,
       from_cache: rows.filter(row => row.from_cache).length},
-    verdict: errors.length ? 'incomplete' : verdictOf(counts),
+    verdict: errors.length || files.some(row => row.local?.status === 'modified') ? 'incomplete' : verdictOf(counts),
     verified: completeness,
     reuse: {eligible: completeness.complete && mode === MODES.strict,
       reason: completeness.complete ? 'complete' : completeness.reason},
@@ -1428,11 +1443,14 @@ export async function checkChapter({
     limitations: [
       '快速核对比较服务器记录的文件大小与修改时间；同大小的改写可能漏检，记录变化但内容相同时会显示 changed。',
       mode === 'strict'
-        ? '严格核对只重新获取本章文件并比较内容哈希；不重建索引，也不更新本地资料。'
+        ? (discover ? '本次教学入口会按现有授权补齐或更新缺少的本章原件并建索引，再核对远端、登记和本地内容哈希；保留本地修改。'
+          : '本次只核对远端、登记和本地内容哈希，不安装资料或重建索引。')
         : '本次没有重新下载文件；需要按内容确认时改用 --mode strict。',
-      (chapterScope.basis === 'local_materials' || chapterScope.basis === 'explicit_modules')
-        ? '本章文件范围来自本地资料索引与来源映射；没有在本地登记的同章文件不在本次核对范围内。'
-        : '本章文件范围来自课程目录中明确的章节名/模块名匹配；不按 Moodle 区块序号或日期猜测。',
+      chapterScope.basis === 'explicit_modules'
+        ? '本次只核对明确指定的模块，不能作为整章覆盖结论。'
+        : discover ? '本章范围同时核对本地来源映射与当前课程目录；含糊候选需先确认。'
+          : chapterScope.basis === 'local_materials' ? '本次范围来自本地资料映射，未登记的同章文件不在检查范围。'
+            : '本章范围来自课程目录中明确的章节名/模块名匹配，不按区块序号或日期猜测。',
       '论坛附件、作业附件和正文内嵌图片不在本章核对范围内。',
       '测验题目、标签正文、外部链接和流媒体只保留入口与原因。',
       '严格回执可按聊天、账号、课程、范围和本地内容哈希复用；本地文件变化或明确重查时才重新联网。',
@@ -1440,6 +1458,7 @@ export async function checkChapter({
     automatic_retry: false,
     no_school_writes: true,
   };
+  if (files.some(row => row.local?.status === 'modified')) receipt.limitations.push('本地原件与登记内容不同，已保留本地修改；不能将该文件视为已核实的学校原件。');
   if (counts.error || errors.length) receipt.limitations.push('部分文件或课程页面未能核对，本次结果不完整。');
   if (persist) writeReceipt(root, receipt);
   return receipt;
@@ -1502,7 +1521,7 @@ async function runChapterCheckOnly({
     }
     progress(decision.message);
   } else if (force) {
-    progress('用户明确要求重查；忽略同聊天回执，重新严格核对');
+    progress('本次需重新严格核对；忽略已有同聊天回执');
   }
   if (plan.status === 'ambiguous') {
     progress('本章匹配不唯一；返回候选与原因，不扩大范围、不联网');
@@ -1527,12 +1546,19 @@ export async function runChapterCheck(options) {
   if (!options.acquireMissing || (options.mode ?? 'strict') !== 'strict' || receipt.ambiguous
       || (receipt.reused && receipt.acquisition)) return receipt;
   const modules = [...new Set((receipt.files ?? []).filter(row =>
-    row.status !== STATUS.error && (row.status === STATUS.no_baseline || row.status === STATUS.changed
+    row.status !== STATUS.error && row.local?.status !== 'modified' && (row.status === STATUS.no_baseline || row.status === STATUS.changed
       || row.local?.status === 'missing')).map(row => Number(row.module_id)).filter(Number.isSafeInteger))];
   if (!modules.length || receipt.errors?.length) return receipt;
   const pending = {...receipt, verdict: 'incomplete', verified: {...receipt.verified, complete: false},
     reuse: {eligible: false, reason: 'acquisition_pending'}, acquisition: {status: 'incomplete', reason: 'acquisition_interrupted', module_ids: modules}};
   if (options.persist !== false) writeReceipt(options.root, pending);
+  const saveFailure = () => {
+    const after = resolveChapterLocal({state: options.loadState(), root: options.root, course: options.course,
+      section: options.section ?? null, modules: options.modules ?? null});
+    if (after.localSignature) pending.acquisition.local_signature_after_attempt = after.localSignature;
+    if (options.persist !== false) writeReceipt(options.root, pending);
+    return pending;
+  };
   try {
     client = await connect();
     const state = options.loadState();
@@ -1544,8 +1570,7 @@ export async function runChapterCheck(options) {
       courseIds: [...new Set(pages.map(page => page.courseId))], pageIds, moduleIds: modules});
     if (!report.ok) {
       pending.acquisition.reason = 'chapter_acquisition_incomplete';
-      if (options.persist !== false) writeReceipt(options.root, pending);
-      return pending;
+      return saveFailure();
     }
     const checked = await runChapterCheckOnly({...options, connect, force: true, discover: true});
     checked.acquisition = {status: 'complete', module_ids: modules};
@@ -1553,7 +1578,6 @@ export async function runChapterCheck(options) {
     return checked;
   } catch {
     pending.acquisition.reason = 'chapter_acquisition_failed';
-    if (options.persist !== false) writeReceipt(options.root, pending);
-    return pending;
+    return saveFailure();
   }
 }

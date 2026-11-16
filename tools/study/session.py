@@ -473,12 +473,11 @@ class Session:
             return cleanup(self.state)
 
     def chapter_check(self, course, section=None, mode='strict', modules=None, force=False):
-        """Narrow, read-only verification of one chapter's already local files.
+        """School-read-only chapter verification with authorized local acquisition.
 
-        The receipt is bound to the original chat key so the same chat reuses a
-        recent check without touching the network, and ``force`` asks for a real
-        re-check after the user explicitly requested one. A chapter check never
-        writes learning state: strict still compares file content hashes.
+        Receipts bind the original chat and exact scope. Missing or updated
+        materials may change the local registry; this never records mastery.
+        Explicit ``force`` requests a recheck, not broader collection.
         """
         if not course:
             raise ValueError('请提供课程 ID；章节核对只查这一门课')
@@ -500,6 +499,7 @@ class Session:
             command.append('--force')
         print('正在核对本章资料范围；同聊天且本地文件未变时复用回执，不联网…',
               file=sys.stderr, flush=True)
+        state_before = self.state.read_bytes() if self.state.exists() else None
         with self.timing('chapter_check'):
             returncode, stdout, stderr_text = stream_command(command, ROOT, timeout=900)
         if returncode != 0 or not stdout.strip():
@@ -513,8 +513,10 @@ class Session:
             receipt = json.loads(stdout.decode('utf-8-sig').strip())
         except (ValueError, UnicodeError):
             raise ValueError('章节核对未返回有效结果') from None
-        # A chapter check never touches learning state; it only writes its receipt.
-        receipt['learning_state_unchanged'] = True
+        # Acquisition can register materials. Report observed file equality,
+        # rather than confusing preserved learning evidence with zero writes.
+        state_after = self.state.read_bytes() if self.state.exists() else None
+        receipt['learning_state_unchanged'] = state_before == state_after
         return receipt
 
 

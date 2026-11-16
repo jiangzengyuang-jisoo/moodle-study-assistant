@@ -315,6 +315,33 @@ def _item_result(item, **values):
     return result
 
 
+def authorized_source_scope(state, source, source_pages):
+    """Validate an install against this account's current selected page grant."""
+    scope = source.get("scope")
+    account = account_scope(scope)
+    if not _same_account(account, profile_binding(state.get("settings"))):
+        raise ValueError("Source account does not match the study profile")
+    page_id = scope.get("page_id")
+    if type(page_id) is not int or page_id <= 0:
+        raise ValueError("Source needs an explicit course page")
+    candidates = [p for p in source_pages or [] if p.get("moodle_courseid") == page_id
+                  and str(p.get("module_id")) == str(source.get("module_id"))]
+    if len(candidates) != 1:
+        raise ValueError("Source page mapping needs review")
+    page_course = candidates[0].get("page_course_id") or candidates[0].get("course_id")
+    courses = known_courses(state)
+    course = courses.get(page_course, {})
+    grant = state.get("settings", {}).get("course_library_authorization", {}).get("courses", {}).get(page_course, {})
+    granted_pages = grant.get("moodle_courseids", [grant.get("moodle_courseid")])
+    if (page_id not in course.get("moodle_course_ids", []) or grant.get("mode") != "full"
+            or page_id not in granted_pages or not _same_account(account, _grant_account_scope(grant))
+            or resolve_course(state, page_course) != source.get("course_id")):
+        raise ValueError("Source page needs a current account-bound full authorization")
+    if not str(candidates[0].get("page_url", "")).startswith(account["site"] + "/course/view.php?"):
+        raise ValueError("Source page belongs to a different school")
+    return {**account, "page_id": page_id}
+
+
 def _install_item(state_path, state, item, index):
     if not isinstance(item, dict):
         raise ValueError("Batch item " + str(index + 1) + " must be a JSON object")
@@ -380,6 +407,8 @@ def _install_item(state_path, state, item, index):
     install_extra = dict(extra or {})
     if source_pages is not None:
         install_extra["source_pages"] = source_pages
+    if install_source.get("scope") is not None:
+        authorized_source_scope(state, install_source, source_pages)
     if item.get("restore_missing") is True:
         # Scope and account authorization were validated before entering this installer.
         # Restore only identical bytes; edited originals never get overwritten.
@@ -396,7 +425,8 @@ def _install_item(state_path, state, item, index):
                             relative_path=duplicate.get("relative_path"),
                             duplicate_of=duplicate.get("id"))
     data = {"source": install_source, "relative_path": relative_path, "sha256": sha256,
-            "bytes": staged.stat().st_size, "extra": install_extra}
+            "bytes": staged.stat().st_size, "extra": install_extra,
+            "allow_missing_previous": item.get("restore_missing") is True}
     installed = install_download(state_path, data, sync=False)
     status = installed.get("status")
     if status == "already_promoted":

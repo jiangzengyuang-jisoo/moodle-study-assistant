@@ -132,6 +132,9 @@ def install_download(path, data, sync=True):
     if subdir:
         row["archive_subdir"] = subdir
     row.update(_download_extra(data.get("extra")))
+    if data.get("allow_missing_previous") is True and source.get("scope") is not None:
+        from course_library import authorized_source_scope
+        file_source.update(authorized_source_scope(state, source, row.get("source_pages")))
     if is_solution(row):
         row["contains_solutions"] = True
     staged = versions.safe(path.parent.parent, row["relative_path"])
@@ -158,7 +161,8 @@ def install_download(path, data, sync=True):
     else:
         if any(m["id"] == row["id"] for m in state.get("materials", [])):
             row["id"] += "-" + versions.uuid.uuid4().hex[:10]
-        result = versions.promote(path, row, data.get("old_id"))
+        result = versions.promote(path, row, data.get("old_id"),
+                                  allow_missing_previous=data.get("allow_missing_previous") is True)
         if result["status"] == "identical":
             result = _reuse_identical(path, row, result["material_id"])
     result["state_written"] = bool(result.get("state_written") or cleanup.get("deleted"))

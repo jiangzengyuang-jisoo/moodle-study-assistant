@@ -204,8 +204,35 @@ def _commit(path, before, state, moves=(), edits=(), at=None):
         raise
 
 
+def _same_authorized_source(state, old, incoming):
+    """Require exact lineage and current page consent before replacing missing bytes."""
+    from course_library import authorized_source_scope
+    previous, following = old.get("moodle_file_sources", []), incoming.get("moodle_file_sources", [])
+    if len(previous) != 1 or len(following) != 1 or len(keys(old)) != 1 or keys(old) != keys(incoming):
+        return False
+    prior, fresh = previous[0], following[0]
+    try:
+        scope = authorized_source_scope(state, {"course_id": incoming["course_id"],
+            "module_id": fresh["module_id"], "scope": fresh}, incoming.get("source_pages"))
+        # Older DeepSeek materials stored account binding at profile level and
+        # exact page provenance in source_pages; never infer lineage from a name.
+        old_pages = old.get("source_pages", [])
+        if len(old_pages) != 1 or old_pages[0].get("moodle_courseid") != scope["page_id"]:
+            return False
+        if str(old_pages[0].get("module_id")) != str(prior["module_id"]):
+            return False
+        if not str(old_pages[0].get("page_url", "")).startswith(scope["site"] + "/course/view.php?"):
+            return False
+        for key in ("site", "user_id", "page_id"):
+            if key in prior and prior[key] != scope[key]:
+                return False
+    except (ValueError, TypeError, AttributeError, KeyError):
+        return False
+    return True
+
+
 @locked
-def promote(state_path, incoming, old_id=None, at=None):
+def promote(state_path, incoming, old_id=None, at=None, *, allow_missing_previous=False):
     """Incoming is a registered local file or a verified download staged in Study."""
     from library import build_lock
     path = Path(state_path).resolve()
@@ -256,21 +283,42 @@ def promote(state_path, incoming, old_id=None, at=None):
         target = safe(study, Path(course) / category / subdir / name if subdir else Path(course) / category / name)
         moves, edits = [], []
         archived = None
+        missing_original = None
         if old:
             if not current(old) and old.get("superseded_by") != incoming["id"]:
                 raise ValueError("Old version has already been replaced by another material")
-            original = verify(study, old)
+            original = safe(study, old["relative_path"])
+            if not original.exists() and allow_missing_previous:
+                if not _same_authorized_source(state, old, incoming) or not re.fullmatch(r"[a-f0-9]{64}", old.get("sha256", "")):
+                    raise ValueError("Missing original needs one matching account-bound source before replacement")
+                if any(p.casefold() in {"_system", "backups", "错题本"} for p in original.relative_to(study).parts):
+                    raise ValueError("Learning records cannot be replaced as missing course originals")
+                missing_original = old["id"]
+            else:
+                original = verify(study, old)
             if any(r["id"] not in {old["id"], incoming["id"]} and r.get("relative_path") == old["relative_path"] for r in rows):
                 raise ValueError("File is shared by multiple registered materials; review before moving")
-            stamp = hashlib.sha256(old["id"].encode()).hexdigest()[:12]
-            archived = safe(study, Path(course) / "_Archive" / (stamp + "-" + old["sha256"][:12]) / original.name)
-            if original != archived:
-                moves.append((original, archived))
-                edits = _note_edits(study, original, archived)
-            old.update(relative_path=archived.relative_to(study).as_posix(),
-                       version_status="archived", superseded_by=incoming["id"],
-                       archived_at=instant(at).isoformat(), archive_sha256=old["sha256"],
-                       original_relative_path=old.get("original_relative_path", original.relative_to(study).as_posix()))
+            if missing_original:
+                # No old bytes were archived. Keep the original path/hash/evidence
+                # intact, and never put the replacement at that historical path.
+                old.update(version_status="missing", superseded_by=incoming["id"],
+                           missing_detected_at=instant(at).isoformat())
+            else:
+                stamp = hashlib.sha256(old["id"].encode()).hexdigest()[:12]
+                archived = safe(study, Path(course) / "_Archive" / (stamp + "-" + old["sha256"][:12]) / original.name)
+                if original != archived:
+                    moves.append((original, archived))
+                    edits = _note_edits(study, original, archived)
+                    # Historical records keep their original content and IDs.
+                old.update(relative_path=archived.relative_to(study).as_posix(),
+                           version_status="archived", superseded_by=incoming["id"],
+                           archived_at=instant(at).isoformat(), archive_sha256=old["sha256"],
+                           original_relative_path=old.get("original_relative_path", original.relative_to(study).as_posix()))
+        if missing_original or any(r.get("version_status") == "missing" and r.get("relative_path") == target.relative_to(study).as_posix() for r in rows):
+            stamp = hashlib.sha256(incoming["id"].encode()).hexdigest()[:16]
+            target = safe(study, target.parent / ("version-" + stamp) / name)
+            if any(r.get("relative_path") == target.relative_to(study).as_posix() for r in rows):
+                raise ValueError("Replacement path is reserved by historical material evidence")
         vacated = {a for a, _ in moves}
         if source != target:
             if target.exists() and target not in vacated:
@@ -287,8 +335,11 @@ def promote(state_path, incoming, old_id=None, at=None):
             existing_new.update(incoming)
         else:
             rows.append(incoming)
+        if missing_original and original.exists():
+            raise ValueError("Missing original reappeared during installation; reread before replacing")
         _commit(path, before, state, moves, edits, at)
-        return {"status": "promoted", "material_id": incoming["id"], "archived_id": old["id"] if old else None,
+        return {"status": "promoted", "material_id": incoming["id"], "archived_id": old["id"] if archived else None,
+                **({"missing_original_id": missing_original} if missing_original else {}),
                 "references_relocated": len(edits), "state_written": True}
 
 

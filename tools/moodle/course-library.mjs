@@ -1168,6 +1168,7 @@ export async function syncCourseLibrary({
           archive_subdir: item.archiveSubdir ?? null,
           source: {
             course_id: item.subject, module_id: item.moduleId,
+            ...(moduleScope ? {scope: {site: normalizeSite(client.baseUrl), user_id: client.userId, page_id: item.moodleCourseid}} : {}),
             filename: item.filename, filepath: item.filepath,
             url: item.kind === 'capture' ? item.activityUrl : item.cleanUrl,
             module_url: item.activityUrl, activity_url: item.activityUrl,
