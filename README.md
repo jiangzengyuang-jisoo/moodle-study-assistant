@@ -25,7 +25,7 @@ approve access or choose my courses, then show me how to use it.
 >
 > If you have completed school sign-in but the page keeps loading, wait a moment, then press **F5** or click the browser’s **Refresh** button. **Refresh only the current web page; keep the AI’s setup task running.** If there is still no progress, describe what you see to the AI so it can investigate.
 
-[Illustrated setup guide](docs/新手使用指南.md) · [Upgrade without losing records](docs/新手使用指南.md#从旧版更新)
+[PDF tutorial](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/codex/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf) · [Upgrade without losing records](docs/CHAT_ONBOARDING.md#upgrade)
 
 ## Your course. Your next step.
 
@@ -60,24 +60,13 @@ Ordinary requirements addressed to students are still followed. Course AI-use ru
 - Moodle tools are read-only: no assignment submission, school quiz answers, posts or email. File downloads require your course authorization.
 - Downloading and indexing are not content review; an explanation is not proof of mastery. Scans, formulas and model answers still need checking.
 
-[Privacy](docs/PRIVACY.md) · [School connection help](docs/新手使用指南.md#连接失败或已有官方-token)
+[Privacy](docs/PRIVACY.md) · [School connection help](docs/CHAT_ONBOARDING.md#登录只进入学校网页)
 
 </details>
 
 ## Recent updates
 
-Chapter sync now reuses source timestamps, acquires missing authorized materials and recovers from failed updates. Scanned lessons explicitly require original-page review. All 821 automated checks passed; see the [update report](docs/UPDATE_REPORT_2026-11-16.en.md) for upgrade steps and limits.
-
-Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANGELOG.md).
-
-| Date | Change |
-| --- | --- |
-| [2026-11-17](CHANGELOG.en.md#2026-11-17) | Warn and pause assignment work when AI-targeted instructions are found |
-| [2026-11-16](docs/UPDATE_REPORT_2026-11-16.en.md) | Timestamp-based chapter sync, authorized acquisition, failure recovery and scanned-page reading; 821 checks passed |
-| [2026-11-14](CHANGELOG.en.md#2026-11-14) | Pair new concepts with English terms and prominently disclose AI-targeted instructions found in materials |
-| [2026-11-12](docs/UPDATE_REPORT_2026-11-12.en.md) | Publish verified teaching saves and review simplification; skip unchanged pages, with validation and upgrade notes |
-
-Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.en.md) for validation details and known limitations.
+Changes, validation and upgrade notes: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANGELOG.md).
 
 ---
 

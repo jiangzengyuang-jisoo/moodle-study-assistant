@@ -21,7 +21,7 @@ if (-not $entryPython) {
     } else {
         Write-Host $entryMessage
         Write-Host '此步骤没有安装任何软件，也没有修改学习记录。Node.js 也需要 22 或更新版本：https://nodejs.org/'
-        Write-Host '安装依赖前需要联网；密码和 MFA 只在学校网页输入。使用须知见 docs/使用须知.md。'
+        Write-Host '安装依赖前需要联网；密码和 MFA 只在学校网页输入。使用须知见 docs/tutorials/Moodle学习助手教程.pdf。'
     }
     if (-not $NoPause -and -not $Json) { [void](Read-Host '按回车关闭') }
     exit 1

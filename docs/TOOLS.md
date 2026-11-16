@@ -18,7 +18,7 @@ AI 教学前使用下述 `ensure-chapter` 入口，不因新聊天自动完整 `
 
 MCP 暴露课程、作业、测验、论坛、日历、成绩、通知、资源目录和站点信息只读查询；全论坛分页用 `study_all_discussions`，回复用 `study_discussion_posts`。上游 recent discussions 只有最近20条，不能替代完整采集。不注册学校写操作；普通 MCP 查询不下载文件。正常刷新在采集后为有课程级完整授权的范围自动下载、归档和索引；没有授权的范围只同步信息。选课授权、结果和重试入口见 [COURSE_CONTENT.md](COURSE_CONTENT.md)。
 
-`moodle_get_calendar_events` 支持课程、时间范围与分页限制，检查 `complete` 后再判断是否覆盖全部所选事件；`moodle_get_notifications` 用 `limit/offset`、`has_more/next_offset` 继续读取，不标已读。接口缺失不等于没有事件。新增查询的具体范围与限制见 [按需学校查询](UPDATE_REPORT_2026-11-07.md#按需学校查询)。
+`moodle_get_calendar_events` 支持课程、时间范围与分页限制，检查 `complete` 后再判断是否覆盖全部所选事件；`moodle_get_notifications` 用 `limit/offset`、`has_more/next_offset` 继续读取，不标已读。接口缺失不等于没有事件。新增查询的具体范围与限制见 [对应更新日志](../CHANGELOG.md#2026-11-07)。
 
 ### 教学前按来源时间核对当前章节
 

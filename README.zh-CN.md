@@ -24,7 +24,7 @@ https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/codex
 >
 > 如果已经完成学校登录，但页面仍一直加载，可以先稍等，再按 **F5** 或点击浏览器的**刷新**按钮。**只刷新当前网页，保持 AI 的安装任务继续运行。** 如果刷新后仍无进展，把当前现象告诉 AI，继续排查。
 
-[图文安装指南](docs/新手使用指南.md) · [保留记录升级](docs/新手使用指南.md#从旧版更新)
+[PDF 图文教程](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/codex/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf) · [保留记录升级](docs/CHAT_ONBOARDING.md#upgrade)
 
 ## 围绕你的课，接着往下学
 
@@ -59,24 +59,13 @@ https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/codex
 - Moodle 工具只读，不提交作业、不答学校测验、不发帖或邮件；下载资料需要课程授权。
 - 下载、索引不代表已核读，听过讲解不代表掌握；扫描页、公式和模型答案仍需核对。
 
-[隐私说明](docs/PRIVACY.md) · [学校连接帮助](docs/新手使用指南.md#连接失败或已有官方-token)
+[隐私说明](docs/PRIVACY.md) · [学校连接帮助](docs/CHAT_ONBOARDING.md#登录只进入学校网页)
 
 </details>
 
 ## 最近更新
 
-本章按来源时间同步，自动补齐已授权资料并支持失败恢复；扫描课件明确要求核读原页。821 项自动检查通过，升级方法与限制见[更新报告](docs/UPDATE_REPORT_2026-11-16.md)。
-
-完整历史：[中文更新日志](CHANGELOG.md) · [English changelog](CHANGELOG.en.md)。
-
-| 日期 | 更新内容 |
-| --- | --- |
-| [2026-11-17](CHANGELOG.md#2026-11-17) | 发现作业中的 AI 诱导指令后先警示，再暂停解答 |
-| [2026-11-16](docs/UPDATE_REPORT_2026-11-16.md) | 按章时间同步、授权下补齐、失败恢复与扫描原页阅读；821 项检查通过 |
-| [2026-11-14](CHANGELOG.md#2026-11-14) | 新知识补齐中英术语对应；发现材料中的 AI 定向指令时先醒目提醒 |
-| [2026-11-12](docs/UPDATE_REPORT_2026-11-12.md) | 同步教学保存与复习精简修复，跳过未变化页面；附验证依据和升级说明 |
-
-离线测试不代表真实学校登录或所有安装环境已验证。具体检查和已知限制见[更新日志](CHANGELOG.md)。
+功能变化、验证结果和升级说明统一记录在[中文更新日志](CHANGELOG.md) · [English changelog](CHANGELOG.en.md)。
 
 ---
 

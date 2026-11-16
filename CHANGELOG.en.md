@@ -4,10 +4,11 @@
 
 This log records how each update affects studying. Dates follow code commits in Hong Kong time (UTC+8). Earlier entries were reconstructed from commit history on 2026-10-30; they do not imply that separate installation packages were released on those dates. Entries describe behavior at the time of each update; later entries may supersede it. Linked detailed guides are primarily in Chinese.
 
-Existing users should first read the [upgrade steps that preserve learning records](docs/新手使用指南.md#从旧版更新). Downloading new code does not automatically update an existing folder on your computer.
+Existing users should first read the [upgrade steps that preserve learning records](docs/CHAT_ONBOARDING.md#upgrade). Downloading new code does not automatically update an existing folder on your computer.
 
 | Date | Main changes |
 | --- | --- |
+| [2026-11-17](#2026-11-17) | Consolidated documentation and PDF guides; login loading tips and assignment-instruction alerts |
 | [2026-11-16](#2026-11-16) | Timestamp-based chapter sync, authorized acquisition, failure recovery and scanned-page reading; 821 tests passed |
 | [2026-11-15](#2026-11-15) | Make the browser login refresh tip prominent in the Chinese PDF tutorial |
 | [2026-11-14](#2026-11-14) | Pair new concepts with English terms; prominently disclose AI-targeted instructions found in materials |
@@ -27,6 +28,12 @@ Existing users should first read the [upgrade steps that preserve learning recor
 | [2026-09-22](#2026-09-22) | Initial release: Windows installation, school account connection, course information, and learning records |
 
 ## 2026-11-17
+
+### Repository documentation cleanup
+
+- Replace duplicate beginner/usage Markdown guides with the existing PDF tutorials; keep machine-readable setup, continuity and record-preserving upgrade rules in chat onboarding.
+- Remove standalone update reports, historical test reports and obsolete handoff notes. README links to this changelog; historical test results remain tied to their original dates and versions.
+- Repair document and installer help links, including the tutorial PDFs' embedded link to the removed guide. Core learning behavior and personal data are unchanged. Validated links across 26 Markdown files, unchanged text on all 28 tutorial pages and identical link-page renders, plus 55 offline onboarding/auth checks; no new school login test.
 
 ### Tip for a loading page during first Moodle sign-in
 
@@ -59,7 +66,7 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ### Publication summary and revalidation
 
-- [Full update report](docs/UPDATE_REPORT_2026-11-16.en.md): timestamp-based chapter sync, authorized acquisition, recovery, scanned-page reading and upgrade instructions.
+- Scope: timestamp-based chapter sync, authorized acquisition, recovery, scanned-page reading and upgrade instructions.
 - Current public source: **141 Node + 92 Python installation-entry + 588 Python study-tool tests = 821 passed, zero skips**. Tests use synthetic records and simulated school responses; no live school login/download or clean-machine installation was verified.
 - This source push targets only `codex`; no new tag, GitHub Release or plugin package. Earlier same-day “not pushed” statements record previous local runs.
 
@@ -144,7 +151,7 @@ Scanned PDFs now validate rendered pages separately from text extraction, retain
 
 ### Review and file-write simplification (Codex)
 
-- Publication notes: this sync includes teaching-progress save fixes (`74e589f`) and review simplification (`e689499`). See the [full update report](docs/UPDATE_REPORT_2026-11-12.en.md) for evidence, upgrade steps and remaining work. Preparing the report adds no runtime changes.
+- Publication notes: this sync includes teaching-progress save fixes (`74e589f`) and review simplification (`e689499`). Preparing the report adds no runtime changes.
 
 - Remove legacy question selection and review-page implementations. `review.py due` uses the current preview workflow and `render` uses the unified page writer. The retired `record` command directs users to `daily.py attempt`, including when an older archive has no learning-loop flag.
 - Share atomic file writing across study state, library caches, material versions and pages. Keep existing locks, recovery, snapshot validation and study timezones.
@@ -217,7 +224,7 @@ Scanned PDFs now validate rendered pages separately from text extraction, retain
 - Added five read-only MCP tools for calendars, grades, notifications, resource listings and site information. Calendar queries paginate by event cursor and report completeness; notifications paginate without marking messages read. API allowlists, credential redaction and existing download authorization remain in place.
 - Normal material replacement now invalidates old papers, rejects old sources in new papers, and pauses unverified old-source review questions. Original papers, answers and backfilled answers actually completed before replacement are preserved; material IDs are never silently retargeted.
 - Chapter checks now use OS locks: live checks exclude competitors, killed checks can recover on explicit retry, and helper failure stops later writes. Legacy lock files without owner information require confirmation that old checks have stopped; age or `--force` never authorizes deletion.
-- Preserve profiles, configuration and credentials when upgrading; restart the project MCP connection to expose the new tools. The personal installation and DeepSeek branch are unchanged. See the [update report](docs/UPDATE_REPORT_2026-11-07.md) for scope and limitations.
+- Preserve profiles, configuration and credentials when upgrading; restart the project MCP connection to expose the new tools. The personal installation and DeepSeek branch are unchanged.
 - Validation: all 724 offline Windows tests passed (130 Node, 92 Python setup/entry, 502 Python study). Coverage includes real version promotion, killed external chapter processes, concurrent exclusion, exposure backfills, source changes and paginated read-only queries. No real school connection was tested. Path-based evidence-binding migration, same-folder cross-school ID collisions and dependency advisories remain outside this change.
 
 ## 2026-11-06
@@ -231,7 +238,7 @@ Scanned PDFs now validate rendered pages separately from text extraction, retain
 
 ### Chapter-scoped checks and local continuation without automatic full refresh
 
-- The [Codex and DeepSeek update report](docs/UPDATE_REPORT_2026-11-05.md) documents each edition's actual behavior, commits, and validation. DeepSeek retains the version published by Harness; Codex changes the other client branch only when explicitly requested.
+- DeepSeek retains the version published by Harness; Codex changes the other client branch only when explicitly requested.
 - `continue` and `today` now resume locally and rebuild local plans. New chats no longer automatically collect all courses, assignments, calendars, and forums. Plans and latest notices use task-scoped, read-only MCP queries; `refresh` is reserved for comprehensive checks. Pending review, failure, and interruption states remain intact, as do full-snapshot and review protections.
 - Added `study.cmd --chat "original-user-chat-id" verify-chapter --course COURSE_ID --chapter CHAPTER --material MATERIAL_ID`. It downloads only explicitly selected chapter materials and compares their actual SHA-256 hashes, even when names, sizes, and modification times are unchanged. Repeat `--material` for multiple files. Indexing handles only selected files and reuses valid caches.
 - Success and failure receipts are reused for already checked materials in the same chat; additional files are checked separately. Keep the original chat ID across dates, reopening, and context compaction; a new chat performs a new check. Use `--force` only for an explicit recheck. Local file changes invalidate the previous result; failures do not trigger retry loops or justify calling a file current.
@@ -248,7 +255,7 @@ Scanned PDFs now validate rendered pages separately from text extraction, retain
 - After setup, the assistant explains common uses, gives example requests, and invites a first action. Onboarding records are separate from mastery and use the existing shared lock and safe writer. Guidance can resume after reopening, is not repeatedly shown once delivered, and can be skipped or requested again. The study entry point also returns pending-guidance information for existing installations.
 - Upgrades preserve `Study/`, configuration, authorization, and material references. After updating, ask “Continue setup” or “Show me how to use this.” See [chat onboarding](docs/CHAT_ONBOARDING.md). Automatically creating a welcome chat when none is open requires host support; this project does not fabricate assistant messages.
 - Validation uses isolated fictional profiles and simulated courses, covering chat-based selection, authorization, state conflicts, persisted guidance, and existing installation recovery. It does not establish real school SSO or Harness automatic welcome-event behavior.
-- This implementation landed on the `codex` source branch. DeepSeek's existing `course_library_authorization` routing requires separate adaptation and must not be overwritten directly. A [DeepSeek implementation handoff](docs/DEEPSEEK_ONBOARDING_HANDOFF.md) is included; this entry did not itself modify or validate a DeepSeek deployment.
+- This implementation landed on the `codex` source branch. DeepSeek's existing `course_library_authorization` routing requires separate adaptation and must not be overwritten directly. The implementation handoff remains available in Git history; this entry did not itself modify or validate a DeepSeek deployment.
 
 ### Client release branches
 
@@ -324,7 +331,7 @@ Scanned PDFs now validate rendered pages separately from text extraction, retain
 - **Answer-material detection:** explicit answer flags are retained, and `sol` / `sols` filenames are recognized. Installing identical content can add answer protection without changing material IDs, paths, originals, or historical references.
 - **Review-budget adjustment:** after an actual overrun, questions that no longer fit the remaining budget are deferred. Actual time is preserved; deferral is not an incorrect answer and does not add to the day's budget again.
 - **Validation:** 11 new regressions and all 453 offline tests in the release repository passed. Normal updates, failure retries, and cross-date timing were also checked with fictional materials and isolated profiles, without connecting to school or changing personal records.
-- **Upgrade:** preserve `Study/`, configuration, and authorization and follow the [upgrade steps](docs/新手使用指南.md#从旧版更新). No profile rebuild or bulk migration of old materials is required. Identical-content answer protection is added later during an authorized installation that confirms the answer classification.
+- **Upgrade:** preserve `Study/`, configuration, and authorization and follow the [upgrade steps](docs/CHAT_ONBOARDING.md#upgrade). No profile rebuild or bulk migration of old materials is required. Identical-content answer protection is added later during an authorized installation that confirms the answer classification.
 - **Known limitation:** after a mock exam records an answer reveal, backfilling an earlier reveal time may still be ignored as a duplicate. This edge case was not fixed in this update. Such backfills need manual checks of reveal time and independent-answer eligibility; tool flags alone cannot establish mastery.
 
 ## 2026-10-31
@@ -346,7 +353,6 @@ Scanned PDFs now validate rendered pages separately from text extraction, retain
 - Optional appended observations and coverage checks distinguish not found, explained, completed with help, completed independently, and delayed retesting. A user saying a topic was covered does not establish independent mastery. Full-coverage claims need scope evidence from original materials, actual assignments, and history, and still do not establish mastery.
 - Uploaded materials are handled according to the current request. When assignments use older knowledge, history is checked first; reteaching follows actual difficulty or an explicit request. Corrections to past experience update plans rather than treating “not covered in this chat” as proof of an omission.
 - Upgrades preserve `Study/` and configuration without rebuilding, bulk migration, or regrading old records. New fields are used only for real new events or verified corrections. AI judgments still require original materials and actual answers; structural validation cannot guarantee effective teaching.
-- See the [teaching-continuity regression record](docs/TEACHING_CONTINUITY_TESTS.md) for validation scope.
 
 ### 0.3.1: onboarding audit fixes
 
@@ -355,7 +361,7 @@ Scanned PDFs now validate rendered pages separately from text extraction, retain
 - Local diagnostics within one wizard run no longer clear a known online failure. Reused results are labeled; changes to the school URL or credential file mark the connection unverified again. Only a successful explicit recheck replaces a failure. Connection diagnostics are not persisted to disk, and no background networking is added.
 - The actual study timezone is validated, fixing readiness checks that accepted the same typo in two places. Existing dates are not changed automatically.
 - School-authorization decryption failures now have a fixed error identifier while remaining compatible with the older Chinese error. Guidance correctly asks for reconnection under the current Windows account without echoing credentials.
-- Continue using `start.cmd` / `diagnose.cmd` after upgrading, preserving personal directories without rebuilding the profile. See [phase-two validation](docs/PHASE2_TESTS.md) for tests and replay limits.
+- Continue using `start.cmd` / `diagnose.cmd` after upgrading, preserving personal directories without rebuilding the profile.
 
 ### 0.3.0: phase-two onboarding and diagnostics
 
@@ -514,6 +520,6 @@ Installation and usage start from an empty profile, with each student using thei
 
 **Getting started**
 
-Follow the [beginner guide](docs/新手使用指南.md) to install and connect. The school must enable the relevant Moodle services. Browser-assisted login remains experimental. The project requires your own AI client and does not include a model or subscription.
+Follow the [PDF tutorial](docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf) to install and connect. The school must enable the relevant Moodle services. Browser-assisted login remains experimental. The project requires your own AI client and does not include a model or subscription.
 
 [Initial commit ec32b60](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/commit/ec32b6077facd4734f00a330330c42487de6cab3)
