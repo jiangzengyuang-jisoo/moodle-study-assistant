@@ -423,7 +423,8 @@ export function planPage({page, enumerated, texts, state}) {
       url: rawURL, cleanUrl: cleanURL,
       activityUrl: module?.url ?? null,
       filesize: Number.isFinite(Number(file.filesize)) ? Number(file.filesize) : null,
-      timemodified: Number.isFinite(Number(file.timemodified)) ? Number(file.timemodified) : null,
+      timemodified: Number.isFinite(Number(file.timemodified)) && Number(file.timemodified) > 0 ? Number(file.timemodified) : null,
+      timecreated: Number.isFinite(Number(file.timecreated)) && Number(file.timecreated) > 0 ? Number(file.timecreated) : null,
       inline,
       sourcePages: [moduleContext(page, module ?? {}, section)],
     };
@@ -783,7 +784,7 @@ function fingerprintOf(item) {
   if (item.kind === 'capture') return {sha256: sha256(Buffer.from(item.capture.markdown, 'utf8'))};
   return {
     filesize: item.filesize ?? null,
-    timemodified: item.timemodified ?? null,
+    timemodified: item.timemodified ?? null, timecreated: item.timecreated ?? null,
     url: item.cleanUrl ?? null,
   };
 }
@@ -925,9 +926,14 @@ function itemReport(item) {
   };
 }
 
+export function finalizeChapter({root, statePath, payload}) {
+  return pythonJSON(root, statePath, 'chapter_finalize.py', [], payload);
+}
+
 export async function syncCourseLibrary({
   client, root, state, courseIds = null, snapshotPath = null, maxBytes = MAX_BYTES,
-  batchSize = 8, dryRun = false, installBatch, buildIndex, now = nowISO, moduleIds = null, pageIds = null,
+  batchSize = 8, dryRun = false, installBatch, buildIndex, now = nowISO, moduleIds = null, pageIds = null, sourceKeys = null,
+  deferTimestampReady = false,
 }) {
   root = resolve(root);
   const study = resolve(root, 'Study');
@@ -990,7 +996,8 @@ export async function syncCourseLibrary({
   for (let index = 0; index < authorized.length; index++) {
     const page = authorized[index];
     const result = planPage({page, enumerated: enumerated[index], texts, state});
-    plannedItems.push(...result.items.filter(item => !moduleScope || item.kind === 'file'));
+    plannedItems.push(...result.items.filter(item => (!moduleScope || item.kind === 'file')
+      && (!sourceKeys || sourceKeys.includes(item.key))));
     skips.push(...result.skips);
   }
   assignArchiveLayouts(plannedItems, state);
@@ -1177,6 +1184,7 @@ export async function syncCourseLibrary({
           source_pages: item.sourcePages,
           extra: {
             kind: item.kind === 'capture' ? 'Moodle text capture' : 'Moodle course file',
+            ...(deferTimestampReady ? {chapter_timestamp_update: {source_key: item.key, pending_retirement: true}} : {}),
             ...(item.capture ? {capture: {kind: item.capture.kind, item_count: item.capture.item_count ?? null,
               captured_at: texts.capturedAt, snapshot_run_id: texts.snapshotRunId}} : {}),
           },
@@ -1230,6 +1238,7 @@ export async function syncCourseLibrary({
             else if (status === STATUS.identical) report.identical++;
             else if (status === STATUS.duplicate) report.duplicate++;
             ledgerEntries[item.key] = {status, reason: null, detail: null, sha256: item.sha256, bytes: item.bytes,
+              ...(deferTimestampReady ? {timestamp_ready: false} : {}),
               material_id: item.materialId, relative_path: item.relativePath, duplicate_of: item.duplicateOf,
               remote: item.remote ?? null, first_success_at: ledgerEntries[item.key]?.first_success_at ?? now(),
               attempt_at: now(), archive_subdir: item.archiveSubdir ?? null};

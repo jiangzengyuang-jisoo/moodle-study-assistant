@@ -472,7 +472,7 @@ class Session:
             from learning_library.versions import cleanup
             return cleanup(self.state)
 
-    def chapter_check(self, course, section=None, mode='strict', modules=None, force=False):
+    def chapter_check(self, course, section=None, mode='timestamp', modules=None, force=False):
         """School-read-only chapter verification with authorized local acquisition.
 
         Receipts bind the original chat and exact scope. Missing or updated
@@ -483,7 +483,7 @@ class Session:
             raise ValueError('请提供课程 ID；章节核对只查这一门课')
         if not section and not modules:
             raise ValueError('请提供章节名称/编号，或用 --module 指定模块')
-        if mode not in {'quick', 'strict'}:
+        if mode not in {'quick', 'strict', 'timestamp'}:
             raise ValueError('核对强度只能是 quick 或 strict')
         node = os.environ.get('STUDY_NODE') or shutil.which('node')
         if not node:
@@ -529,7 +529,7 @@ def main():
                                             'chapter-check', 'teaching-event', 'operation-id', 'chat-id'])
     parser.add_argument('--course')
     parser.add_argument('--section')
-    parser.add_argument('--mode', choices=['quick', 'strict'])
+    parser.add_argument('--mode', choices=['quick', 'strict', 'timestamp'])
     parser.add_argument('--force', action='store_true',
                         help='chapter-check 明确重查；忽略同聊天回执缓存')
     parser.add_argument('--modules')
@@ -572,7 +572,7 @@ def main():
             raise ValueError('teaching-event 需要标准输入的有效 JSON 事件') from None
         output = session.teaching_event(payload, args.operation_id)
     elif args.command == 'chapter-check':
-        output = session.chapter_check(args.course, args.section, args.mode or 'strict',
+        output = session.chapter_check(args.course, args.section, args.mode or 'timestamp',
                                        args.modules, force=args.force)
     else:
         # Emit local context before waiting on school networking. No school claim yet.

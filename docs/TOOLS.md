@@ -9,14 +9,14 @@ node tools/moodle/run.mjs init
 node tools/moodle/run.mjs check
 node tools/moodle/run.mjs courses
 node tools/moodle/run.mjs library-sync
-node tools/moodle/run.mjs chapter-check --course 课程ID --section "Topic 5" --mode strict [--force]
+node tools/moodle/run.mjs chapter-check --course 课程ID --section "Topic 5" --mode timestamp [--force]
 node tools/moodle/run.mjs refresh
 node tools/moodle/run.mjs mcp
 ```
 
-`init` 只创建缺失的配置/空白状态，不覆盖已有资料。`courses` 交互选择跟踪页面，并确认课程级资料授权（完整初始化或只同步课程信息），保留未选页面的既有历史；完整初始化、非交互入口和授权保存位置见 [课程级资料授权与自动同步](COURSE_LIBRARY.md)。`library-sync` 对已保存完整授权的课程页面增量枚举、下载、归档、登记并建立索引；学校接口仍只用只读调用，不开始测验尝试、不提交作业、不发帖、不修改学校状态。`chapter-check` 先用本地资料索引与来源映射定位本章模块，再只比对本章文件（默认 `--mode strict` 内容哈希，`quick` 只看元数据）；Moodle 区块位置、日期和 Tutorial 编号不会仅因数字相同被选中，匹配不唯一时返回候选和原因，不写状态、不装文件、不建索引，回执在 `Study/_System/ChapterChecks/`，记录学校/账号归属、已定位模块和本地文件内容哈希；同聊天同范围严格回执可按聊天摘要复用、本地新增资料只核对新增部分，`--force` 强制重查。判定见 [单章资料核对](WORKFLOW.md#单章资料核对不触发完整采集)。`refresh` 采集到 `Study/_System/Runtime/runs/<run_id>/snapshot.json`，完整成功另存 `refresh-last-complete.json`；不直接更新个人掌握、作业完成或 AI 核读状态。退出码2表示部分采集失败。一个 `Study/` 档案只对应一所学校和账号：选课、旧 CLI 授权、资料同步、采集、下载、刷新预检、章节核对和登录会先核对档案已记录的学校/账号，不一致时停止且不写入；换学校请复制/新建独立项目目录并使用独立档案，见 [课程级资料授权](COURSE_LIBRARY.md#一档一校一账号)。
+`init` 只创建缺失的配置/空白状态，不覆盖已有资料。`courses` 交互选择跟踪页面，并确认课程级资料授权（完整初始化或只同步课程信息），保留未选页面的既有历史；完整初始化、非交互入口和授权保存位置见 [课程级资料授权与自动同步](COURSE_LIBRARY.md)。`library-sync` 对已保存完整授权的课程页面增量枚举、下载、归档、登记并建立索引；学校接口仍只用只读调用，不开始测验尝试、不提交作业、不发帖、不修改学校状态。`chapter-check` 先用本地资料索引与来源映射定位本章模块，再只比对本章文件（教学默认 `--mode timestamp`，`strict` 为显式内容诊断，`quick` 只读元数据）；Moodle 区块位置、日期和 Tutorial 编号不会仅因数字相同被选中，匹配不唯一时返回候选和原因，在已授权范围更新资料与正文索引，必要时删除本次被替代旧原件并保留历史元数据；回执在 `Study/_System/ChapterChecks/`，记录学校/账号归属、已定位模块和本地文件内容哈希；同聊天同范围更新回执可按聊天摘要复用、本地新增资料只核对新增部分，`--force` 强制重查。判定见 [单章资料核对](WORKFLOW.md#单章资料核对不触发完整采集)。`refresh` 采集到 `Study/_System/Runtime/runs/<run_id>/snapshot.json`，完整成功另存 `refresh-last-complete.json`；不直接更新个人掌握、作业完成或 AI 核读状态。退出码2表示部分采集失败。一个 `Study/` 档案只对应一所学校和账号：选课、旧 CLI 授权、资料同步、采集、下载、刷新预检、章节核对和登录会先核对档案已记录的学校/账号，不一致时停止且不写入；换学校请复制/新建独立项目目录并使用独立档案，见 [课程级资料授权](COURSE_LIBRARY.md#一档一校一账号)。
 
-AI 在需要校务信息或用户明确要求时调用 `continue/refresh`，不会每条追问重复执行；单章教学优先用 MCP `study_check_chapter`（`chapter-check` 为异常 CLI 后备），不会触发完整采集。命令本身始终进行真实采集。采集器全局最多同时执行4个 API 请求，每个论坛的分页仍按顺序读取，完整正文、回复和权限核对保留。同聊天复用返回的是上次严格回执（标记 `reused: true`、`network_started: false`），不是新的联网检查；本人明确要求重新核对时，工具用 `force: true`（CLI 后备用 `--force`）；不为获取新结果而更换聊天 ID 或扩大成完整刷新。CLI 后备 `chapter-check` 的阶段进度在 stderr，最终结构化结果只在 stdout；慢速首次核对可由助手用 Harness 后台任务跟进同一任务，不用 `Select-Object -Last 40` 截断进度。不要把没有重新联网的缓存复用记为新的检查。
+AI 在需要校务信息或用户明确要求时调用 `continue/refresh`，不会每条追问重复执行；单章教学优先用 MCP `study_check_chapter`（`chapter-check` 为异常 CLI 后备），不会触发完整采集。命令本身始终进行真实采集。采集器全局最多同时执行4个 API 请求，每个论坛的分页仍按顺序读取，完整正文、回复和权限核对保留。同聊天复用返回的是上次本章更新回执（标记 `reused: true`、`network_started: false`），不是新的联网检查；本人明确要求重新核对时，工具用 `force: true`（CLI 后备用 `--force`）；不为获取新结果而更换聊天 ID 或扩大成完整刷新。CLI 后备 `chapter-check` 的阶段进度在 stderr，最终结构化结果只在 stdout；慢速首次核对可由助手用 Harness 后台任务跟进同一任务，不用 `Select-Object -Last 40` 截断进度。不要把没有重新联网的缓存复用记为新的检查。
 
 MCP 暴露原有 15 个课程、作业、测验、论坛、日历、成绩、通知、资源目录和站点信息读取工具，并新增 `study_check_chapter`（项目服务合计 16 个工具）；全论坛分页用 `study_all_discussions`，回复用 `study_discussion_posts`。上游 recent discussions 只有最近20条，不能替代完整采集。不注册学校写操作；普通查询不下载文件，章节教学核对在已有 full 授权内补齐缺失或更新的本章文件、登记和索引，再保存严格回执。正常刷新在采集后为有课程级完整授权的范围自动下载、归档和索引；没有授权的范围只同步信息。选课授权、结果和重试入口见 [COURSE_CONTENT.md](COURSE_CONTENT.md)。
 
@@ -42,9 +42,9 @@ MCP 暴露原有 15 个课程、作业、测验、论坛、日历、成绩、通
 
 返回 `STUDY_MCP_RESTART_REQUIRED` 时先重新加载 Moodle 服务，不申请 shell 提权；学校/账号/授权/范围等固定错误按其原因处理，不能把缓存失败或普通错误当作核对成功。
 
-回执沿用现有 `verdict`、`verified.complete`、`scope`、`reused`、`network_started` 等含义。回执记录保存的学校连接指纹（`connection_generation`：配置与加密凭据的哈希）；相同原聊天、当前保存的学校连接、课程/资料范围及本地内容未变时才可复用严格回执，重新登录、换账号或凭据变化后旧回执失效、需要重新联网核对。新增范围只补核对新增资料，错误和未完成不能冒充成功。MCP 服务不保证继承主聊天身份，所以每次明确提供 `chat_id`；只在本地保存其摘要。
+回执沿用现有 `verdict`、`verified.complete`、`scope`、`reused`、`network_started` 等含义。回执记录保存的学校连接指纹（`connection_generation`：配置与加密凭据的哈希）；相同原聊天、当前保存的学校连接、课程/资料范围及本地内容未变时才可复用时间戳回执，重新登录、换账号或凭据变化后旧回执失效、需要重新联网核对。新增范围只补核对新增资料，错误和未完成不能冒充成功。MCP 服务不保证继承主聊天身份，所以每次明确提供 `chat_id`；只在本地保存其摘要。
 
-工具缺失/未加载或服务启动、传输故障才退回同范围 `study.cmd --chat "原始用户聊天ID" chapter-check --course COURSE101 --section "Topic 5" --mode strict`；不因学校拒绝、账号/课程授权不符、参数错误或客户端审批拒绝而换路径。不并发运行或在两条路径间循环；仅后备 CLI 遇到受限执行解密错误才申请一次单次授权，详见 [DSH 恢复流程](DSH.md#章节核对默认使用-moodle-工具)。用户自定义审批策略仍然生效，不修改全局权限。
+工具缺失/未加载或服务启动、传输故障才退回同范围 `study.cmd --chat "原始用户聊天ID" chapter-check --course COURSE101 --section "Topic 5" --mode timestamp`；不因学校拒绝、账号/课程授权不符、参数错误或客户端审批拒绝而换路径。不并发运行或在两条路径间循环；仅后备 CLI 遇到受限执行解密错误才申请一次单次授权，详见 [DSH 恢复流程](DSH.md#章节核对默认使用-moodle-工具)。用户自定义审批策略仍然生效，不修改全局权限。
 
 更新后重连本项目 MCP 服务（无单独入口则重启 Harness）加载新工具；已有配置和学习资料不迁移，助手不擅自重启用户客户端。`chapter-prep` 输出的 `strict_check.command` 仅用于上述后备流程，不能据其存在强制正常教学走 shell。
 
@@ -287,3 +287,9 @@ npm test
 
 
 考试来源写入与统一聊天入口共用快照校验。已有较新轮次、范围改变或快照被修改时，旧的 `exam-sync/exam-profile` 会拒绝保存；重读最新独立快照并核读后再提交，不使用旧草稿回退已核验要求。
+
+## 本章更新策略（2026-11-16）
+
+教学前按本章云端目录时间戳更新：每个新聊天查询目录，优先比较 timemodified，没有则比较 timecreated；同源本地原件可读且时间相同则不下载比对远端内容，时间变化或本地无可读原件则下载并验证正文/索引。旧档案无时间基线时通过一次下载建立；云端时间未知、缺件、同步或正文核读失败则暂停本章教学，不用旧版或通用知识继续。处理当前客户端的授权或登录故障后再明确重试。同聊天同范围可复用成功回执。新版就绪后只删除本次对应、未被本地修改的旧原件，保留旧 ID、来源、哈希、时间与历史学习记录，不迁移掌握结论，不追溯批量清理旧档案。
+
+`strict` 仅保留为显式内容比对诊断；时间戳方案不会检测服务器未改变时间戳的同名内容改写。下载或索引成功不代表助手已核读原页，也不代表学生掌握。

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-16 · Chapter timestamp updates and missing-file protection
+
+Teaching now reads chapter catalog timestamps and reuses readable local files without downloading unchanged content. Changed files are installed and their text indexes validated before retiring only the corresponding old originals; identities, provenance and learning history remain intact. Missing files, unknown timestamps and sync/read failures pause teaching and preserve originals. Explicit strict diagnostics remain available. Source and rules only: no plugin packaging, installation or publication. Isolated tests cover first acquisition, new-chat reuse without downloads, changed versions, creation-time fallback, unknown time, edits, gaps, failures and index recovery; no live school connection was tested.
+
 **English** · [简体中文](CHANGELOG.md)
 
 ## DeepSeek branch merge notes

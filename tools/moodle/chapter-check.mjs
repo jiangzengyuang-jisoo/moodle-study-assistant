@@ -3,8 +3,8 @@
 // A full collection answers "what changed anywhere in my courses"; it also reads
 // every assignment submission state, discussion thread and calendar event. This
 // module answers one narrower question: "is the file for this chapter still the
-// file I already have?" It never downloads into the library, never installs,
-// archives or indexes, and never promotes a review receipt. It therefore cannot
+// file I already have?" Teaching uses timestamps and authorized acquisition;
+// strict mode remains an explicit content diagnostic. Neither can
 // replace a full collection for announcements, assignment requirements,
 // discussions, deadlines or exam preparation.
 //
@@ -30,11 +30,11 @@ import {join, resolve, sep} from 'node:path';
 import {MAX_BYTES, fetchCourseFile} from './course-files.mjs';
 import {accountScope, assertProfileAccount, normalizeSite, profileAccountStatus} from './content-policy.mjs';
 import {
-  authorizationReport, emptyTextSources, enumerateCourse, nowISO, planPage, readJSON, selectedPages, syncCourseLibrary,
+  finalizeChapter, authorizationReport, emptyTextSources, enumerateCourse, nowISO, planPage, readJSON, selectedPages, syncCourseLibrary,
 } from './course-library.mjs';
 
-export const CHAPTER_CHECK_SCHEMA = 5;
-export const MODES = Object.freeze({quick: 'quick', strict: 'strict'});
+export const CHAPTER_CHECK_SCHEMA = 6;
+export const MODES = Object.freeze({quick: 'quick', strict: 'strict', timestamp: 'timestamp'});
 export const STATUS = Object.freeze({
   unchanged: 'unchanged', changed: 'changed', no_baseline: 'no_baseline', error: 'error', skipped: 'skipped',
 });
@@ -269,7 +269,7 @@ export function resolveBaseline({entry, material}) {
     return {
       source: 'ledger',
       filesize: usable.remote.filesize ?? null,
-      timemodified: usable.remote.timemodified ?? null,
+      timemodified: usable.remote.timemodified ?? null, timecreated: usable.remote.timecreated ?? null,
       url: usable.remote.url ?? null,
       sha256: usable.sha256 ?? material?.sha256 ?? null,
     };
@@ -295,9 +295,23 @@ function differences(baseline, remote) {
 }
 
 // Pure classification: tests and the CLI use exactly the same evidence rule.
+export function remoteTime(value) {
+  for (const field of ['timemodified', 'timecreated'])
+    if (typeof value?.[field] === 'number' && Number.isFinite(value[field]) && value[field] > 0)
+      return {field, value: value[field]};
+  return null;
+}
+
 export function classifyItem({item, entry, material, mode, sha256 = null}) {
   const baseline = resolveBaseline({entry, material});
-  const remote = {filesize: item.filesize ?? null, timemodified: item.timemodified ?? null, url: item.cleanUrl ?? null};
+  const remote = {filesize: item.filesize ?? null, timemodified: item.timemodified ?? null, timecreated: item.timecreated ?? null, url: item.cleanUrl ?? null};
+  if (mode === 'timestamp') {
+    const current = remoteTime(remote), previous = remoteTime(baseline);
+    const same = current && previous && entry?.timestamp_ready !== false && baseline.sha256 === material?.sha256
+      && current.field === previous.field && current.value === previous.value;
+    return {status: !current ? STATUS.error : !baseline.sha256 ? STATUS.no_baseline : same ? STATUS.unchanged : STATUS.changed,
+      evidence: 'timestamp', baseline, remote, differences: !current ? ['remote_time_missing'] : same ? [] : ['remote_time']};
+  }
   if (mode === 'strict') {
     if (!baseline.sha256) return {status: STATUS.no_baseline, evidence: 'content', baseline, remote, differences: []};
     const same = Boolean(sha256) && sha256 === baseline.sha256;
@@ -450,7 +464,7 @@ function rowFor({item, classification, sha256, local, status = null, differences
     section: item.section,
     section_index: item.sectionIndex ?? null,
     category: item.category,
-    remote: {filesize: item.filesize ?? null, timemodified: item.timemodified ?? null},
+    remote: {filesize: item.filesize ?? null, timemodified: item.timemodified ?? null, timecreated: item.timecreated ?? null},
     baseline: {source: classification.baseline.source, filesize: classification.baseline.filesize,
       timemodified: classification.baseline.timemodified},
     status: status ?? classification.status,
@@ -994,7 +1008,7 @@ export function validateReceiptReuse({receipt, plan, state, root = null, chatKey
   if (!chatKey) return no('no_chat_key');
   if (!receipt || receipt.schema !== CHAPTER_CHECK_SCHEMA) return no('no_receipt');
   if (receipt.mode !== mode) return no('mode_changed');
-  if (mode !== MODES.strict) return no('mode_not_strict');
+  if (![MODES.strict, MODES.timestamp].includes(mode)) return no('mode_not_strict');
   if (receipt.chat?.key !== String(chatKey)) return no('chat_changed');
   if (!receipt.course || !receipt.account_scope) return no('no_receipt');
   // A receipt belongs to the exact saved connection (config + protected
@@ -1106,9 +1120,11 @@ function reuseMessage(reason) {
 // Receipt construction helpers.
 // ---------------------------------------------------------------------------
 
-export function verifyCompleteness({mode, files, errors}) {
-  if (mode !== MODES.strict) return {complete: false, evidence: 'metadata', reason: 'mode_not_strict'};
-  if (errors.length) return {complete: false, evidence: 'content', reason: 'errors'};
+export function verifyCompleteness({mode, files, errors, skipped = []}) {
+  if (skipped.some(row => ['resource', 'folder'].includes(row.module_type ?? row.moduleType))) return {complete: false, evidence: mode, reason: 'missing_chapter_files'};
+  if (![MODES.strict, MODES.timestamp].includes(mode)) return {complete: false, evidence: 'metadata', reason: 'mode_not_strict'};
+  if (errors.length) return {complete: false, evidence: mode, reason: 'errors'};
+  if (mode === MODES.timestamp && files.some(row => row.status !== STATUS.unchanged)) return {complete: false, evidence: 'timestamp', reason: 'update_required'};
   if (!files.length) return {complete: false, evidence: 'content', reason: 'no_files'};
   if (files.some(file => file.status === STATUS.error)) return {complete: false, evidence: 'content', reason: 'error'};
   if (files.some(file => file.status === STATUS.no_baseline)) {
@@ -1191,7 +1207,7 @@ export async function checkChapter({
   progress = () => {}, connectionGeneration: passedGeneration = undefined, discover = false,
 } = {}) {
   if (!client || typeof client.call !== 'function') throw new Error('需要已连接的 Moodle 只读客户端');
-  if (!MODES[mode]) throw new Error('核对强度只能是 quick 或 strict');
+  if (!MODES[mode]) throw new Error('核对强度只能是 timestamp、quick 或 strict');
   if (!section && !modules) throw new Error('请提供章节名称/编号，或用 --module 指定模块');
   // The receipt records the same saved-connection generation the caller used to
   // decide reuse, so a cold-started process can tell whether the saved login
@@ -1211,7 +1227,7 @@ export async function checkChapter({
   const blockedByPage = new Map(blocked.map(entry => [entry.page.moodleCourseid, entry.reason]));
   // Strict verification downloads chapter files, so it keeps the course-level
   // download authorization. Quick verification only reads course metadata.
-  const usable = pages.filter(page => mode !== 'strict' || !blockedByPage.has(page.moodleCourseid));
+  const usable = pages.filter(page => mode === 'quick' || !blockedByPage.has(page.moodleCourseid));
   if (!usable.length) {
     throw new Error('该课程没有可用的完整资料授权，不能做严格核对；请先确认课程级 full 授权，或改用 --mode quick');
   }
@@ -1280,7 +1296,7 @@ export async function checkChapter({
 
   // Scope page authorization: a strict check must not silently ignore chapter
   // files that live on a blocked course page.
-  if (mode === MODES.strict) {
+  if (mode !== MODES.quick) {
     for (const pageId of chapterScope.pages_in_scope ?? []) {
       if (blockedByPage.has(pageId)) {
         errors.push({moodle_courseid: pageId, scope: 'authorization',
@@ -1315,6 +1331,16 @@ export async function checkChapter({
   };
   const scopedFiles = allFiles.filter(item => item.moduleId != null && matchesScope(item));
   const scopedSkips = allSkips.filter(matchesSkipScope);
+  // A visible chapter resource with no file listing is an explicit gap.
+  for (const {page, enumerated} of enumeratedPages) for (const section of enumerated.sections) {
+    for (const module of section.modules ?? []) {
+      const item = {moduleId: module.id, moodleCourseid: page.moodleCourseid, sectionIndex: section.index};
+      if (['resource', 'folder'].includes(module.modname) && matchesScope(item)
+          && !scopedFiles.some(file => file.moduleId === module.id && file.moodleCourseid === page.moodleCourseid)
+          && !scopedSkips.some(skip => skip.moduleId === module.id))
+        scopedSkips.push({...item, moduleType: module.modname, moduleName: module.name, reason: 'empty_or_unavailable_file_listing'});
+    }
+  }
   const presentModules = new Set();
   for (const {enumerated} of enumeratedPages) {
     for (const section of enumerated.sections) {
@@ -1343,7 +1369,7 @@ export async function checkChapter({
         && row.course_id === resolved.subject && !row.superseded_by
         && !['archived', 'deleted'].includes(row.version_status)) : null);
     const classification = classifyItem({item, entry, material, mode});
-    const local = localState(root, material, {verifyHash: mode === MODES.strict});
+    const local = localState(root, material, {verifyHash: mode !== MODES.quick});
     try {
       let row;
       if (mode !== 'strict' || !classification.baseline.sha256) {
@@ -1380,7 +1406,7 @@ export async function checkChapter({
   }
   const files = rows.filter(row => row.status !== STATUS.skipped);
   const counts = summarize(files);
-  const completeness = verifyCompleteness({mode, files, errors});
+  const completeness = verifyCompleteness({mode, files, errors, skipped: scopedSkips});
   const localFiles = [];
   const localByKey = new Map((chapterScope.files ?? []).map(file => [`${file.module_id}|${file.relative_path}`, file]));
   for (const row of files) {
@@ -1429,20 +1455,23 @@ export async function checkChapter({
     errors,
     summary: {...counts, skipped: scopedSkips.length,
       from_cache: rows.filter(row => row.from_cache).length},
-    verdict: errors.length || files.some(row => row.local?.status === 'modified') ? 'incomplete' : verdictOf(counts),
+    verdict: errors.length || files.some(row => row.local?.status === 'modified')
+      || (mode === MODES.timestamp && !completeness.complete)
+      || completeness.reason === 'missing_chapter_files' ? 'incomplete' : verdictOf(counts),
     verified: completeness,
-    reuse: {eligible: completeness.complete && mode === MODES.strict,
+    reuse: {eligible: completeness.complete && mode !== MODES.quick,
       reason: completeness.complete ? 'complete' : completeness.reason},
     incremental,
     authorization: {
       full: pages.filter(page => !blockedByPage.has(page.moodleCourseid)).map(page => page.moodleCourseid),
       blocked: [...blockedByPage].map(([moodleCourseid, reason]) => ({moodle_courseid: moodleCourseid, reason})),
-      note: mode === 'strict' ? '严格核对只允许在课程级 full 授权范围内下载本章文件' : '快速核对只读取课程元数据，不下载文件',
+      note: mode !== 'quick' ? '本章更新与内容诊断只允许在课程级 full 授权范围内下载文件' : '快速核对只读取课程元数据，不下载文件',
     },
     scope_note: SCOPE_NOTE,
     limitations: [
       '快速核对比较服务器记录的文件大小与修改时间；同大小的改写可能漏检，记录变化但内容相同时会显示 changed。',
-      mode === 'strict'
+      mode === 'timestamp' ? '默认按 timemodified（无则 timecreated）更新；新聊天查目录，同源时间未变且本地正文可读时不下载比对远端内容。时间未知或同步失败暂停教学。'
+        : mode === 'strict'
         ? (discover ? '本次教学入口会按现有授权补齐或更新缺少的本章原件并建索引，再核对远端、登记和本地内容哈希；保留本地修改。'
           : '本次只核对远端、登记和本地内容哈希，不安装资料或重建索引。')
         : '本次没有重新下载文件；需要按内容确认时改用 --mode strict。',
@@ -1488,7 +1517,7 @@ async function runChapterCheckOnly({
   progress = () => {}, now = nowISO, fetchFile = fetchCourseFile, enumerate = enumerateCourse,
   ledgerPath = null, discover = false,
 }) {
-  if (!MODES[mode]) throw new Error('核对强度只能是 quick 或 strict');
+  if (!MODES[mode]) throw new Error('核对强度只能是 timestamp、quick 或 strict');
   if (!course) throw new Error('请提供课程 ID；章节核对只查这一门课');
   if (!section && !modules) throw new Error('请提供章节名称/编号，或用 --module 指定模块');
   const state = loadState();
@@ -1540,15 +1569,34 @@ async function runChapterCheckOnly({
 
 // Acquisition is enabled by teaching entry points; raw checks remain read-only.
 export async function runChapterCheck(options) {
+  options = {...options, mode: options.mode ?? (options.acquireMissing ? 'timestamp' : 'strict')};
+  const initial = options.loadState();
+  const previousIds = (initial.materials ?? []).filter(m => !m.superseded_by && !['archived', 'deleted'].includes(m.version_status)).map(m => m.id);
+  const finalize = result => {
+    if (options.mode !== 'timestamp' || !result.verified?.complete) return result;
+    try {
+      const state = options.loadState();
+      const paths = new Set(result.files.map(row => row.local?.relative_path));
+      const ids = (state.materials ?? []).filter(m => !m.superseded_by && paths.has(m.relative_path)).map(m => m.id);
+      const checked = (options.finalize ?? finalizeChapter)({root: options.root, statePath: join(options.root, 'Study/_System/state.json'),
+        payload: {material_ids: ids, previous_ids: result.acquisition ? previousIds : []}});
+      result.teaching_ready = true; result.local_index = checked;
+    } catch {
+      result.verified = {...result.verified, complete: false, reason: 'chapter_body_unavailable'};
+      result.verdict = 'incomplete'; result.teaching_ready = false; result.reuse = {eligible: false, reason: 'chapter_body_unavailable'};
+    }
+    if (options.persist !== false) writeReceipt(options.root, result);
+    return result;
+  };
   let client;
   const connect = async () => client ??= await options.connect();
   const receipt = await runChapterCheckOnly({...options, connect, discover: options.acquireMissing === true});
-  if (!options.acquireMissing || (options.mode ?? 'strict') !== 'strict' || receipt.ambiguous
-      || (receipt.reused && receipt.acquisition)) return receipt;
+  if (!options.acquireMissing || options.mode === 'quick' || receipt.ambiguous
+      || (receipt.reused && receipt.acquisition)) return finalize(receipt);
   const modules = [...new Set((receipt.files ?? []).filter(row =>
     row.status !== STATUS.error && row.local?.status !== 'modified' && (row.status === STATUS.no_baseline || row.status === STATUS.changed
       || row.local?.status === 'missing')).map(row => Number(row.module_id)).filter(Number.isSafeInteger))];
-  if (!modules.length || receipt.errors?.length) return receipt;
+  if (!modules.length || receipt.errors?.length) return finalize(receipt);
   const pending = {...receipt, verdict: 'incomplete', verified: {...receipt.verified, complete: false},
     reuse: {eligible: false, reason: 'acquisition_pending'}, acquisition: {status: 'incomplete', reason: 'acquisition_interrupted', module_ids: modules}};
   if (options.persist !== false) writeReceipt(options.root, pending);
@@ -1566,16 +1614,29 @@ export async function runChapterCheck(options) {
       .map(row => row.moodle_courseid))];
     const pages = resolveCoursePages(state, options.course).pages.filter(page => pageIds.includes(page.moodleCourseid));
     assertProfileAccount({state, root: options.root, site: client.baseUrl, userId: client.userId, action: '章节资料补齐'});
+    const sourceKeys = options.mode === 'timestamp' ? receipt.files.filter(row => modules.includes(Number(row.module_id))
+      && row.status !== STATUS.error && row.local?.status !== 'modified'
+      && (row.status !== STATUS.unchanged || row.local?.status !== 'present')).map(row => row.source_key) : null;
     const report = await (options.acquire ?? syncCourseLibrary)({client, root: options.root, state,
-      courseIds: [...new Set(pages.map(page => page.courseId))], pageIds, moduleIds: modules});
+      courseIds: [...new Set(pages.map(page => page.courseId))], pageIds, moduleIds: modules,
+      // The finalizer below validates/rebuilds only selected chapter originals.
+      ...(options.mode === 'timestamp' ? {buildIndex: () => ({courses: {}}), deferTimestampReady: true} : {}), sourceKeys});
     if (!report.ok) {
       pending.acquisition.reason = 'chapter_acquisition_incomplete';
       return saveFailure();
     }
+    if (options.mode === 'timestamp') {
+      const ledger = readLedger(join(options.root, 'Study/_System/LibrarySync/ledger.json'));
+      const ids = [...new Set(sourceKeys.map(key => ledger.entries[key]?.duplicate_of ?? ledger.entries[key]?.material_id).filter(Boolean))];
+      // Installation alone is not a reusable timestamp baseline. A failed body
+      // remains pending and an explicit retry can fetch repaired remote bytes.
+      (options.finalize ?? finalizeChapter)({root: options.root, statePath: join(options.root, 'Study/_System/state.json'),
+        payload: {material_ids: ids, previous_ids: [], confirm_sources: sourceKeys}});
+    }
     const checked = await runChapterCheckOnly({...options, connect, force: true, discover: true});
     checked.acquisition = {status: 'complete', module_ids: modules};
     if (options.persist !== false) writeReceipt(options.root, checked);
-    return checked;
+    return finalize(checked);
   } catch {
     pending.acquisition.reason = 'chapter_acquisition_failed';
     return saveFailure();

@@ -12,7 +12,7 @@ import {createMcpChapterContext} from '../tools/moodle/mcp-workspace.mjs';
 import {connectionError} from '../tools/moodle/connection-errors.mjs';
 
 const BASE = 'https://school.example/moodle';
-const PDF = Buffer.from('%PDF-1.4\nsynthetic chapter data');
+const PDF = Buffer.from('JVBERi0xLjMKJeLjz9MKMSAwIG9iago8PAovUHJvZHVjZXIgKHB5cGRmKQo+PgplbmRvYmoKMiAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDEKL0tpZHMgWyA0IDAgUiBdCj4+CmVuZG9iagozIDAgb2JqCjw8Ci9UeXBlIC9DYXRhbG9nCi9QYWdlcyAyIDAgUgo+PgplbmRvYmoKNCAwIG9iago8PAovVHlwZSAvUGFnZQovUmVzb3VyY2VzIDw8Ci9Gb250IDw8Ci9GMSA1IDAgUgo+Pgo+PgovTWVkaWFCb3ggWyAwLjAgMC4wIDMwMCAzMDAgXQovUGFyZW50IDIgMCBSCi9Db250ZW50cyA2IDAgUgo+PgplbmRvYmoKNSAwIG9iago8PAovVHlwZSAvRm9udAovU3VidHlwZSAvVHlwZTEKL0Jhc2VGb250IC9IZWx2ZXRpY2EKPj4KZW5kb2JqCjYgMCBvYmoKPDwKL0xlbmd0aCA1Mgo+PgpzdHJlYW0KQlQgL0YxIDEyIFRmIDIwIDI1MCBUZCAoUmVhZGFibGUgY2hhcHRlciBib2R5KSBUaiBFVAplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA3CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxNSAwMDAwMCBuIAowMDAwMDAwMDU0IDAwMDAwIG4gCjAwMDAwMDAxMTMgMDAwMDAgbiAKMDAwMDAwMDE2MiAwMDAwMCBuIAowMDAwMDAwMjk0IDAwMDAwIG4gCjAwMDAwMDAzNjQgMDAwMDAgbiAKdHJhaWxlcgo8PAovU2l6ZSA3Ci9Sb290IDMgMCBSCi9JbmZvIDEgMCBSCj4+CnN0YXJ0eHJlZgo0NjYKJSVFT0YK', 'base64');
 const CONNECTION_AUTHORIZATION = Buffer.from('SYNTHETIC-ENCRYPTED-AUTHORIZATION');
 const hash = value => createHash('sha256').update(value).digest('hex');
 const CHAT = 'session-12345678-abcd-4321-abcd-123456789012';
@@ -108,7 +108,7 @@ test('chapter tool advertises fixed inputs and its local receipt side effect', a
   assert.equal(tool.inputSchema.additionalProperties, false);
   assert.deepEqual(tool.inputSchema.required.sort(), ['chat_id', 'course_id']);
   assert.equal(tool.annotations.readOnlyHint, false);
-  assert.equal(tool.annotations.destructiveHint, false);
+  assert.equal(tool.annotations.destructiveHint, true);
   for (const key of ['root', 'command', 'url', 'path', 'mode', 'chat_key', 'persist'])
     assert(!Object.hasOwn(tool.inputSchema.properties, key));
 });
@@ -117,7 +117,7 @@ test('strict MCP check fetches only the chapter, preserves state, and reuses the
   const f = await fixture(t);
   const before = readFileSync(f.statePath);
   const first = parse(await f.call(input()));
-  assert.equal(first.mode, 'strict');
+  assert.equal(first.mode, 'timestamp');
   assert.equal(first.verdict, 'unchanged');
   assert.equal(first.verified.complete, true);
   assert.equal(first.network_started, true);
@@ -126,14 +126,14 @@ test('strict MCP check fetches only the chapter, preserves state, and reuses the
   assert(!JSON.stringify(first).includes(CHAT));
   assert(!JSON.stringify(first).includes('PRIVATE_TOKEN'));
   assert.deepEqual(f.calls.fetch, ['Topic5.pdf']);
-  assert.equal(first.files[0].evidence, 'content');
-  assert.equal(first.files[0].content_sha256, hash(PDF));
+  assert.equal(first.files[0].evidence, 'timestamp');
+  assert.equal(first.files[0].content_sha256, null);
   const second = parse(await f.call(input()));
   assert.equal(second.reused, true);
   assert.equal(second.network_started, false);
   assert.equal(f.calls.connect, 1);
-  assert.deepEqual(f.calls.catalog, [101]);
-  assert.deepEqual(readFileSync(f.statePath), before);
+  assert.deepEqual(f.calls.catalog, [101, 101, 101]);
+  assert.deepEqual(JSON.parse(readFileSync(f.statePath)).materials.map(m=>[m.id,m.sha256]), JSON.parse(before).materials.map(m=>[m.id,m.sha256]));
 });
 
 test('a different chat and explicit force each perform a real check', async t => {

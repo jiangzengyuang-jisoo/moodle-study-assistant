@@ -12,7 +12,7 @@ from learning_library import versions
 
 
 # Download metadata may enrich a material row, never redefine its identity.
-EXTRA_FIELDS = {"kind", "capture", "source_pages"}
+EXTRA_FIELDS = {"kind", "capture", "source_pages", "chapter_timestamp_update"}
 RESERVED_FIELDS = {"id", "course_id", "filename", "relative_path", "sha256", "bytes",
                    "page_map", "moodle_file_sources", "version", "archive_subdir",
                    "contains_solutions", "version_status", "supersedes", "superseded_by",
@@ -44,6 +44,11 @@ def _download_extra(extra):
             if not isinstance(value, list) or not all(isinstance(page, dict) for page in value):
                 raise ValueError("Source page provenance must be a list of objects")
             fields["source_pages"] = value
+        elif key == "chapter_timestamp_update":
+            if (not isinstance(value, dict) or value.get("pending_retirement") is not True
+                    or not isinstance(value.get("source_key"), str) or not value["source_key"]):
+                raise ValueError("Invalid timestamp update provenance")
+            fields[key] = {"source_key": value["source_key"], "pending_retirement": True}
     return fields
 
 

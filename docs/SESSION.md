@@ -11,7 +11,7 @@
 .\study.cmd --chat "原始用户聊天ID" today
 .\study.cmd --chat "原始用户聊天ID" refresh
 .\study.cmd --chat "原始用户聊天ID" status
-.\study.cmd --chat "原始用户聊天ID" chapter-check --course 课程ID --section "第8章" --mode strict
+.\study.cmd --chat "原始用户聊天ID" chapter-check --course 课程ID --section "第8章" --mode timestamp
 .\study.cmd --chat "原始用户聊天ID" teaching-event     # 标准输入一个小 JSON，只交本轮教学位置变化（兼容旧流程）
 .\tools\study\library.cmd teaching-save --course 课程ID   # 标准输入小 JSON，追加实际教学事件并回读确认
 ```
@@ -20,7 +20,7 @@
 - `today`：上述流程加上今日复习与页面更新。学校证据未核读时标明 `school_evidence_pending`，不能当作刚核验过的计划。
 - `refresh`：本人明确要求检查最新学校信息或重试失败时使用。
 - `status`：查看采集、待核读、中断、失败或已核读状态，不联网。
-- `study_check_chapter`：正常章节核对的 Moodle MCP 工具，固定 strict；必填 `course_id`、原主聊天 `chat_id`，用 `section` 或 `module_ids` 指明本章；仅明确重查时 `force: true`。工具本机保存章节回执，不改学习状态或学校信息。详见 [工具合同](TOOLS.md#章节核对工具study_check_chapter)。
+- `study_check_chapter`：正常章节核对的 Moodle MCP 工具，默认 timestamp；必填 `course_id`、原主聊天 `chat_id`，用 `section` 或 `module_ids` 指明本章；仅明确重查时 `force: true`。工具本机保存章节回执，不改学习状态或学校信息。详见 [工具合同](TOOLS.md#章节核对工具study_check_chapter)。
 - `chapter-check`：仅工具缺失或 MCP 服务启动/传输故障时的 CLI 后备；相同范围与聊天 ID，不因业务拒绝或审批拒绝换路径。它在已有 full 授权下补齐本章缺失或更新的资料并核对学校文件（`strict` 比较内容哈希，`quick` 只看大小/修改时间），联网范围限于该课程目录和本章文件；先用本地资料索引与来源映射定位本章模块，匹配不唯一时返回候选和原因，不按数字相同选择整个区块。默认 `strict`；`--modules` 可直接指定模块，本人明确要求重查时加 `--force`。同一聊天、账号、课程、范围和本地文件内容哈希未变时复用最近一次严格回执，不重复联网；本地新增本章资料只核对新增部分，失败或部分完成不算全部核验成功，也不因普通追问自动重试。受限环境的 `STUDY_TOKEN_DECRYPT_FAILED` 例外按 [DSH 单次授权恢复](DSH.md#授权解密失败时申请单次重试) 主动申请原命令重试，获批才执行，最多一次；不因此改用 `refresh` 或 `--force`。不读作业、公告、论坛或日历，只更新资料登记与索引，不改掌握或作答、不产生完整核读回执；学习新一章或缺少本章课件时均用它，校务信息仍走 `continue`。判定和处理见 [WORKFLOW.md](WORKFLOW.md#单章资料核对不触发完整采集)。
 - `teaching-event`：兼容旧流程的小事件保存入口；程序读最新状态、合并、校验、原子保存并至多重建一次视图，成功后不必再跑 `daily.py run/check`。完整字段、禁止项与幂等语义见下文[教学位置事件](#教学位置事件teaching-event)。新教学进度和原答优先用下面的 `teaching-save`。
 - `teaching-save`：新教学进度与原答的统一保存入口；标准输入含 `occurred_at`、聊天/轮次 `source`、`position`、真实 `attempts` 与帮助条件的小事件。共享锁内追加 `teaching_events`、完整校验、原子保存后回读确认；相同编号同内容幂等，过期版本拒绝覆盖。该命令不重建页面视图，需要时再按原流程运行 `daily.py run/check`。字段与示例见 [MEMORY.md](MEMORY.md#教学接续保存与漏记检查)。
@@ -129,3 +129,9 @@ Get-Content -Raw -Encoding UTF8 'tmp/teaching-event.json' | .\study.cmd --chat "
 快速读取也可用 `tools/study/library.cmd context --read-only`；此选项不修改学习状态或清理资料，但会写本地耗时日志。原 `context` 行为兼容保留。
 
 验证使用虚构档案和模拟学校响应，覆盖重复聊天、子任务、显式刷新、失败不重试、快照被改、并发保存、晚返回的旧轮次、进程被终止及保存后页面失败。真实学校网络速度、客户端重新启动/压缩的 ID 传递和 AI 核读质量仍需实际环境验证，不能从模拟测试推断保证。
+
+## 本章更新策略（2026-11-16）
+
+教学前按本章云端目录时间戳更新：每个新聊天查询目录，优先比较 timemodified，没有则比较 timecreated；同源本地原件可读且时间相同则不下载比对远端内容，时间变化或本地无可读原件则下载并验证正文/索引。旧档案无时间基线时通过一次下载建立；云端时间未知、缺件、同步或正文核读失败则暂停本章教学，不用旧版或通用知识继续。处理当前客户端的授权或登录故障后再明确重试。同聊天同范围可复用成功回执。新版就绪后只删除本次对应、未被本地修改的旧原件，保留旧 ID、来源、哈希、时间与历史学习记录，不迁移掌握结论，不追溯批量清理旧档案。
+
+`strict` 仅保留为显式内容比对诊断；时间戳方案不会检测服务器未改变时间戳的同名内容改写。下载或索引成功不代表助手已核读原页，也不代表学生掌握。

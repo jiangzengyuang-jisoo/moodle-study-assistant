@@ -298,16 +298,16 @@ class ChapterCheckTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '章节核对失败；本地资料保留'):
             self.run_check('moodle-1', '8', result=self.result(returncode=1, stderr='\n  \n'))
 
-    def test_default_mode_is_strict_and_force_is_explicit(self):
+    def test_default_mode_is_timestamp_and_force_is_explicit(self):
         _, command = self.run_check('moodle-1', '8', result=self.result(self.receipt()))
-        self.assertEqual(command[command.index('--mode') + 1], 'strict')
+        self.assertEqual(command[command.index('--mode') + 1], 'timestamp')
         self.assertNotIn('--force', command)
         _, explicit = self.run_check('moodle-1', '8', 'strict', result=self.result(self.receipt()))
         self.assertEqual(explicit[explicit.index('--mode') + 1], 'strict')
         _, forced = self.run_check('moodle-1', '8', force=True, result=self.result(self.receipt()))
         self.assertIn('--force', forced)
-        # --force only asks for a real re-check; strict hash comparison is unchanged.
-        self.assertEqual(forced[forced.index('--mode') + 1], 'strict')
+        # --force refreshes the catalog but does not change the timestamp teaching policy.
+        self.assertEqual(forced[forced.index('--mode') + 1], 'timestamp')
         self.assertEqual(forced[forced.index('--chat-key') + 1], digest('user-chat'))
         _, quick = self.run_check('moodle-1', '8', 'quick', result=self.result(self.receipt()))
         self.assertEqual(quick[quick.index('--mode') + 1], 'quick')

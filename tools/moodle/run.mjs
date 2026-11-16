@@ -295,7 +295,7 @@ async function runChapterCheckMode() {
     section: option('--section'),
     modules,
     // Strict content hashes are the verification contract; quick remains opt-in.
-    mode: option('--mode') ?? 'strict',
+    mode: option('--mode') ?? 'timestamp',
     chatKey: option('--chat-key') || null,
     force: args.includes('--force'),
     persist: !args.includes('--no-persist'),
@@ -372,8 +372,8 @@ function validateArguments(mode, args) {
   if (mode === 'chapter-check') {
     if (!values.has('--course')) fail('缺少 --course：可使用本地课程 ID（按原大小写）、Moodle 数字页面 ID 或唯一课程名。');
     if (!values.has('--section') && !values.has('--module')) fail('需要 --section 章节或 --module Moodle 模块 ID。');
-    if (values.has('--mode') && !['quick', 'strict'].includes(values.get('--mode')))
-      fail('--mode 只能是 quick 或 strict。');
+    if (values.has('--mode') && !['quick', 'strict', 'timestamp'].includes(values.get('--mode')))
+      fail('--mode 只能是 timestamp、quick 或 strict。');
     if (values.has('--module') && !values.get('--module').split(',').every(value => positive(value.trim())))
       fail('--module 使用逗号分隔的 Moodle 正整数模块 ID。');
   }
@@ -551,7 +551,7 @@ async function main() {
     if (result.errors.length) process.exitCode = 2;
     return;
   }
-  throw new Error('用法：run.mjs init | check | courses [--select IDS --mode full|info_only --yes] | library-sync [--course ID] [--snapshot PATH] [--dry-run] | chapter-check --course ID --section 章节 [--mode quick|strict] [--module IDS] [--chat-key KEY] [--force] [--no-persist] | content-sync --snapshot PATH | refresh | mcp | download <module-id> [...] --authorized');
+  throw new Error('用法：run.mjs init | check | courses [--select IDS --mode full|info_only --yes] | library-sync [--course ID] [--snapshot PATH] [--dry-run] | chapter-check --course ID --section 章节 [--mode timestamp|quick|strict] [--module IDS] [--chat-key KEY] [--force] [--no-persist] | content-sync --snapshot PATH | refresh | mcp | download <module-id> [...] --authorized');
 }
 main().catch(error => {
   // Stable, allowlisted code for diagnostics; never expose arbitrary properties.

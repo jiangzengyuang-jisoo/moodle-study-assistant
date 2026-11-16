@@ -89,8 +89,8 @@ test('lost extraction index is detected before teaching and local sync restores 
  unlinkSync(join(f.root,'Study/_System/Library/catalog.json'));
  const before=[f.calls.length,f.downloads.length];assert.equal((await f.run()).verified.complete,true);
  const missing=invoke('chapter-prep','--course','moodle-1','--section','Topic 5','--render','none');
- assert.equal(missing.status,'needs_sync');assert.ok(missing.cache.sync_command);
- assert.ok(!JSON.stringify(missing).includes('Original A'));
+ assert.equal(missing.status,'ready');
+ assert.ok(JSON.stringify(missing).includes('Original A'));
  invoke('sync','--course','moodle-1');
  const prepared=invoke('chapter-prep','--course','moodle-1','--section','Topic 5','--render','none');
  assert.equal(prepared.status,'ready');assert.ok(JSON.stringify(prepared).includes('Original A'));
@@ -123,7 +123,7 @@ test('a real process interrupted after a committed batch recovers without losing
 test('authorization revoked while downloading a replacement is rechecked before changing missing history',async t=>{
  const f=fixture(t,'revoked-during-download');await f.run();const old=f.current()[0];unlinkSync(f.path(old));f.payload.set(501,'Updated remote');
  const original=f.client.transport;let fetches=0;
- f.client.transport=async(...args)=>{const response=await original(...args);if(++fetches===2)f.editState(s=>s.settings.course_library_authorization.courses['moodle-1'].mode='info_only');return response;};
+ f.client.transport=async(...args)=>{const response=await original(...args);if(++fetches===1)f.editState(s=>s.settings.course_library_authorization.courses['moodle-1'].mode='info_only');return response;};
  const checked=await f.run({chat_id:'new-chat'});assert.equal(checked.verified.complete,false);
  assert.equal(parse(f.statePath).materials.length,1);assert.equal(f.current()[0].sha256,old.sha256);assert.equal(f.current()[0].relative_path,old.relative_path);
  assert.equal(existsSync(f.path(old)),false);assert.equal(parse(f.statePath).mistakes[0].answer,'original independent answer');
@@ -131,7 +131,7 @@ test('authorization revoked while downloading a replacement is rechecked before 
 test('an existing file updated before a new file fails keeps the failed receipt until explicit retry',async t=>{
  const f=fixture(t,'updated-partial');assert.equal((await f.run()).verified.complete,true);
  const old=f.current()[0];f.editState(s=>s.mistakes[0].material_id=old.id);
- f.payload.set(501,'Updated original A');f.add(503,'Topic5-B.txt','Original B');f.failed.add(503);
+ f.payload.set(501,'Updated original A');f.pages.get(101)[0].contents[0].timemodified=2;f.add(503,'Topic5-B.txt','Original B');f.failed.add(503);
  const first=await f.run({chat_id:'updated-partial-chat'});
  assert.equal(first.verified.complete,false);assert.equal(first.acquisition.status,'incomplete');
  const updated=f.current()[0];assert.notEqual(updated.id,old.id);

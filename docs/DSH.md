@@ -124,8 +124,8 @@
 .\study.cmd continue          # 需要校务信息的学习接续；本聊天首次调用会完整采集一次
 .\study.cmd today             # 接续 + 今日复习与视图
 .\study.cmd status            # 只看本地状态，不联网
-.\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode strict   # CLI 异常后备；正常使用 study_check_chapter
-.\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode strict --force  # CLI 后备且本人明确要求重新核对
+.\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode timestamp   # CLI 异常后备；正常使用 study_check_chapter
+.\study.cmd chapter-check --course 课程ID --section "Topic 5" --mode timestamp --force  # CLI 后备且本人明确要求重新核对
 .\study.cmd teaching-event    # 兼容旧流程；新教学进度优先用下面的 teaching-save
 .\tools\study\library.cmd teaching-save --course 课程ID   # 追加实际教学事件并回读（stdin 小 JSON；见 MEMORY.md）
 .\study.cmd refresh           # 本人明确要求更新学校信息时才用
@@ -148,7 +148,7 @@
 
 默认 MCP 调用不经过 `pwsh` 的受限执行链，因此无需这次临时扩大 shell 权限；不用把全局权限改成 Full access。`readOnlyHint` 等提示不是放行凭据，功能范围由服务端限制。若本人另选 Auto review 或其他审批策略，仍尊重客户端决定，不承诺任意配置都零审批。
 
-**异常分流**：只有 `study_check_chapter` 未加载/不存在，或 MCP 服务启动、传输故障时，才按同一课程、章节/模块、原聊天 ID 改用 `study.cmd ... chapter-check --mode strict`。不要因学校拒绝、账号/课程授权不符、参数错误或客户端审批拒绝而切换路径；先补足/纠正必要信息，保留失败状态。用户取消或审批拒绝时停止，不将其归为传输故障。超时或连接中断只说明客户端未取得结果，不能证明原核对已停止；确认原调用结束后才可按原范围回退，不并发重跑，也不擅自终止或重启用户应用。只走一次后备，不在 MCP 与 CLI 间循环尝试；仅后备 CLI 真实出现下节解密错误时，才申请单次批准。
+**异常分流**：只有 `study_check_chapter` 未加载/不存在，或 MCP 服务启动、传输故障时，才按同一课程、章节/模块、原聊天 ID 改用 `study.cmd ... chapter-check --mode timestamp`。不要因学校拒绝、账号/课程授权不符、参数错误或客户端审批拒绝而切换路径；先补足/纠正必要信息，保留失败状态。用户取消或审批拒绝时停止，不将其归为传输故障。超时或连接中断只说明客户端未取得结果，不能证明原核对已停止；确认原调用结束后才可按原范围回退，不并发重跑，也不擅自终止或重启用户应用。只走一次后备，不在 MCP 与 CLI 间循环尝试；仅后备 CLI 真实出现下节解密错误时，才申请单次批准。
 
 若工具返回 `STUDY_MCP_RESTART_REQUIRED`，表示已保存连接配置或授权与长驻服务不一致，先重新加载 Moodle 服务，不把它当成 shell 解密错误，也不改走 CLI 绕过。
 
@@ -224,3 +224,9 @@ DSH 适配新增的测试：
 - 在 Windows 受限环境（如本仓库之外的沙箱）运行测试命令可能失败，属于执行环境限制，不是学习工具回归。
 
 课程资料库初始化和增量同步见 [COURSE_LIBRARY.md](COURSE_LIBRARY.md)。
+
+## 本章更新策略（2026-11-16）
+
+教学前按本章云端目录时间戳更新：每个新聊天查询目录，优先比较 timemodified，没有则比较 timecreated；同源本地原件可读且时间相同则不下载比对远端内容，时间变化或本地无可读原件则下载并验证正文/索引。旧档案无时间基线时通过一次下载建立；云端时间未知、缺件、同步或正文核读失败则暂停本章教学，不用旧版或通用知识继续。处理当前客户端的授权或登录故障后再明确重试。同聊天同范围可复用成功回执。新版就绪后只删除本次对应、未被本地修改的旧原件，保留旧 ID、来源、哈希、时间与历史学习记录，不迁移掌握结论，不追溯批量清理旧档案。
+
+`strict` 仅保留为显式内容比对诊断；时间戳方案不会检测服务器未改变时间戳的同名内容改写。下载或索引成功不代表助手已核读原页，也不代表学生掌握。

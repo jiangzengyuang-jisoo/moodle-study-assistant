@@ -148,7 +148,7 @@ class Library:
         p = self.folder/'catalog.json'
         return read_json(p) if p.exists() else {'schema':SCHEMA,'materials':[],'state_revision':None}
 
-    def sync(self, course=None, force=False):
+    def sync(self, course=None, force=False, material_ids=None):
         from learning_library.extract import EXTRACTOR_VERSION, extract_document
         start = time.perf_counter()
         state = self.state()
@@ -159,6 +159,9 @@ class Library:
             course = resolve_course(state, course)
             if course not in {c['id'] for c in state.get('courses', [])}:
                 raise ValueError('Unknown course: '+course)
+        selected = set(material_ids) if material_ids is not None else None
+        if selected is not None and (not selected or not selected <= {m['id'] for m in rows}):
+            raise ValueError('Invalid material selection')
         extracted = reused = 0
         with build_lock(self.folder):
             previous = {m['id']:m for m in self.catalog()['materials']}
@@ -166,7 +169,7 @@ class Library:
                              if m.get('cache') and m.get('cache_sha256')}
             result = []
             for m in rows:
-                if course and m.get('course_id') != course:
+                if (course and m.get('course_id') != course) or (selected is not None and m['id'] not in selected):
                     if m['id'] in previous:
                         result.append(previous[m['id']])
                     continue
