@@ -927,7 +927,7 @@ function itemReport(item) {
 
 export async function syncCourseLibrary({
   client, root, state, courseIds = null, snapshotPath = null, maxBytes = MAX_BYTES,
-  batchSize = 8, dryRun = false, installBatch, buildIndex, now = nowISO, moduleIds = null,
+  batchSize = 8, dryRun = false, installBatch, buildIndex, now = nowISO, moduleIds = null, pageIds = null,
 }) {
   root = resolve(root);
   const study = resolve(root, 'Study');
@@ -936,7 +936,14 @@ export async function syncCourseLibrary({
   const moduleScope = moduleIds === null ? null : new Set(moduleIds);
   if (moduleScope && (!moduleScope.size || [...moduleScope].some(id => !Number.isSafeInteger(id) || id <= 0)
       || !Array.isArray(courseIds) || !courseIds.length)) throw new Error('Explicit course and module scope required');
-  const pages = selectedPages(state, courseIds);
+  const pageScope = pageIds === null ? null : new Set(pageIds);
+  if (pageScope && (!moduleScope || !pageScope.size
+      || [...pageScope].some(id => !Number.isSafeInteger(id) || id <= 0)))
+    throw new Error('Explicit chapter page scope requires positive page and module IDs');
+  const selected = selectedPages(state, courseIds);
+  if (pageScope && [...pageScope].some(id => !selected.some(page => page.moodleCourseid === id)))
+    throw new Error('Chapter page is not in the selected course scope');
+  const pages = pageScope ? selected.filter(page => pageScope.has(page.moodleCourseid)) : selected;
   if (!pages.length) throw new Error('No selected course pages to sync');
   for (const page of pages) page.baseUrl = client.baseUrl;
   const {authorization, authorized, blocked} = authorizationReport(state, pages,

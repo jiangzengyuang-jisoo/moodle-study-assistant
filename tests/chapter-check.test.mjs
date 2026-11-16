@@ -509,7 +509,7 @@ test('quick chapter check reports changed chapter files and writes a scan receip
     assert.equal(receipt.verified.reason, 'mode_not_strict');
     assert(receipt.receipt_path && existsSync(receipt.receipt_path));
     const written = JSON.parse(readFileSync(receipt.receipt_path, 'utf8'));
-    assert.equal(written.schema, 3);
+    assert.equal(written.schema, 4);
     assert.match(written.connection_generation, /^[0-9a-f]{64}$/);
     assert.equal(written.mode, 'quick');
     assert.deepEqual(written.account_scope, {site: BASE, user_id: 7});
@@ -716,7 +716,7 @@ test('a changed saved credential invalidates reuse and receipts store only the c
     const state = stateFixture({materials: [topic5]});
     const kit = harness({root, state});
     const first = await kit.run();
-    assert.equal(first.schema, 3);
+    assert.equal(first.schema, 4);
     assert.equal(first.schema, CHAPTER_CHECK_SCHEMA);
     assert.match(first.connection_generation, /^[0-9a-f]{64}$/);
     const writtenText = readFileSync(first.receipt_path, 'utf8');

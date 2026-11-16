@@ -33,7 +33,7 @@ import {
   authorizationReport, emptyTextSources, enumerateCourse, nowISO, planPage, readJSON, selectedPages, syncCourseLibrary,
 } from './course-library.mjs';
 
-export const CHAPTER_CHECK_SCHEMA = 3;
+export const CHAPTER_CHECK_SCHEMA = 4;
 export const MODES = Object.freeze({quick: 'quick', strict: 'strict'});
 export const STATUS = Object.freeze({
   unchanged: 'unchanged', changed: 'changed', no_baseline: 'no_baseline', error: 'error', skipped: 'skipped',
@@ -437,6 +437,7 @@ async function sha256OfFile({client, item, maxBytes, fetchFile}) {
 function rowFor({item, classification, sha256, local, status = null, differences = null}) {
   return {
     filename: item.filename,
+    moodle_courseid: item.moodleCourseid,
     module_id: item.moduleId,
     module_name: item.moduleName,
     module_type: item.moduleType,
@@ -1018,7 +1019,11 @@ export function validateReceiptReuse({receipt, plan, state, root = null, chatKey
   if (normalizeSite(receipt.account_scope.site) !== evidence.account.site) return no('account_changed');
   if (evidence.account.user_id === null) return no('account_unverified');
   if (Number(receipt.account_scope.user_id) !== Number(evidence.account.user_id)) return no('account_changed');
-  const {blocked} = authorizationReport(state, pages, receipt.account_scope);
+  // Other selected pages may intentionally be information-only. Reuse checks
+  // the exact pages whose chapter files were verified, never their neighbours.
+  const scopePageIds = receipt.scope?.pages_in_scope;
+  const scopePages = scopePageIds?.length ? pages.filter(page => scopePageIds.includes(page.moodleCourseid)) : pages;
+  const {blocked} = authorizationReport(state, scopePages, receipt.account_scope);
   if (blocked.length) return no('authorization_changed');
   const localRows = hashScopeLocalFiles(root, receipt.scope?.local_files);
   if (localRows.some(row => !row.present || row.expected_sha256 !== row.actual_sha256)) {
@@ -1104,6 +1109,7 @@ export function verifyCompleteness({mode, files, errors}) {
 function scopeForReceipt(scope, localFiles) {
   return {
     basis: scope.basis,
+    pages_in_scope: [...new Set(scope.pages_in_scope ?? [])].sort((a, b) => a - b),
     module_ids: [...new Set((scope.moduleIds ?? []).map(Number))].sort((first, second) => first - second),
     local_signature: scope.localSignature ?? scopeSignature(scope.moduleIds, localFiles),
     local_files: localFiles,
@@ -1248,6 +1254,10 @@ export async function checkChapter({
 
   if (discover && section && !modules && chapterScope.status === 'resolved') {
     const extra = resolveCatalogScope({enumeratedPages, section, modules: null});
+    if (extra.status === 'ambiguous') {
+      return ambiguityReceipt({mode, resolved: extra, request, account, persist, root, now,
+        connectionGeneration: receiptGeneration});
+    }
     if (extra.status === 'resolved') chapterScope = {...chapterScope,
       moduleIds: [...new Set([...(chapterScope.moduleIds ?? []), ...(extra.moduleIds ?? [])])],
       pages_in_scope: [...new Set([...(chapterScope.pages_in_scope ?? []), ...(extra.pages_in_scope ?? [])])]};
@@ -1368,7 +1378,9 @@ export async function checkChapter({
       sha256: fromScope?.sha256 ?? localFileFacts(root, row.local.relative_path)?.sha256 ?? null,
     });
   }
-  const receiptScope = scopeForReceipt(chapterScope, localFiles);
+  const receiptScope = scopeForReceipt({...chapterScope, pages_in_scope: [
+    ...(chapterScope.pages_in_scope ?? []), ...scopedFiles.map(item => item.moodleCourseid),
+  ]}, localFiles);
   const incremental = carry ? {
     previous_run_id: carry.run_id ?? null,
     added_module_ids: filesToVerify.map(item => Number(item.moduleId)).filter((value, index, all) => all.indexOf(value) === index),
@@ -1524,10 +1536,12 @@ export async function runChapterCheck(options) {
   try {
     client = await connect();
     const state = options.loadState();
-    const pages = resolveCoursePages(state, options.course).pages;
+    const pageIds = [...new Set((receipt.files ?? []).filter(row => modules.includes(Number(row.module_id)))
+      .map(row => row.moodle_courseid))];
+    const pages = resolveCoursePages(state, options.course).pages.filter(page => pageIds.includes(page.moodleCourseid));
     assertProfileAccount({state, root: options.root, site: client.baseUrl, userId: client.userId, action: '章节资料补齐'});
     const report = await (options.acquire ?? syncCourseLibrary)({client, root: options.root, state,
-      courseIds: pages.map(page => page.courseId), moduleIds: modules});
+      courseIds: [...new Set(pages.map(page => page.courseId))], pageIds, moduleIds: modules});
     if (!report.ok) {
       pending.acquisition.reason = 'chapter_acquisition_incomplete';
       if (options.persist !== false) writeReceipt(options.root, pending);

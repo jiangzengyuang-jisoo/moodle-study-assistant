@@ -35,6 +35,15 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-16
 
+### Fix chapter-discovery boundaries and release-material consistency
+
+- Newly discovered courseware with an ambiguous chapter match now returns candidates and an incomplete result instead of verifying only older files and claiming completeness; explicit module selection remains available.
+- Chapter acquisition uses only the course pages containing the requested modules. An unrelated information-only page in the same subject no longer makes a successfully acquired chapter fail; authorization on relevant pages is still enforced.
+- Chapter receipts now use schema 4 with page provenance. The first check after upgrading runs again instead of reusing older receipts missing that information; subsequent checks retain normal same-chat reuse.
+- Align the current release index and generated metadata with the unchanged frozen trial.8 package. Preserve older candidate notes and validation as history. This package does not include today's source changes; source regressions are not package acceptance results.
+- Upgrade: update the source edition and restart its Moodle service, retaining study data and grants. Plugin users need a separately versioned and verified package containing these engine fixes; do not overwrite trial.8 or assume it updated with the checkout.
+- Validation: Node **310/310**, setup-entry Python **133/133**, and study Python **688/688**: **1,131** tests passed with no skips. This includes three new boundary regressions that failed before the fixes and passed afterward, plus the release-material tests counted once. Read-only release consistency and frozen-package hashes pass. Tests used an isolated source copy, synthetic data and offline setup environments; no real-school connection, plugin rebuild or installation, Harness restart, push or publication was performed.
+
 ### Acquire lesson materials on demand
 
 - Automatically acquire missing lesson materials under existing course grants, without repeated download permission prompts, including newly uploaded chapter parts and registered files missing locally. Local edits, historical references and learning evidence remain protected.

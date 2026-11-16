@@ -1,5 +1,22 @@
 # 第二阶段发布执行清单：npm publish + GitHub Pages 社区目录
 
+## 当前执行入口：trial.8
+
+当前冻结候选为 `release/npm/dsh-moodle-study-0.6.0-trial.8.tgz`，尚未发布。版本范围、已验证与未验证内容见 [当前候选说明](CURRENT_CANDIDATE.md)。这个包不含 2026-11-16 的源码修复；发布此包不能宣传包含今天的自动补齐行为。
+
+本地一致性检查使用 `npm run sync:release -- --check`。只有另获明确公开授权并完成本候选运行验收后，才可按下面的当前版本预览和发布；本次任务不执行这些命令：
+
+```powershell
+npm publish .\release\npm\dsh-moodle-study-0.6.0-trial.8.tgz --tag trial --access public --dry-run
+npm publish .\release\npm\dsh-moodle-study-0.6.0-trial.8.tgz --tag trial --access public
+```
+
+Pages 准备与发布仍沿用下方清单的授权、凭据及独立站点分支要求；生成时从当前 `index.json` 读取 trial.8，并使用实际发布时间，不沿用历史占位时间。若目标是发布今天的源码功能，先建立新的包版本、打包并完成验证，不覆盖 trial.8。
+
+## 历史执行清单（不可直接按旧版本执行）
+
+以下完整保留当时的发布计划和验收记录；旧版本命令、元数据与“当前”措辞只适用于历史候选，实际执行以上面的 trial.8 入口为准。
+
 > **状态：第一阶段的准备交付，本清单中的任何公开动作都尚未执行。**
 > 没有执行 `npm publish`，没有推送 `gh-pages`，没有启用 GitHub Pages，也没有对外分享目录 URL。
 > 本文件只给维护者本人确认后使用；执行前必须逐项完成 §1 的门槛，并在 §5 记录实际结果。
