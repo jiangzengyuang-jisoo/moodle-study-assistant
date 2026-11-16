@@ -170,6 +170,8 @@ Ask the assistant to back up and preserve `Study/`, configuration, credentials, 
 
 ## Recent updates
 
+Scanned PDFs now keep successful sync timestamps and explicitly request original-page visual reading; rendering is not a claim of review or mastery.
+
 This source maintenance checks reading indexes before reusing chapter receipts and validates acquisition, body reading and cross-chat continuation.
 
 Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANGELOG.md).
@@ -192,3 +194,8 @@ Detailed guides are currently primarily in Chinese:
 For a bug report or improvement, [open an issue](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/issues). Describe the expected behavior, actual result, and reproduction steps without credentials, private course content, or learning records. Code changes should follow [AGENTS.md](AGENTS.md) and the checks in [docs/TOOLS.md](docs/TOOLS.md#验证与发布).
 
 Licensed under the [MIT License](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md) for dependencies. This project is not officially affiliated with OpenAI, HKU, or Moodle.
+
+
+## 2026-11-16 — Scanned lesson reading
+
+Scanned PDFs now validate rendered pages separately from text extraction, retain the successful timestamp, and report required visual reading. No OCR or mastery claim is implied; corrupt/blank originals still fail. Validation includes raster PDF tests and actual Chapter 9 files in isolated update/failure scenarios. Source update only; no plugin package or installation.

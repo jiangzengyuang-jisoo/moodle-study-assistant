@@ -179,13 +179,13 @@ export async function ensureChapter(client, input) {
             ...(installed.missing_original_id ? {missing_original_id: installed.missing_original_id} : {})});
         }
         if (!permitted(file.page_id)) return finish(failure(options, 'authorization_changed', acquired));
-        await ensureIndex(options, id, true);
+        const reading = await ensureIndex(options, id, true);
         lock.assertHeld();
         finishSource(options, id, source);
         const material = latest().materials.find(m => m.id === id && current(m));
         if (!material) throw new Error('material_changed');
         ids.add(id);
-        rows.push({material_id: id, status, sha256: material.sha256, relative_path: material.relative_path,
+        rows.push({material_id: id, status, reading_mode: reading.reading_mode, visual_units: reading.visual_units ?? [], visual_review_required: !!reading.visual_review_required, sha256: material.sha256, relative_path: material.relative_path,
           source_signature: JSON.stringify(material.moodle_file_sources ?? []),
           source_time: time, verified_at: new Date().toISOString()});
       } catch {return finish(failure(options, 'download_index_or_update_failed_existing_original_preserved', acquired));}
@@ -194,6 +194,8 @@ export async function ensureChapter(client, input) {
     if (!ids.size) return finish(failure(options, 'no_matching_materials_select_module'));
     return finish({operation: 'ensure_chapter', course_id: options.courseId, chapter: options.chapter,
       policy: 'remote_timestamp', strict_binary_check: false, status: 'verified', verified: true,
+      sync_complete: true, reading_required: true, visual_review_required: rows.some(r => r.visual_review_required),
+      reading_instruction: "同步成功不等于核读完成；讲解前核读正文，visual_units 所列页必须查看原图。",
       ready_for_teaching: true, teaching_paused: false, reused: false, materials: rows, acquired,
       related_candidates: [], source_review_required: false, verified_at: rows[0].verified_at,
       full_refresh: false, reviewed: false, mastery_updated: false, receipt_path: options.path,

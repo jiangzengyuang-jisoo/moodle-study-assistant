@@ -195,7 +195,8 @@ async function indexMaterials(options, ids, ensure = false) {
 export async function ensureIndex(options, materialId, ensure = false) {
   const indexed = await indexMaterials(options, [materialId], ensure);
   const entry = indexed.materials?.find(m => m.id === materialId);
-  if (!entry || entry.status !== 'indexed' || !(entry.text_units > 0)) throw new Error('index_failed');
+  if (!entry || entry.status !== 'indexed' || (!(entry.text_units > 0) && !entry.visual_review_required)) throw new Error('index_failed');
+  return entry;
 }
 
 export async function verifyChapter(client, input) {
@@ -314,7 +315,8 @@ async function runCheck(client, options) {
           binary_verified_at: now(), reason: 'index_failed_download_retained'});
         for (const file of downloaded) await cleanOwnedStaging(options.root, file.path, {status: 'identical', sha256: remoteHash}); staged = null;
         // Targeted sync reuses valid caches and repairs only this original when missing/stale.
-        await ensureIndex(options, before.id);
+        const reading = await ensureIndex(options, before.id);
+        Object.assign(row, {reading_mode: reading.reading_mode, visual_units: reading.visual_units ?? [], visual_review_required: !!reading.visual_review_required});
         Object.assign(row, {status: 'unchanged', verified_at: row.binary_verified_at}); delete row.reason;
       } else {
         if (items.length > 1) {row.reason = 'known_multisource_update_requires_review'; continue;}
@@ -330,7 +332,8 @@ async function runCheck(client, options) {
             || await hashFile(localPath(options.root, after)) !== remoteHash) throw new Error('installed_version_not_current');
         Object.assign(row, {material_id: after.id, relative_path: after.relative_path, sha256: remoteHash,
           status: 'needs_review', reason: 'index_failed_download_retained', binary_verified_at: now()});
-        await ensureIndex(options, after.id);
+        const reading = await ensureIndex(options, after.id);
+        Object.assign(row, {reading_mode: reading.reading_mode, visual_units: reading.visual_units ?? [], visual_review_required: !!reading.visual_review_required});
         Object.assign(row, {status: 'updated', verified_at: row.binary_verified_at}); delete row.reason;
       }
     } catch {

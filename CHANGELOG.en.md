@@ -478,3 +478,8 @@ Installation and usage start from an empty profile, with each student using thei
 Follow the [beginner guide](docs/新手使用指南.md) to install and connect. The school must enable the relevant Moodle services. Browser-assisted login remains experimental. The project requires your own AI client and does not include a model or subscription.
 
 [Initial commit ec32b60](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/commit/ec32b6077facd4734f00a330330c42487de6cab3)
+
+
+## 2026-11-16 — Scanned lesson reading
+
+Scanned PDFs now validate rendered pages separately from text extraction, retain the successful timestamp, and report required visual reading. No OCR or mastery claim is implied; corrupt/blank originals still fail. Validation includes raster PDF tests and actual Chapter 9 files in isolated update/failure scenarios. Source update only; no plugin package or installation.

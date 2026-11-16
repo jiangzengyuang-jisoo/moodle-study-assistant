@@ -40,3 +40,6 @@
 - Codex 默认只维护本地版和公开版 `codex` 分支；DeepSeek 版本由 DeepSeek Harness 维护。只有用户明确要求修改 DeepSeek 版本时，才可修改或同步到 `deepseek` 分支；共同修复不构成跨分支修改授权。
 - 聊天 ID 由主助手传入；保留共同的会话、材料、记忆与状态协议。兼容辅助代码不代表本分支会自动启用其他客户端。
 - 需要 DeepSeek Harness 时使用 `deepseek` 分支及其安装说明。两个客户端使用独立目录；不要在含个人资料的目录里反复切分支。分工与获授权后的共同修复流程见 [分支维护](docs/BRANCHES.md)。
+
+
+扫描课件同步与核读分开：PDF/图片没有文本时，工具逐页验证可渲染的原页，返回 visual_review_required 与 visual_units；这仍须助手实际看图。ready_for_teaching/teaching_ready 只表示资料可进入阅读流程，不代表已核读。同步成功后保存来源时间，同时间不重下载；原件损坏、原页无法渲染或纯空白材料仍阻断，不记成功。OCR不是同步前提，不凭OCR或渲染推断掌握。

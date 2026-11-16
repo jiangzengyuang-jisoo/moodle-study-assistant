@@ -95,6 +95,7 @@ def restore_missing(study, row, staged):
 
 def index_course(state_path, course, material_ids=None, ensure=False):
     from library import Library
+    from chapter_readiness import reading_route
     from learning_library.versions import current
     lib = Library(state_path)
     if ensure:
@@ -105,10 +106,10 @@ def index_course(state_path, course, material_ids=None, ensure=False):
             try:
                 _, available, _ = lib.fresh_rows(course=course, mid=mid)
                 row = next((m for m in available if m['id'] == mid), None)
-                if not row or row.get('status') != 'indexed' or not row.get('text_units'):
+                if not row or row.get('status') != 'indexed':
                     raise ValueError('Index not ready')
                 # Read through the same path used by teaching, including payload checks.
-                lib.read(mid, end=row['units'], around=0, include_solutions=True)
+                reading_route(lib, mid)
             except (ValueError, OSError, KeyError, TypeError, IndexError):
                 repair.append(mid)
         result = lib.sync(course, force=True, material_ids=repair) if repair else {'extracted': 0, 'reused': 0}
@@ -131,11 +132,9 @@ def index_course(state_path, course, material_ids=None, ensure=False):
     for row in rows:
         if 'extraction_failed' in (row.get('warnings') or []):
             row['status'] = 'extraction_error'
-        elif row['status'] == 'indexed' and not row.get('text_units'):
-            row['status'] = 'not_text_indexed'
-        if ensure and row['status'] == 'indexed':
+        if row['status'] == 'indexed':
             try:
-                lib.read(row['id'], end=row['units'], around=0, include_solutions=True)
+                row.update(reading_route(lib, row['id']))
             except (ValueError, OSError, KeyError, TypeError, IndexError):
                 row['status'] = 'stale_index'
                 row['warnings'] = [*(row.get('warnings') or []), 'selected_index_not_readable']
