@@ -34,6 +34,11 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-17
 
+### Prominent README upgrade instructions
+
+- Add a visible upgrade link, notice and branch-specific request to copy into the existing AI project chat. Back up before updating, preserve records, authorization and custom changes, then verify continuity. DeepSeek distinguishes source upgrades from installed-plugin upgrades.
+- Documentation only; check bilingual wording, links and diffs on both branches. No new live installation or upgrade test.
+
 ### Repository documentation cleanup
 
 - Replace duplicate beginner/usage Markdown guides with the existing PDF tutorials; keep machine-readable setup, continuity and record-preserving upgrade rules in chat onboarding.

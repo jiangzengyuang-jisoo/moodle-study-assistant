@@ -5,7 +5,7 @@
 <h1 align="center">Moodle Study Assistant</h1>
 <p align="center">Turn your course materials into explanations, practice and a study record you can return to.</p>
 <p align="center"><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
-<p align="center"><a href="#install-with-ai"><strong>Install with AI</strong></a> · <a href="https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/codex/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf">Illustrated PDF guide</a> · <a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/deepseek">DeepSeek Harness edition →</a></p>
+<p align="center"><a href="#install-with-ai"><strong>Install with AI</strong></a> · <a href="#upgrade-your-existing-project"><strong>Upgrade existing installation</strong></a> · <a href="https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/codex/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf">Illustrated PDF guide</a> · <a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/deepseek">DeepSeek Harness edition →</a></p>
 
 ## Install with AI
 
@@ -25,7 +25,27 @@ approve access or choose my courses, then show me how to use it.
 >
 > If you have completed school sign-in but the page keeps loading, wait a moment, then press **F5** or click the browser’s **Refresh** button. **Refresh only the current web page; keep the AI’s setup task running.** If there is still no progress, describe what you see to the AI so it can investigate.
 
-[PDF tutorial](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/codex/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf) · [Upgrade without losing records](docs/CHAT_ONBOARDING.md#upgrade)
+[PDF tutorial](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/codex/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf) · [Upgrade existing installation](#upgrade-your-existing-project)
+
+## Upgrade your existing project
+
+> [!IMPORTANT]
+> **Already installed? Return to the project chat you normally use and send the request below.**
+> GitHub updates do not automatically upgrade your local installation. Upgrade in the existing project, preserving your progress, mistakes and materials.
+
+```text
+Upgrade my current Moodle Study Assistant to the latest Codex branch:
+https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/codex
+
+Read the Upgrade section in docs/CHAT_ONBOARDING.md; check the project, branch and local changes.
+Pause profile writes and back up Study/ and config.local.json first.
+Update using the existing Git or ZIP installation method. Preserve Study/, .private/,
+personal settings and custom changes. Do not reset records, force-reset Git, or read/expose credentials.
+Carry out the upgrade and dependency updates for me without sending me to a separate CMD window.
+Verify my progress and mistakes are preserved; explain what changed and whether a client restart is needed.
+```
+
+[Detailed upgrade steps](docs/CHAT_ONBOARDING.md#upgrade) · [Read the changelog](CHANGELOG.en.md)
 
 ## Your course. Your next step.
 
