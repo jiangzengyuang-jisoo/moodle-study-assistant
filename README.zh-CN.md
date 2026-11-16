@@ -1,6 +1,6 @@
 <p align="center"><strong>DeepSeek Harness 版</strong> · Windows 10/11 · 开源</p>
 
-![Moodle 学习助手：红色花朵、黑色绸缎与米白标题。](docs/assets/flower-banner.png)
+![功能示意：课件与课程要求 → 讲解与独立练习 → 保存进度与卡点 → 计划与复习。](docs/assets/flower-banner.png)
 
 <h1 align="center">Moodle 学习助手</h1>
 <p align="center">用你的课程资料讲解、练习，把每次学习的进度留下来。</p>

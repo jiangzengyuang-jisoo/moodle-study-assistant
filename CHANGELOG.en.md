@@ -42,6 +42,10 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-17
 
+### Feature-focused cover
+
+- Show four connected scenes: course materials and requirements, explanations and independent practice, saved progress, and planning/review. Keep the red flower as a small accent. Alt text identifies an illustrated workflow; installation requests and update briefings are unchanged.
+
 ### FLOWER-inspired README cover
 
 - Add an original red-flower and black-silk cover inspired by the visual elements of Jisoo’s FLOWER era, shared by both language homepages. Keep the copyable installation request, visible update briefings and historical reports; runtime code is unchanged.
