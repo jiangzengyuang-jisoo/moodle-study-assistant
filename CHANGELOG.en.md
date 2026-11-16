@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-17 · Narrow-screen formulas
+
+- Add short notation, nearby symbol definitions, split long equations, and step-by-step text fallbacks for complex formulas to reduce clipping in narrow chats.
+- Assistants use the policy after reading the updated project rules and tutoring guide. Checked policy parity across editions, links and Git diffs. Documentation only; actual client rendering was not tested, and clipping cannot be ruled out on every device. No plugin was packaged, installed or published in this update.
+
 ## 2026-11-16 · Chapter timestamp updates and missing-file protection
 
 Teaching now reads chapter catalog timestamps and reuses readable local files without downloading unchanged content. Changed files are installed and their text indexes validated before retiring only the corresponding old originals; identities, provenance and learning history remain intact. Missing files, unknown timestamps and sync/read failures pause teaching and preserve originals. Explicit strict diagnostics remain available. Source and rules only: no plugin packaging, installation or publication. Isolated tests cover first acquisition, new-chat reuse without downloads, changed versions, creation-time fallback, unknown time, edits, gaps, failures and index recovery; no live school connection was tested.
