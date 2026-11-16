@@ -42,6 +42,10 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-17
 
+### README visual refresh
+
+- Replace the long homepage with a bilingual workflow illustration, three setup steps and three example requests. Keep detailed setup, privacy and update history linked or folded. Check local links, SVG validity and rendered layouts; runtime code is unchanged.
+
 ### Publish the DeepSeek source update
 
 - [Update report](docs/UPDATE_REPORT_2026-11-17-deepseek.en.md): merge development through `47f6799` with public `5c46a81`, preserving tutorials; timestamp-based acquisition, recovery and scanned-page reading.

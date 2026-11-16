@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+<title id="title">A study workflow that continues across sessions</title>
+<desc id="desc">Your materials. Your practice. Your progress. Workflow illustration, not an application screenshot.</desc>
+<defs><pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#dce6df" stroke-width=".7"/></pattern><linearGradient id="paper" x2="0" y2="1"><stop stop-color="#fffef9"/><stop offset="1" stop-color="#f1f0e6"/></linearGradient></defs>
+<rect width="1200" height="520" rx="24" fill="#eff3ec"/><rect x="595" width="605" height="405" fill="url(#grid)"/>
+<circle cx="925" cy="195" r="169" fill="#e0e8de"/><circle cx="925" cy="195" r="130" fill="none" stroke="#bacaba" stroke-dasharray="5 9"/>
+<g font-family="Segoe UI,Microsoft YaHei,Arial,sans-serif">
+<rect x="52" y="48" width="8" height="8" rx="2" fill="#2f6852"/><text x="74" y="58" font-size="15" font-weight="700" letter-spacing="3" fill="#3c6653">LEARN. PRACTISE. CONTINUE.</text>
+<text x="50" y="157" font-size="58" font-weight="700" fill="#173d31">Pick up where</text><text x="50" y="228" font-size="58" font-weight="700" fill="#173d31">you left off.</text>
+<text x="53" y="280" font-size="21" fill="#50685b">Your materials. Your practice. Your progress.</text>
+<path d="M53 321H255" stroke="#e8b563" stroke-width="6" stroke-linecap="round"/>
+<g transform="translate(735 55) rotate(-9 115 130)"><rect x="9" y="12" width="240" height="278" rx="13" fill="#bacbbd"/><rect width="240" height="278" rx="13" fill="url(#paper)" stroke="#bbccbc"/><rect x="0" width="21" height="278" rx="7" fill="#326650"/><text x="42" y="45" font-size="12" letter-spacing="2" fill="#63786b">LECTURE NOTES</text><rect x="42" y="64" width="147" height="9" rx="4" fill="#2f5947"/><path d="M43 101H200M43 119H174M43 137H188" stroke="#c7d4c8" stroke-width="6" stroke-linecap="round"/><rect x="41" y="161" width="159" height="83" rx="7" fill="#e8eee5"/><path d="M55 229V177M55 229H184" fill="none" stroke="#a7bca9" stroke-width="2"/><path d="M64 217L95 205L123 211L151 184L182 176" fill="none" stroke="#3f7459" stroke-width="4"/><circle cx="151" cy="184" r="6" fill="#e9af56"/></g>
+<g transform="translate(939 186) rotate(7)"><rect x="5" y="7" width="201" height="146" rx="16" fill="#c3d2c2"/><rect width="201" height="146" rx="16" fill="#fffdf7" stroke="#bbccbc"/><circle cx="31" cy="35" r="12" fill="#e7b66d"/><path d="M59 30H166M59 41H132" stroke="#c2cec0" stroke-width="6" stroke-linecap="round"/><rect x="21" y="66" width="158" height="57" rx="9" fill="#e2ece1"/><path d="M38 86H153M38 102H122" stroke="#6b8a71" stroke-width="5" stroke-linecap="round"/></g>
+<g transform="translate(694 283)"><circle cx="32" cy="32" r="32" fill="#285b47"/><path d="M18 33L28 43L48 21" fill="none" stroke="#fffdf4" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></g>
+<path d="M712 137C661 175 666 219 689 244" fill="none" stroke="#7e9a80" stroke-width="3" stroke-dasharray="6 7"/>
+<rect x="0" y="406" width="1200" height="114" rx="24" fill="#173d31"/><rect y="406" width="1200" height="24" fill="#173d31"/>
+<path d="M403 433V490M794 433V490" stroke="#3d5d4d"/>
+<text x="52" y="470" font-size="28" fill="#e8b563" font-weight="600">01</text><text x="108" y="468" font-size="18" fill="#f2f3e9" font-weight="600">COURSE MATERIALS</text><text x="444" y="470" font-size="28" fill="#e8b563" font-weight="600">02</text><text x="500" y="468" font-size="18" fill="#f2f3e9" font-weight="600">GUIDED PRACTICE</text><text x="836" y="470" font-size="28" fill="#e8b563" font-weight="600">03</text><text x="892" y="468" font-size="18" fill="#f2f3e9" font-weight="600">NEXT SESSION</text>
+</g></svg>

@@ -1,205 +1,65 @@
-# Moodle Study Assistant
+<p align="center"><strong>DeepSeek Harness edition</strong> · Windows 10/11 · Open source</p>
 
-**DeepSeek Harness edition — branch `deepseek`.** Select this branch before downloading. For Codex use branch `codex` in a separate folder. Setup configures Harness only. [Branch maintenance](docs/BRANCHES.md).
+![Course materials → guided practice → continuity across sessions. Workflow illustration.](docs/assets/study-journey.en.svg)
 
-**Study with your course materials, your instructor's requirements, and a record of what you have actually learned.**
+<h1 align="center">Moodle Study Assistant</h1>
+<p align="center">Turn your course materials into explanations, practice and a study record you can return to.</p>
+<p align="center"><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
+<p align="center"><a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/archive/refs/heads/deepseek.zip"><strong>Download DeepSeek Harness edition</strong></a> · <a href="https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf">Illustrated PDF guide</a> · <a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/codex">Codex edition →</a></p>
 
-**English** · [简体中文](README.zh-CN.md)
+## Your course. Your next step.
 
-**Download the beginner tutorial (PDF): [English](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf) · [简体中文](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf)**
+📖 **Learn from your own materials.** Read slides and handouts, follow your instructor’s methods, and trace explanations to source pages.
 
-Preview on GitHub: [English](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/blob/deepseek/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf) · [简体中文](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/blob/deepseek/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf). If a PDF opens in your browser, use its download button or Ctrl+S to save it.
+✍️ **Practise where you get stuck.** Start with an example, try a new problem, and use your actual answers to guide review.
 
-The 14-page tutorial covers both Codex and DeepSeek Harness: choosing an edition, installing the app and dependencies, creating a workspace, school sign-in, daily study, separate chats for different topics, and GitHub feedback. The English edition includes translated setup prompts and explanations of the Chinese screenshot labels.
+↗ **Continue in another chat.** Keep your study position, mistakes and next step in the same workspace. Hearing an explanation is kept separate from independent mastery.
 
-[Why use it?](#why-use-it) · [Study examples](#study-examples) · [Get started](#get-started) · [FAQ and privacy](#faq-and-privacy) · [Updates](#recent-updates)
+## Start in three steps
 
-A personal course workspace used through a **DeepSeek Harness chat**. Keep slides, handouts, exercises, and learning records on your computer. Connect Moodle to bring in assignment requirements, deadlines, announcements, and discussions, then use that context for explanations, practice, and exam preparation.
+1. **Download & open.** Extract the `deepseek` ZIP into its own folder. Open the folder containing `AGENTS.md` in **DeepSeek Harness** as a local workspace.
+2. **Ask for setup.** Paste the request below. Enter your school password only on the school’s sign-in page; choose your courses and sync mode in chat. Restart Harness when setup asks you to.
+3. **Bring a chapter.** Choose full initialization to acquire accessible files for authorized courses, or add your own files to `Study/_Inbox/`. Then ask to learn a topic.
 
-Designed for students following university courses over a semester. The documented setup is **Windows 10/11 + DeepSeek Harness desktop with local workspace access**. You study in the chat; there is no separate web app to deploy.
+> Install this Moodle Study Assistant and show me how to use it. Read AGENTS.md first, preserve my existing records, help me connect my school and choose courses, then guide my first study session.
 
-## Why use it?
+[Detailed setup](docs/新手使用指南.md) · [Chat onboarding](docs/CHAT_ONBOARDING.md) · [Upgrade without losing records](docs/新手使用指南.md#从旧版更新)
 
-### A course library you can keep using
+**Source edition:** this download is a Harness workspace, not an installable plugin. The frozen trial.8 package does not contain the latest source changes. [Plugin status](docs/market/CURRENT_CANDIDATE.md).
 
-Authorise course-level material sync while selecting courses, or add your own files and ask the assistant to organize them. It can search registered materials by course, read surrounding pages, and check original figures and formulas when needed. Explanations can be traced to a file and page or slide, so you can compare them with what your instructor actually taught.
+## Try one of these
 
-The library supports PDF, PPTX, DOCX, HTML, text, and images. Updated materials can become the current version while older notes and mistakes retain their original references. Parsing and OCR still need verification against the source. [How the library works](docs/LIBRARY.md).
+> **Learn** — “Use my slides to explain this topic. Show the relevant pages, then let me try a new problem.”
 
-### Learning grounded in your own course
+> **Continue** — “Read my records and pick up where I stopped. Start with the point I struggled with.”
 
-The assistant is instructed to use your instructor's terminology and methods, check current assignment requirements, and organize chapter explanations around understanding; it prepares exam revision around published exam scope only when you ask for exam preparation. Missing material or unconfirmed requirements should remain explicit gaps.
-
-**The goal is to stay aligned with your course. This cannot guarantee that every answer is correct or fully within the scope you requested.** An assignment does not define the entire exam scope, and the model still needs to read and verify the sources. [Exam preparation rules](docs/EXAM_PREP.md).
-
-### Progress that survives a new chat
-
-Keep actual answers, mistakes, sticking points, and the next study step in your project. In another chat in the same workspace, the assistant can read those records and resume. It distinguishes hearing an explanation, completing an assignment, answering with hints, and solving a new problem independently.
-
-Practice starts with examples when needed, then gradually removes help. Independent answers and later retests guide review; reading a solution does not count as mastery. [Tutoring approach](docs/TUTORING.md).
-
-Ask what the assistant remembers and what it is based on. Memory lookup supports explicit bilingual aliases across previous chapters; your corrections are appended with their source record preserved. This is local alias-based retrieval, not unrestricted semantic search. [Inspect and correct memory](docs/MEMORY.md).
-
-### Plans connected to coursework
-
-Use Moodle requirements alongside your available time and recorded progress to decide what to study next. Ask for focused practice or a mock exam based on confirmed teacher requirements and the materials you have supplied. Generated papers are original practice, not predictions of the real exam.
-
-### What does this add to a one-off AI question?
-
-| What you need to keep track of | What the workspace maintains |
-| --- | --- |
-| Which slides, exercises, and handouts belong to this course? | A reusable material index with source locations and version records |
-| What does the instructor require now? | Moodle evidence the assistant must read and verify before using |
-| Where did I stop, and what did I struggle with? | Saved study position, actual answers, mistakes, and next steps |
-| What should I revisit before the exam? | Review records connected to independent attempts and confirmed exam requirements |
-
-You can provide this context manually in a chat. This project organizes it for repeated use across a course, reducing the background you need to reconstruct each time. A fresh installation starts empty: bring your own materials and connect your own school account.
-
-## Study examples
-
-After setup, authorised course materials are synced automatically; place any extra files in `Study/_Inbox/` and ask the assistant to organize them. Then use requests like these:
-
-| Goal | What to say |
-| --- | --- |
-| Understand this week's lecture | “Use my slides to explain this topic. Follow the instructor's method and identify the relevant pages.” |
-| Continue studying | “Read my records and continue from where I stopped. Check the point I struggled with last time.” |
-| Study with limited time | “I have 90 minutes today. Use my deadlines, coursework requirements, and progress to plan the session.” |
-| Review a weak area | “Give me 15 minutes of practice on my recorded mistakes. Wait for my answer before showing a solution.” |
-| Prepare for an exam | “Check the published scope and question types, then use my materials to prepare a practice paper. Tell me what is still unconfirmed.” |
-| Check for school updates | “Refresh Moodle and check whether assignment requirements or instructor announcements have changed.” |
-
-An example request combining materials, scope, and progress:
-
-> Use my lecture slides and the current assignment requirements to continue this chapter. Read where I stopped, explain one topic using the instructor's method, cite the relevant pages, then give me a new problem to attempt independently. Save my actual answer and the next step afterward.
-
-This is a sample prompt, not a transcript or a claim that a course has already been checked.
-
-Moodle is collected only when the current request needs school information (assignment requirements, deadlines, announcements, discussions), study planning, exam preparation, first installation or course switching, or when local chapter material is missing. A chapter explanation with local materials uses local continuity and strict chapter verification through the connected Moodle tool. The normal route avoids the temporary shell-permission approval for this check. Reconnect the Moodle service or restart Harness once after upgrading; existing permissions and school authorization stay unchanged, and custom approval policies still apply. Later turns reuse the checked evidence. Ask explicitly for a refresh to get newer information. Unrelated questions skip the study startup, and connection repair runs only necessary diagnostics. There is no background monitoring or scheduled refresh.
-
-## Get started
-
-For this DeepSeek Harness deployment, open this folder as your chat workspace and say **“Install this and teach me how to use it.”** The assistant handles setup, presents courses and sync modes in chat, and teaches the workflow afterward. School sign-in stays in the school browser page. No CMD menu is required. See [chat onboarding](docs/CHAT_ONBOARDING.md).
-
-### 1. Open a DeepSeek Harness workspace
-
-Select branch `deepseek`, download and extract it to a dedicated folder, and open that folder in your installed DeepSeek Harness desktop app. The workspace root contains `AGENTS.md`, `README.md`, and `start.cmd`. Choose your DeepSeek model in Harness; the project does not switch the model for you.
-
-Ask the assistant to run `setup.ps1` in this chat to prepare dependencies and merge the Harness MCP/skill configuration with a backup. If an existing `moodle_study` MCP entry points at an older deployment, or an old skill override does not include this project's skills directory, the merge reports a configuration conflict: it writes nothing, keeps the original configuration and exits non-zero, so setup does not print "Setup complete". Follow the printed fix (use `dsh_integration.py install --update-existing` to update only an outdated MCP entry, or merge manually per the [Harness guide](docs/DSH.md)) and rerun; never delete the existing configuration to retry. A correct configuration is not runtime verification.
-
-Fully restart Harness, reopen this project folder and complete the school browser login from the project chat. The Moodle MCP server now starts and registers all 16 tools even before login; a remote tool called before login returns a structured `STUDY_LOGIN_REQUIRED` hint while downloaded materials stay usable locally. After the in-chat login, retry the same tool in the same chat — no second restart is needed. If the Moodle tools are still missing after restarting, restart Harness once more and confirm the tool list. No Codex configuration is generated. See the [Harness guide](docs/DSH.md) for conflicts, moving a project, and runtime verification.
-
-### 2. Complete setup in the current chat
-
-You handle necessary permission prompts, school sign-in, and course selection; the assistant can inspect the environment and run the setup steps.
+> **Plan** — “I have 90 minutes today. Check relevant deadlines and use my progress to plan the session.”
 
 <details>
-<summary>Copy this setup request into the project's chat</summary>
+<summary><strong>Before you connect · compatibility & privacy</strong></summary>
 
-```text
-Help me install and set up this Moodle Study Assistant.
+- Requires your own AI client/account and a Moodle site with suitable API access. HKU is the default; other schools depend on their permissions. Browser login assistance is experimental.
+- Materials and records stay in your local project and are excluded from normal Git commits. Content read by the assistant may reach its model provider: local storage is not offline inference.
+- Moodle tools are read-only: no assignment submission, school quiz answers, posts or email. File downloads require your course authorization.
+- Downloading and indexing are not content review; an explanation is not proof of mastery. Scans, formulas and model answers still need checking.
 
-Read AGENTS.md, docs/WORKFLOW.md, docs/SESSION.md, and the setup documentation.
-Check the environment and install the required dependencies from official sources.
-If you cannot read this project or run local commands, tell me where to open it.
-Tell me when I need to approve installation, click a window, or restart the app.
-Preserve existing learning records; do not replace them with an empty profile.
-
-Help me connect my own Moodle account and choose my courses.
-I will enter my password and verification codes on the school's page myself.
-Do not ask me to paste credentials or tokens into chat or read .private contents.
-
-Use the unified study entry point to collect course information, then read and
-verify assignment requirements, deadlines, and announcements.
-Ask what I have completed, where I stopped, and how much time I have available.
-When I select courses, explain the course-level material authorization and let me
-choose full initialisation or course information only. Only download, archive, or
-index materials on the course pages I authorised; ask before anything outside them.
-Do not start school quiz attempts, submit assignments, answer school quizzes, post,
-or send email for me.
-
-Report what is ready, what has been checked, and what I still need to do.
-Carry out the available setup steps and explain them in plain English.
-```
+[Privacy](docs/PRIVACY.md) · [School connection help](docs/新手使用指南.md#连接失败或已有官方-token)
 
 </details>
 
-The default school is HKU Moodle, where the core API collection has been used. For another school, provide its Moodle home URL; compatibility depends on the APIs and permissions it offers.
-
-**The browser sign-in helper is experimental.** Mock callbacks have been tested, but real school SSO/MFA and a complete online installation on a fresh computer still need validation. See the [fallback connection options](docs/新手使用指南.md#连接失败或已有官方-token) if sign-in fails.
-
-### 3. Add your materials and start learning
-
-During course selection you choose a **course-level material authorization**: full initialisation synchronises course information and downloads, archives, and indexes the course files your account can access directly; information-only syncs course information without downloading. A saved full authorization lets later syncs fill in new or changed materials without per-file requests, and adding a course page requires a new authorization. Ordinary Moodle refreshes still do not download files, and downloads outside the authorized course pages require your explicit request. Downloaded or parsed material is not yet reviewed or mastered. See [course-level library sync](docs/COURSE_LIBRARY.md) (Chinese).
-
-You can also put your own files in `Study/_Inbox/`, then ask the assistant to organize them and begin a topic.
-
-Setup is ready when the assistant has verified the local tools and school connection, confirmed your selected courses, and collected **and reviewed** the course information. A successful connection alone does not mean course content has been reviewed.
-
 <details>
-<summary>Manual setup or troubleshooting</summary>
+<summary><strong>Recent updates · latest three</strong></summary>
 
-Double-click `start.cmd` for the Chinese setup guide or `diagnose.cmd` for local diagnostics. Detailed commands and dependencies are in the [beginner guide](docs/新手使用指南.md) and [diagnostics guide](docs/START.md). The setup menu and most detailed documentation are currently in Chinese; this English README covers the primary workflow.
+- [2026-11-17](docs/UPDATE_REPORT_2026-11-17-deepseek.en.md) · Latest source improvements and retained tutorials
+- [2026-11-16](CHANGELOG.en.md#2026-11-16) · Chapter sync, recovery and scanned-page reading
+- [2026-11-14](docs/UPDATE_TERMS_ALERTS_2026-11-14.md) · Bilingual terms and AI-instruction alerts
 
-If setup stalls, share the error text without passwords or tokens and ask the assistant to investigate while preserving your records, original files, and references. Do not delete `Study/` or rebuild an empty profile to fix a setup problem.
+[Full changelog](CHANGELOG.en.md) · Validation details and limits are in each report.
 
 </details>
 
-## FAQ and privacy
+---
 
-**Can I use only the web or mobile app, another AI client, or another operating system?**
+[Material library](docs/LIBRARY.md) · [Teaching & practice](docs/TUTORING.md) · [Learning memory](docs/MEMORY.md) · [Exam preparation](docs/EXAM_PREP.md) · [Troubleshooting](docs/START.md) · [Report an issue](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/issues)
 
-This branch supports the Windows local DeepSeek Harness workflow. Other platforms remain unvalidated.
-
-**Do I need an API key or a separate subscription?**
-
-The code is open source and does not include an AI account or subscription. Account access, usage limits, and charges are separate. Use the account or model configuration supported by your Harness installation.
-
-**Are my learning records uploaded to this GitHub repository?**
-
-Your materials and records are saved locally. `Study/`, credentials, and machine-specific configuration are excluded from normal Git commits. Share the repository link, not your used project folder. Material read by the assistant may be sent to its model provider: **local storage does not mean offline inference**. [Privacy details](docs/PRIVACY.md).
-
-**What does the assistant do on Moodle?**
-
-The tools use read-only Moodle APIs. With a course-level full authorization saved during course selection, they can download the course materials your account can access directly, archive them in your local `Study/` folder, and build the local index; that is one-time authorization plus incremental sync, not a per-file request. They still do not start school quiz attempts, submit assignments, answer school quizzes, post, change school completion status, or send email. Downloads outside the authorized course pages require your explicit request. Passwords and verification codes stay on the school's sign-in page.
-
-**What still needs checking?**
-
-Missing permissions, incomplete materials, scanned pages, and complex formulas require attention. Collection is separate from review; software validation cannot prove that an explanation is correct or that you have mastered a topic.
-
-Known limitations remain: one Study profile is deliberately bound to one school account, so changing school requires a separate folder and profile; normal material archiving preserves original-answer bindings (archiving no longer rewrites historical evidence and does not re-anchor by fingerprint), but records already damaged or mismatched before the upgrade are never repaired automatically and still need manual comparison against a backup; same-question detection matches course, prompt text, options and source pages rather than semantic similarity. Real school SSO/MFA, fresh-machine installation and school API permissions remain unverified offline. See the [update report](docs/UPDATE_REPORT_2026-11-07-deepseek.md) for scope and limits.
-
-**How do I upgrade without losing my work?**
-
-Ask the assistant to back up and preserve `Study/`, configuration, credentials, and source references before updating the code. Downloading a new copy does not update your existing folder. Follow the [upgrade guide](docs/新手使用指南.md#从旧版更新). After updating, fully restart Harness and confirm the skill and Moodle tools load; if the Moodle tools are missing, restart once more before changing anything. Do not delete `Study/`, the configuration or credentials to fix an upgrade.
-
-## Recent updates
-
-Scanned PDFs now keep successful sync timestamps and explicitly request original-page visual reading; rendering is not a claim of review or mastery.
-
-2026-11-16: Teaching uses chapter timestamps to avoid unchanged downloads, pauses on sync failures, and retires replaced originals only after validating the new body. [Details](CHANGELOG.en.md). Source update only; no plugin package/install.
-
-This source maintenance fixes chapter verification, missing-version recovery and failed receipts, and aligns learning-flow rules; plugins remain unchanged.
-
-Current public version: **0.5.0**.
-
-This update covers source installations; no Harness plugin is published. Preserve your learning profile and local credentials, rerun setup after updating, then fully restart Harness.
-
-Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANGELOG.md).
-
-| Date | Change |
-| --- | --- |
-| [2026-11-17](docs/UPDATE_REPORT_2026-11-17-deepseek.en.md) | Publish chapter timestamp sync, authorized acquisition, failure recovery and scanned-page reading; preserve public tutorials. Source only, no new plugin package |
-| [2026-11-16](CHANGELOG.en.md#2026-11-16) | Verify current teacher notices for exams and deadlines; match the class and lead with uncertainty when verification fails; consolidate rules and clarify notice rechecks, timely saves and read-only maintenance; require reviewed courseware content before teaching and limit partial practice to reviewed materials; align plugin-loaded courseware rules and first-only update notices; Automatically acquire missing lesson materials under existing course grants, without repeated download permission prompts Fix ambiguous chapter discovery and acquisition across mixed-grant pages; align release materials with the frozen trial.8 package without claiming it contains today's source fixes. |
-| [2026-11-14](docs/UPDATE_TERMS_ALERTS_2026-11-14.md) | Additional candidate `trial.8` adds bilingual terms and prominent AI-targeted instruction alerts to the checkout and plugin; see the [update note](docs/UPDATE_TERMS_ALERTS_2026-11-14.md). Not installed or published. |
-
-Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.en.md) for validation details and known limitations.
-
-## Documentation and contributing
-
-Detailed guides are currently primarily in Chinese:
-
-[Study workflow](docs/使用须知.md) · [Tutoring](docs/TUTORING.md) · [Material library](docs/LIBRARY.md) · [Course library sync](docs/COURSE_LIBRARY.md) · [Version management](docs/MATERIAL_VERSIONS.md) · [Exam preparation](docs/EXAM_PREP.md) · [Session recovery](docs/SESSION.md) · [DeepSeek Harness](docs/DSH.md) · [Tools and tests](docs/TOOLS.md)
-
-For a bug report or improvement, [open an issue](https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/issues). Describe the expected behavior, actual result, and reproduction steps without credentials, private course content, or learning records. Code changes should follow [AGENTS.md](AGENTS.md) and the checks in [docs/TOOLS.md](docs/TOOLS.md#验证与发布).
-
-Licensed under the [MIT License](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md) for dependencies. This project is not officially affiliated with OpenAI, HKU, or Moodle.
+<sub><a href="LICENSE">MIT License</a> · <a href="THIRD_PARTY_NOTICES.md">Third-party notices</a> · Community project; not officially affiliated with OpenAI, DeepSeek, HKU or Moodle. Most detailed guides are in Chinese.</sub>
