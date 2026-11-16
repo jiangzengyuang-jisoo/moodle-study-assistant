@@ -927,12 +927,15 @@ function itemReport(item) {
 
 export async function syncCourseLibrary({
   client, root, state, courseIds = null, snapshotPath = null, maxBytes = MAX_BYTES,
-  batchSize = 8, dryRun = false, installBatch, buildIndex, now = nowISO,
+  batchSize = 8, dryRun = false, installBatch, buildIndex, now = nowISO, moduleIds = null,
 }) {
   root = resolve(root);
   const study = resolve(root, 'Study');
   const statePath = join(study, '_System/state.json');
   if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 20) throw new Error('batch size must be 1-20');
+  const moduleScope = moduleIds === null ? null : new Set(moduleIds);
+  if (moduleScope && (!moduleScope.size || [...moduleScope].some(id => !Number.isSafeInteger(id) || id <= 0)
+      || !Array.isArray(courseIds) || !courseIds.length)) throw new Error('Explicit course and module scope required');
   const pages = selectedPages(state, courseIds);
   if (!pages.length) throw new Error('No selected course pages to sync');
   for (const page of pages) page.baseUrl = client.baseUrl;
@@ -949,7 +952,16 @@ export async function syncCourseLibrary({
   const startedAt = now();
   const enumerated = [];
   for (const page of authorized) enumerated.push(await enumerateCourse(client, page));
-  if (snapshotPath) {
+  if (moduleScope) {
+    for (const entry of enumerated) {
+      entry.sections = entry.sections.map(section => ({...section, summary: '',
+        modules: section.modules.filter(module => moduleScope.has(Number(module.id))
+          && ['resource', 'folder'].includes(module.modname)).map(module => ({...module, description: ''}))}));
+      entry.modules = entry.sections.flatMap(section => section.modules);
+    }
+    state.__textSources = emptyTextSources();
+    state.__snapshotProvenance = null;
+  } else if (snapshotPath) {
     const {snapshot, provenance} = snapshotProvenance(snapshotPath, root);
     const pagesPresent = authorized.every(page => snapshot.pages.some(row => row.course_id === page.courseId
       && Number(row.courseid) === Number(page.moodleCourseid)));
@@ -971,7 +983,7 @@ export async function syncCourseLibrary({
   for (let index = 0; index < authorized.length; index++) {
     const page = authorized[index];
     const result = planPage({page, enumerated: enumerated[index], texts, state});
-    plannedItems.push(...result.items);
+    plannedItems.push(...result.items.filter(item => !moduleScope || item.kind === 'file'));
     skips.push(...result.skips);
   }
   assignArchiveLayouts(plannedItems, state);
@@ -989,7 +1001,7 @@ export async function syncCourseLibrary({
     const entry = ledgerEntries[item.key];
     if (item.kind === 'file') {
       item.remote = fingerprintOf(item);
-      if (entry && [STATUS.installed, STATUS.identical, STATUS.duplicate].includes(entry.status)
+      if (!moduleScope && entry && [STATUS.installed, STATUS.identical, STATUS.duplicate].includes(entry.status)
           && fingerprintMatches(entry.remote, item.remote)
           && materialCurrent(state, entry.status === STATUS.duplicate ? entry.duplicate_of : entry.material_id,
             entry.status === STATUS.duplicate ? null : entry.sha256)) {
@@ -1143,7 +1155,7 @@ export async function syncCourseLibrary({
           }
         }
         payloadItems.push({
-          item_key: item.key,
+          item_key: item.key, restore_missing: Boolean(moduleScope),
           relative_path: relative(study, item.stagedPath).replaceAll('\\', '/'),
           sha256: item.sha256, bytes: item.bytes,
           archive_subdir: item.archiveSubdir ?? null,
@@ -1336,7 +1348,7 @@ export async function syncCourseLibrary({
       .reduce((n, item) => n + (item.bytes ?? 0), 0),
   };
   const report = {
-    ...summary, finished_at: now(),
+    ...summary, finished_at: now(), scope: moduleScope ? 'chapter_modules' : 'authorized_courses',
     courses: courseReports,
     items: plannedItems.map(itemReport).concat(skips.map(skip => ({...itemReport(skip), key: skip.key ?? null}))),
     totals, index,
@@ -1345,7 +1357,8 @@ export async function syncCourseLibrary({
     no_school_writes: true,
     note: 'Files and parsed text are local references only; download or parse success is not verification or mastery.',
   };
-  writeReport(root, report);
+  if (moduleScope) atomicJSON(join(study, '_System/LibrarySync/chapter-latest.json'), report);
+  else writeReport(root, report);
   try { rmSync(runFolder, {recursive: true, force: true}); } catch { /* staging retained */ }
   const unauthorized = blocked.length;
   return {...report, ok: errors.length === 0 && totals.failed === 0 && unauthorized === 0,

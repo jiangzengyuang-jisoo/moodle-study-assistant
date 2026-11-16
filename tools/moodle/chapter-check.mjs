@@ -30,7 +30,7 @@ import {join, resolve, sep} from 'node:path';
 import {MAX_BYTES, fetchCourseFile} from './course-files.mjs';
 import {accountScope, assertProfileAccount, normalizeSite, profileAccountStatus} from './content-policy.mjs';
 import {
-  authorizationReport, emptyTextSources, enumerateCourse, nowISO, planPage, readJSON, selectedPages,
+  authorizationReport, emptyTextSources, enumerateCourse, nowISO, planPage, readJSON, selectedPages, syncCourseLibrary,
 } from './course-library.mjs';
 
 export const CHAPTER_CHECK_SCHEMA = 3;
@@ -1167,7 +1167,7 @@ export async function checkChapter({
   client, root, state, course, section = null, modules = null, mode = 'strict',
   scope = null, carry = null, chatKey = null, maxBytes = MAX_BYTES, persist = true,
   now = nowISO, fetchFile = fetchCourseFile, enumerate = enumerateCourse, ledgerPath = null,
-  progress = () => {}, connectionGeneration: passedGeneration = undefined,
+  progress = () => {}, connectionGeneration: passedGeneration = undefined, discover = false,
 } = {}) {
   if (!client || typeof client.call !== 'function') throw new Error('需要已连接的 Moodle 只读客户端');
   if (!MODES[mode]) throw new Error('核对强度只能是 quick 或 strict');
@@ -1246,6 +1246,13 @@ export async function checkChapter({
     }
   }
 
+  if (discover && section && !modules && chapterScope.status === 'resolved') {
+    const extra = resolveCatalogScope({enumeratedPages, section, modules: null});
+    if (extra.status === 'resolved') chapterScope = {...chapterScope,
+      moduleIds: [...new Set([...(chapterScope.moduleIds ?? []), ...(extra.moduleIds ?? [])])],
+      pages_in_scope: [...new Set([...(chapterScope.pages_in_scope ?? []), ...(extra.pages_in_scope ?? [])])]};
+  }
+
   // Scope page authorization: a strict check must not silently ignore chapter
   // files that live on a blocked course page.
   if (mode === MODES.strict) {
@@ -1306,7 +1313,10 @@ export async function checkChapter({
   let completed = 0;
   const verified = await mapLimit(filesToVerify, 3, async item => {
     const entry = ledger.entries[item.key] ?? null;
-    const material = bySource.get(item.key) ?? null;
+    const material = bySource.get(item.key) ?? (BASELINE_LEDGER_STATUSES.has(entry?.status)
+      ? (state.materials ?? []).find(row => row.id === (entry.duplicate_of ?? entry.material_id)
+        && row.course_id === resolved.subject && !row.superseded_by
+        && !['archived', 'deleted'].includes(row.version_status)) : null);
     const classification = classifyItem({item, entry, material, mode});
     const local = localState(root, material);
     try {
@@ -1441,11 +1451,11 @@ function cloneReuse(receipt, {reason, message, now}) {
   };
 }
 
-export async function runChapterCheck({
+async function runChapterCheckOnly({
   root, loadState, course, section = null, modules = null, mode = 'strict',
   chatKey = null, force = false, persist = true, connect = null,
   progress = () => {}, now = nowISO, fetchFile = fetchCourseFile, enumerate = enumerateCourse,
-  ledgerPath = null,
+  ledgerPath = null, discover = false,
 }) {
   if (!MODES[mode]) throw new Error('核对强度只能是 quick 或 strict');
   if (!course) throw new Error('请提供课程 ID；章节核对只查这一门课');
@@ -1474,7 +1484,7 @@ export async function runChapterCheck({
       const receipt = await checkChapter({client, root, state, course, section, modules, mode, scope: plan,
         carry: {receipt: previous, moduleIds: previous.scope.module_ids ?? [],
           rows: previous.files ?? [], sections: previous.sections ?? [], run_id: previous.run_id},
-        chatKey, persist, now, fetchFile, enumerate, ledgerPath, progress,
+        chatKey, persist, now, fetchFile, enumerate, ledgerPath, progress, discover,
         connectionGeneration: currentConnection});
       return {...receipt, network_started: true};
     }
@@ -1493,6 +1503,43 @@ export async function runChapterCheck({
   const client = await connect();
   const receipt = await checkChapter({client, root, state, course, section, modules, mode,
     scope: plan.status === 'resolved' ? plan : null, chatKey, persist, now, fetchFile, enumerate,
-    ledgerPath, progress, connectionGeneration: currentConnection});
+    ledgerPath, progress, discover, connectionGeneration: currentConnection});
   return {...receipt, network_started: true};
+}
+
+// Acquisition is enabled by teaching entry points; raw checks remain read-only.
+export async function runChapterCheck(options) {
+  let client;
+  const connect = async () => client ??= await options.connect();
+  const receipt = await runChapterCheckOnly({...options, connect, discover: options.acquireMissing === true});
+  if (!options.acquireMissing || (options.mode ?? 'strict') !== 'strict' || receipt.ambiguous
+      || (receipt.reused && receipt.acquisition)) return receipt;
+  const modules = [...new Set((receipt.files ?? []).filter(row =>
+    row.status !== STATUS.error && (row.status === STATUS.no_baseline || row.status === STATUS.changed
+      || row.local?.status === 'missing')).map(row => Number(row.module_id)).filter(Number.isSafeInteger))];
+  if (!modules.length || receipt.errors?.length) return receipt;
+  const pending = {...receipt, verdict: 'incomplete', verified: {...receipt.verified, complete: false},
+    reuse: {eligible: false, reason: 'acquisition_pending'}, acquisition: {status: 'incomplete', reason: 'acquisition_interrupted', module_ids: modules}};
+  if (options.persist !== false) writeReceipt(options.root, pending);
+  try {
+    client = await connect();
+    const state = options.loadState();
+    const pages = resolveCoursePages(state, options.course).pages;
+    assertProfileAccount({state, root: options.root, site: client.baseUrl, userId: client.userId, action: '章节资料补齐'});
+    const report = await (options.acquire ?? syncCourseLibrary)({client, root: options.root, state,
+      courseIds: pages.map(page => page.courseId), moduleIds: modules});
+    if (!report.ok) {
+      pending.acquisition.reason = 'chapter_acquisition_incomplete';
+      if (options.persist !== false) writeReceipt(options.root, pending);
+      return pending;
+    }
+    const checked = await runChapterCheckOnly({...options, connect, force: true, discover: true});
+    checked.acquisition = {status: 'complete', module_ids: modules};
+    if (options.persist !== false) writeReceipt(options.root, checked);
+    return checked;
+  } catch {
+    pending.acquisition.reason = 'chapter_acquisition_failed';
+    if (options.persist !== false) writeReceipt(options.root, pending);
+    return pending;
+  }
 }

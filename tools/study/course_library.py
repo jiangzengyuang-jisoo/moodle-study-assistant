@@ -380,6 +380,16 @@ def _install_item(state_path, state, item, index):
     install_extra = dict(extra or {})
     if source_pages is not None:
         install_extra["source_pages"] = source_pages
+    if item.get("restore_missing") is True:
+        # Scope and account authorization were validated before entering this installer.
+        # Restore only identical bytes; edited originals never get overwritten.
+        from course_content import restore_missing
+        matching = next((m for m in state.get("materials", []) if versions.current(m)
+                         and m.get("course_id") == course_id and m.get("sha256") == sha256
+                         and versions.keys(m) & _source_keys(course_id, install_source)), None)
+        if matching and restore_missing(study, matching, staged):
+            return _item_result(item, status="identical", material_id=matching["id"],
+                                relative_path=matching["relative_path"])
     duplicate = _duplicate_material(state, course_id, sha256, _source_keys(course_id, install_source))
     if duplicate is not None:
         return _item_result(item, status="duplicate", material_id=duplicate.get("id"),

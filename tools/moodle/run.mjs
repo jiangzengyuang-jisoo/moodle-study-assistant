@@ -290,7 +290,7 @@ async function runChapterCheckMode() {
     ? moduleArg.split(',').map(value => Number(value.trim())).filter(Number.isInteger)
     : null;
   const result = await runChapterCheck({
-    root, loadState,
+    root, loadState, acquireMissing: true,
     course: option('--course'),
     section: option('--section'),
     modules,

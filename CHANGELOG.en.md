@@ -35,6 +35,14 @@ Existing users should first read the [upgrade steps that preserve learning recor
 
 ## 2026-11-16
 
+### Acquire lesson materials on demand
+
+- Automatically acquire missing lesson materials under existing course grants, without repeated download permission prompts, including newly uploaded chapter parts and registered files missing locally. Local edits, historical references and learning evidence remain protected.
+- Keep using `study_check_chapter` or its strict `chapter-check` CLI fallback, with the existing DeepSeek authorization schema. Resolve ambiguous resources from the same course catalog and select explicit modules; missing files do not trigger a full refresh.
+- Validation: 59 Node and 15 Python tests passed with synthetic Moodle responses and the real local installer/index, covering empty libraries, restoration, same-chat reuse and authorization boundaries. No live school check was performed.
+- Upgrade source and rules. Restart the source MCP service; separately installed plugins require a rebuild/upgrade. This change does not rebuild or replace existing plugin packages. Nothing was pushed or published; acquisition is not content review or mastery.
+
+
 ### Fix the courseware rules actually loaded by the DeepSeek plugin
 
 - Add the reviewed-body prerequisite, pause conditions and reviewed-material limits for targeted practice to the always-on plugin rules and plugin skill entry, without relying on source-root rules being loaded.

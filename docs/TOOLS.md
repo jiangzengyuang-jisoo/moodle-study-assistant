@@ -18,7 +18,7 @@ node tools/moodle/run.mjs mcp
 
 AI 在需要校务信息或用户明确要求时调用 `continue/refresh`，不会每条追问重复执行；单章教学优先用 MCP `study_check_chapter`（`chapter-check` 为异常 CLI 后备），不会触发完整采集。命令本身始终进行真实采集。采集器全局最多同时执行4个 API 请求，每个论坛的分页仍按顺序读取，完整正文、回复和权限核对保留。同聊天复用返回的是上次严格回执（标记 `reused: true`、`network_started: false`），不是新的联网检查；本人明确要求重新核对时，工具用 `force: true`（CLI 后备用 `--force`）；不为获取新结果而更换聊天 ID 或扩大成完整刷新。CLI 后备 `chapter-check` 的阶段进度在 stderr，最终结构化结果只在 stdout；慢速首次核对可由助手用 Harness 后台任务跟进同一任务，不用 `Select-Object -Last 40` 截断进度。不要把没有重新联网的缓存复用记为新的检查。
 
-MCP 暴露原有 15 个课程、作业、测验、论坛、日历、成绩、通知、资源目录和站点信息读取工具，并新增 `study_check_chapter`（项目服务合计 16 个工具）；全论坛分页用 `study_all_discussions`，回复用 `study_discussion_posts`。上游 recent discussions 只有最近20条，不能替代完整采集。不注册学校写操作；普通查询不下载文件，章节核对只读取授权文件字节作哈希比对并保存本地回执，不安装资料。正常刷新在采集后为有课程级完整授权的范围自动下载、归档和索引；没有授权的范围只同步信息。选课授权、结果和重试入口见 [COURSE_CONTENT.md](COURSE_CONTENT.md)。
+MCP 暴露原有 15 个课程、作业、测验、论坛、日历、成绩、通知、资源目录和站点信息读取工具，并新增 `study_check_chapter`（项目服务合计 16 个工具）；全论坛分页用 `study_all_discussions`，回复用 `study_discussion_posts`。上游 recent discussions 只有最近20条，不能替代完整采集。不注册学校写操作；普通查询不下载文件，章节教学核对在已有 full 授权内补齐缺失或更新的本章文件、登记和索引，再保存严格回执。正常刷新在采集后为有课程级完整授权的范围自动下载、归档和索引；没有授权的范围只同步信息。选课授权、结果和重试入口见 [COURSE_CONTENT.md](COURSE_CONTENT.md)。
 
 `moodle_get_calendar_events` 支持课程、时间范围和分页限制，先看 `complete` 再判断是否覆盖所选事件；分页不前进或到页数上限返回 `complete:false`，应缩小时间范围继续查，不能把部分结果当成全部。`moodle_get_notifications` 用 `limit/offset`、`has_more`/`next_offset` 续读，不把通知标为已读。成绩只查当前账号；资源目录只列可见 resource/folder/url 模块元数据，不下载、不扩大授权；站点信息只返回必要身份与能力字段并脱敏凭据。接口未启用时返回 `api_not_enabled`，不等于没有数据。完整性只描述所选接口和时间范围，不等于所有类型的学校事件，也不等于 AI 已核读。升级后需重启本项目 MCP 连接。范围与限制见[更新报告](UPDATE_REPORT_2026-11-07-deepseek.md#按需只读学校查询)。
 
@@ -38,7 +38,7 @@ MCP 暴露原有 15 个课程、作业、测验、论坛、日历、成绩、通
 | `chat_id` | 必填的原始主聊天 ID；与现有学习接续一致，不用内部子会话 ID、服务 ID、随机值或全局固定值 |
 | `force` | 可选，默认 false；仅本人明确要求重新核对时为 true |
 
-`section` 或 `module_ids` 至少一项；常规只选其一，同时传时按明确模块核对，章节名只作标签。严格核对固定为 SHA-256 内容比对，不提供 quick 模式。上述 JSON 是结构示例，实际参数须取本轮真实课程与主聊天 ID，不能直接传占位文字。工作目录、状态读取、学校连接和回执位置由服务端固定，调用者不能传命令、文件路径、学校 URL 或凭据。工具会读取已授权学校文件字节并保存本地 `Study/_System/ChapterChecks/` 回执；不安装/替换资料、不改学习状态、不提交作业或修改学校数据。核对不等于核读或掌握。
+`section` 或 `module_ids` 至少一项；常规只选其一，同时传时按明确模块核对，章节名只作标签。严格核对固定为 SHA-256 内容比对，不提供 quick 模式。上述 JSON 是结构示例，实际参数须取本轮真实课程与主聊天 ID，不能直接传占位文字。工作目录、状态读取、学校连接和回执位置由服务端固定，调用者不能传命令、文件路径、学校 URL 或凭据。工具会读取已授权学校文件字节并保存本地 `Study/_System/ChapterChecks/` 回执；可在已有课程 full 授权内补齐本章资料并更新资料索引，但不改掌握、作答，不提交作业或修改学校数据。核对不等于核读或掌握。
 
 返回 `STUDY_MCP_RESTART_REQUIRED` 时先重新加载 Moodle 服务，不申请 shell 提权；学校/账号/授权/范围等固定错误按其原因处理，不能把缓存失败或普通错误当作核对成功。
 
