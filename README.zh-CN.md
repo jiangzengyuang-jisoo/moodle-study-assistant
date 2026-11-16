@@ -5,7 +5,7 @@
 <h1 align="center">Moodle 学习助手</h1>
 <p align="center">用你的课程资料讲解、练习，把每次学习的进度留下来。</p>
 <p align="center"><a href="README.md">English</a> · <strong>简体中文</strong></p>
-<p align="center"><a href="#复制给-ai开始安装"><strong>复制安装指令</strong></a> · <a href="https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf">图文教程 PDF</a> · <a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/codex">Codex 版 →</a></p>
+<p align="center"><a href="#复制给-ai开始安装"><strong>复制安装指令</strong></a> · <a href="#升级现有项目"><strong>升级已有安装</strong></a> · <a href="https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf">图文教程 PDF</a> · <a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/codex">Codex 版 →</a></p>
 
 ## 复制给 AI，开始安装
 
@@ -24,9 +24,31 @@ https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/deepseek
 >
 > 如果已经完成学校登录，但页面仍一直加载，可以先稍等，再按 **F5** 或点击浏览器的**刷新**按钮。**只刷新当前网页，保持 AI 的安装任务继续运行。** 如果刷新后仍无进展，把当前现象告诉 AI，继续排查。
 
-[PDF 图文教程](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf) · [保留记录升级](docs/CHAT_ONBOARDING.md#upgrade)
+[PDF 图文教程](https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/deepseek/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf) · [升级已有安装](#升级现有项目)
 
 **这是源码版：** 下载后作为 Harness 工作区使用，并非可直接安装的插件包；冻结的 trial.8 包不包含最新源码改进。[查看插件状态](docs/market/CURRENT_CANDIDATE.md)。
+
+## 升级现有项目
+
+> [!IMPORTANT]
+> **已经安装过？回到你一直使用的项目聊天，把下面这段发给 AI。**
+> GitHub 更新不会自动升级电脑上的旧安装。升级在原项目中进行，保留已有进度、错题和资料。
+
+```text
+帮我把当前 Moodle 学习助手升级到 DeepSeek Harness 分支的最新版本：
+https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/deepseek
+
+先读 docs/CHAT_ONBOARDING.md 的 Upgrade 部分，检查当前目录、分支和本地改动。
+暂停档案写入，先备份 Study/ 和 config.local.json。
+按当前 Git 或 ZIP 安装方式更新，保留 Study/、.private/、个人配置和自定义改动；
+不要清空档案、强制重置或读取、输出凭据内容。
+直接替我完成可执行的升级与依赖更新，不要让我另开 CMD。
+完成后检查原有学习进度和错题仍在，告诉我更新了什么、是否需要重启客户端。
+```
+
+[详细升级流程](docs/CHAT_ONBOARDING.md#upgrade) · [查看更新日志](CHANGELOG.md)
+
+**插件用户：**以上用于源码工作区。已安装插件须按[插件升级说明](docs/PLUGIN_TRIAL_GUIDE.md)更新经过验证的新安装包；更新源码不会更新已安装插件。
 
 ## 围绕你的课，接着往下学
 
