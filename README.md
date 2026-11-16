@@ -1,11 +1,24 @@
 <p align="center"><strong>Codex edition</strong> · Windows 10/11 · Open source</p>
 
-![Course materials → guided practice → continuity across sessions. Workflow illustration.](docs/assets/study-journey.en.svg)
-
 <h1 align="center">Moodle Study Assistant</h1>
 <p align="center">Turn your course materials into explanations, practice and a study record you can return to.</p>
 <p align="center"><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
-<p align="center"><a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/archive/refs/heads/codex.zip"><strong>Download Codex edition</strong></a> · <a href="https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/codex/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf">Illustrated PDF guide</a> · <a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/deepseek">DeepSeek Harness edition →</a></p>
+<p align="center"><a href="#install-with-ai"><strong>Install with AI</strong></a> · <a href="https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/codex/docs/tutorials/Moodle-Study-Assistant-Tutorial-English.pdf">Illustrated PDF guide</a> · <a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/deepseek">DeepSeek Harness edition →</a></p>
+
+## Install with AI
+
+Copy this into **Codex** with local file and command access:
+
+```text
+Help me install and set up this Moodle Study Assistant (Codex edition):
+https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/codex
+
+Read the repository's installation instructions and carry out setup.
+Preserve existing learning records. Tell me when I need to sign in,
+approve access or choose my courses, then show me how to use it.
+```
+
+[Illustrated setup guide](docs/新手使用指南.md) · [Upgrade without losing records](docs/新手使用指南.md#从旧版更新)
 
 ## Your course. Your next step.
 
@@ -14,17 +27,6 @@
 ✍️ **Practise where you get stuck.** Start with an example, try a new problem, and use your actual answers to guide review.
 
 ↗ **Continue in another chat.** Keep your study position, mistakes and next step in the same workspace. Hearing an explanation is kept separate from independent mastery.
-
-## Start in three steps
-
-1. **Download & open.** Extract the `codex` ZIP into its own folder. Open the folder containing `AGENTS.md` in **Codex** as a local workspace.
-2. **Ask for setup.** Paste the request below. Enter your school password only on the school’s sign-in page; choose your courses and sync mode in chat.
-3. **Bring a chapter.** Choose full initialization to acquire accessible files for authorized courses, or add your own files to `Study/_Inbox/`. Then ask to learn a topic.
-
-> Install this Moodle Study Assistant and show me how to use it. Read AGENTS.md first, preserve my existing records, help me connect my school and choose courses, then guide my first study session.
-
-[Detailed setup](docs/新手使用指南.md) · [Chat onboarding](docs/CHAT_ONBOARDING.md) · [Upgrade without losing records](docs/新手使用指南.md#从旧版更新)
-
 
 ## Try one of these
 
@@ -46,16 +48,19 @@
 
 </details>
 
-<details>
-<summary><strong>Recent updates · latest three</strong></summary>
+## Recent updates
 
-- [2026-11-16](docs/UPDATE_REPORT_2026-11-16.en.md) · Chapter sync, recovery and scanned-page reading
-- [2026-11-14](CHANGELOG.en.md#2026-11-14) · Bilingual terms and AI-instruction alerts
-- [2026-11-12](docs/UPDATE_REPORT_2026-11-12.en.md) · Verified teaching saves and simpler review
+Chapter sync now reuses source timestamps, acquires missing authorized materials and recovers from failed updates. Scanned lessons explicitly require original-page review. All 821 automated checks passed; see the [update report](docs/UPDATE_REPORT_2026-11-16.en.md) for upgrade steps and limits.
 
-[Full changelog](CHANGELOG.en.md) · Validation details and limits are in each report.
+Full history: [English changelog](CHANGELOG.en.md) · [中文更新日志](CHANGELOG.md).
 
-</details>
+| Date | Change |
+| --- | --- |
+| [2026-11-16](docs/UPDATE_REPORT_2026-11-16.en.md) | Timestamp-based chapter sync, authorized acquisition, failure recovery and scanned-page reading; 821 checks passed |
+| [2026-11-14](CHANGELOG.en.md#2026-11-14) | Pair new concepts with English terms and prominently disclose AI-targeted instructions found in materials |
+| [2026-11-12](docs/UPDATE_REPORT_2026-11-12.en.md) | Publish verified teaching saves and review simplification; skip unchanged pages, with validation and upgrade notes |
+
+Offline tests do not validate real school login or every installation environment. See the [changelog](CHANGELOG.en.md) for validation details and known limitations.
 
 ---
 

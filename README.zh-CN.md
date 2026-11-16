@@ -1,11 +1,23 @@
 <p align="center"><strong>Codex 版</strong> · Windows 10/11 · 开源</p>
 
-![读自己的课件、练真正的薄弱点、在新聊天接着学。学习流程示意。](docs/assets/study-journey.zh-CN.svg)
-
 <h1 align="center">Moodle 学习助手</h1>
 <p align="center">用你的课程资料讲解、练习，把每次学习的进度留下来。</p>
 <p align="center"><a href="README.md">English</a> · <strong>简体中文</strong></p>
-<p align="center"><a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/archive/refs/heads/codex.zip"><strong>下载 Codex 版</strong></a> · <a href="https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/codex/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf">图文教程 PDF</a> · <a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/deepseek">DeepSeek Harness 版 →</a></p>
+<p align="center"><a href="#复制给-ai开始安装"><strong>复制安装指令</strong></a> · <a href="https://raw.githubusercontent.com/jiangzengyuang-jisoo/moodle-study-assistant/refs/heads/codex/docs/tutorials/Moodle%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%E6%95%99%E7%A8%8B.pdf">图文教程 PDF</a> · <a href="https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/deepseek">DeepSeek Harness 版 →</a></p>
+
+## 复制给 AI，开始安装
+
+把下面整段复制给能操作本机文件的 **Codex**，让它带你完成安装：
+
+```text
+帮我安装并配置这个 Moodle 学习助手（Codex 版）：
+https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/codex
+
+先读仓库里的安装说明，直接执行能完成的设置步骤，保留已有学习记录。
+需要我登录、确认权限或选择课程时告诉我，完成后教我怎么用。
+```
+
+[图文安装指南](docs/新手使用指南.md) · [保留记录升级](docs/新手使用指南.md#从旧版更新)
 
 ## 围绕你的课，接着往下学
 
@@ -14,17 +26,6 @@
 ✍️ **卡在哪里，就练哪里。** 先看必要示范，再独立做新题；用你的实际作答安排反馈和复习。
 
 ↗ **换个聊天，也能接上。** 在同一工作区保留进度、错题和下一步；讲过什么与独立掌握什么分别记录。
-
-## 三步开始
-
-1. **下载并打开。** 将 `codex` 版 ZIP 解压到独立文件夹，在 **Codex** 中把含 `AGENTS.md` 的文件夹打开为本地工作区。
-2. **让助手完成设置。** 复制下面这句话，在聊天中选课程和同步方式；学校密码由你在学校网页输入。
-3. **带着一章资料开始。** 选择“完整初始化”，获取已授权课程中可访问的资料；也可以把自有文件放进 `Study/_Inbox/`，再说想学什么。
-
-> 帮我安装这个 Moodle 学习助手，并教我怎么用。先读 AGENTS.md，保留已有学习记录，带我连接学校、选择课程，再开始第一次学习。
-
-[详细安装指南](docs/新手使用指南.md) · [聊天上手流程](docs/CHAT_ONBOARDING.md) · [保留记录升级](docs/新手使用指南.md#从旧版更新)
-
 
 ## 不知道怎么问？试试这三句
 
@@ -46,16 +47,19 @@
 
 </details>
 
-<details>
-<summary><strong>最近更新 · 三次功能更新</strong></summary>
+## 最近更新
 
-- [2026-11-16](docs/UPDATE_REPORT_2026-11-16.md) · 按章同步、失败恢复与扫描原页阅读
-- [2026-11-14](CHANGELOG.md#2026-11-14) · 中英术语对应与 AI 定向指令提醒
-- [2026-11-12](docs/UPDATE_REPORT_2026-11-12.md) · 教学保存确认与复习流程精简
+本章按来源时间同步，自动补齐已授权资料并支持失败恢复；扫描课件明确要求核读原页。821 项自动检查通过，升级方法与限制见[更新报告](docs/UPDATE_REPORT_2026-11-16.md)。
 
-[完整更新日志](CHANGELOG.md) · 各报告保留验证结果与限制。
+完整历史：[中文更新日志](CHANGELOG.md) · [English changelog](CHANGELOG.en.md)。
 
-</details>
+| 日期 | 更新内容 |
+| --- | --- |
+| [2026-11-16](docs/UPDATE_REPORT_2026-11-16.md) | 按章时间同步、授权下补齐、失败恢复与扫描原页阅读；821 项检查通过 |
+| [2026-11-14](CHANGELOG.md#2026-11-14) | 新知识补齐中英术语对应；发现材料中的 AI 定向指令时先醒目提醒 |
+| [2026-11-12](docs/UPDATE_REPORT_2026-11-12.md) | 同步教学保存与复习精简修复，跳过未变化页面；附验证依据和升级说明 |
+
+离线测试不代表真实学校登录或所有安装环境已验证。具体检查和已知限制见[更新日志](CHANGELOG.md)。
 
 ---
 
