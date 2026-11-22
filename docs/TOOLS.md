@@ -2,6 +2,10 @@
 
 以下命令在用户的学习项目根目录运行。普通同学通过自然语言提出任务；本页供 AI 和维护者参考。不要在共享技能安装目录运行个人初始化或保存学习状态。
 
+## 错题库
+
+真实错题直接追加到 `Study/错题库.md`，先读已有内容查重并保留原答。已有安装缺失该文件时，从 `templates/mistake-bank.md` 创建；只能创建缺失文件，不能覆盖现有笔记。单纯收录不需要命令或状态草稿，`daily.py run/render/check` 不管理此文件。具体格式、复习读取与旧记录兼容见 [错题库](MISTAKE_BANK.md)。
+
 ## Moodle
 
 ```powershell
@@ -12,7 +16,7 @@ node tools/moodle/run.mjs refresh
 node tools/moodle/run.mjs mcp
 ```
 
-`init` 只创建缺失的配置/空白状态，不覆盖已有资料。`courses` 交互选择跟踪页面，保留未选页面的既有历史。`refresh` 采集到 `Study/_System/Runtime/runs/<run_id>/snapshot.json`，完整成功另存 `refresh-last-complete.json`；不直接更新个人掌握、作业完成或 AI 核读状态。退出码2表示部分采集失败。
+`init` 只创建缺失的配置、空白状态和 `Study/错题库.md`，不覆盖已有资料或错题笔记。`courses` 交互选择跟踪页面，保留未选页面的既有历史。`refresh` 采集到 `Study/_System/Runtime/runs/<run_id>/snapshot.json`，完整成功另存 `refresh-last-complete.json`；不直接更新个人掌握、作业完成或 AI 核读状态。退出码2表示部分采集失败。
 
 AI 教学前使用下述 `ensure-chapter` 入口，不因新聊天自动完整 `refresh`。计划/最新通知通过 MCP 按相关课程和信息类型查询；只有明确完整检查或当前任务确需全面覆盖时才用 `refresh`。完整采集器仍最多同时执行4个 API 请求，各论坛分页按顺序读取，保留正文、回复和权限核对。缓存复用保留真实核对时间，不记为新的学校检查。
 

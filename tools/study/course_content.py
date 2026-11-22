@@ -77,7 +77,7 @@ def restore_missing(study, row, staged):
     target = versions.safe(study, row['relative_path'])
     if target.exists():
         return False
-    if any(part.casefold() in {'_system', 'backups', '错题本'} for part in target.relative_to(study).parts):
+    if any(part.casefold() in {'_system', 'backups', '错题本', '错题库.md'} for part in target.relative_to(study).parts):
         raise ValueError('Cannot restore learning records as course originals')
     if versions.sha(staged) != row.get('sha256'):
         raise ValueError('Restored content does not match the registered original')

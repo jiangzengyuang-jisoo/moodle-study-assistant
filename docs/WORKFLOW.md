@@ -18,7 +18,7 @@
 
 读取 `Study/_System/state.json`。没有环境时先协助运行安装和连接；密码/MFA/Token 输入由本人在官方网页或隐藏终端完成，不读取 `.private/`。读取所选课程，核对公共页/个人页后可将它们归并到同一科的 `moodle_course_ids`。
 
-向本人了解已交/纸面完成/小组代交、学过章节和真实日程。没有资料或证据的完成状态为 null。建立本科目录：Lectures、Tutorials、Assignments、Practice、错题本、Other；阅读原件归 Other，错题本只放本人的问题/错误。
+向本人了解已交/纸面完成/小组代交、学过章节和真实日程。没有资料或证据的完成状态为 null。建立本科目录：Lectures、Tutorials、Assignments、Practice、错题本、Other；阅读原件归 Other。新错题统一收录到 `Study/错题库.md`，各科旧错题本和模拟卷自动记录保留。
 
 资料核读归档并登记 `materials` 后运行 `tools/study/library.cmd sync`，建立完整逐页文字与来源哈希缓存；没有资料时保持空目录，不导入示例或作者记录。之后用 `context` 读取当前课程接续，按 `omitted` 补读细节；`search/read/render/outline` 的范围与质量要求见 [LIBRARY.md](LIBRARY.md)。新资料或源文件变化才重解析，原件与学习状态不由缓存命令改写。
 
@@ -57,9 +57,9 @@
 
 教学先读课程 orientation、当前任务、相关讨论、资料及 teaching_cursor。仅收到材料先识别当前意图；判断知识缺口或重讲前，按 [跨章节接续与覆盖规则](TUTORING.md#识别意图与跨章节接续) 核对已有经历和证据，不以当前聊天未讲推断未学。真正初学时再从动机、定义、直觉、例子和老师方法建立基础；已讲内容优先用于当前题目，按实际卡点提供帮助。每次适量；公式/嵌图查看原页。覆盖范围与掌握证据分别维护，实际学会多少依作答证据，不用平台百分比。
 
-本人学科提问自动记为 `entry_type=question`；只有观察到真实错误才为 `mistake`。同一疑问追问合并，不把老师或同学论坛问题记为本人错题。字段包括 id、course_id、原问题、本人答案/方法、正确方法、知识点、confusion_point、why_wrong、mistake_type、resolution_status、review_status、source、occurrences；未知为 null。纯提问的 why_wrong 和 mistake_type 为 null。
+观察到本人真实错误后，当轮直接追加到 `Study/错题库.md`：日期、课程/章节、题面与来源页码、本人原答、错因、正确思路和待复测状态；未知写待确认。先读已有内容避免重复，更正和复测追加到原记录，保留原答。提问、未做题、请求提示和他人的错误不当作本人错题。普通提问与实际教学位置仍按 `teaching-save` 保存，具体收录方式见 [错题库](MISTAKE_BANK.md)。
 
-错题视图在 `Study/<course_id>/错题本/记录.md`。`review_queue` 用 mistake_id 关联；先讲解未解决问题，再设计并核验独立变式题，保存到 `practice_variants`。`daily.py run` 选择具体新题，`daily.py attempt` 保存真实原答和评级，`answer-shown` 记录提示或答案曝光。FSRS 只录真实独立尝试，详见 [TOOLS.md](TOOLS.md)。一天复习合计约15–30分钟，不因多次消息重复加预算；未知实际用时不填0，逾期未做不记作答错。
+`Study/错题库.md` 是原始笔记，直接追加即可，不要求为了收录先改状态或运行计划。复习错题时直接读取该文件；状态中的旧 `mistakes` 和 `Study/<course_id>/错题本/记录.md` 继续保留，不自动迁移。需要安排结构化复习时，仍用既有保存入口关联 `mistakes`、`review_queue` 和核验过的 `practice_variants`。`daily.py run` 选择具体新题，`daily.py attempt` 保存真实原答和评级，`answer-shown` 记录提示或答案曝光。FSRS 只录真实独立尝试，详见 [TOOLS.md](TOOLS.md)。一天复习合计约15–30分钟，不因多次消息重复加预算；未知实际用时不填0，逾期未做不记作答错。
 
 学习结束后，以 `daily.py feedback` 保存本人所述完成内容、耗时、卡点与下一步。区分一次学习段用时和当日累计用时，不重复求和；辅助作答和自报完成保留为反馈，不变成掌握证据。`Exam Coverage.md` 与 `Weekly Reflection.md` 只解释已有真实记录，旧记录未映射到考点不代表从未学过。
 
@@ -73,7 +73,7 @@
 
 写入前重新读取 state，保留无关内容和历史，通过 [共享保存入口](SESSION.md) 提交，禁止直接改写 state.json。工具在共享锁内核对草稿基准、备份并替换；事件编号在副作用前固定，重试沿用。页面失败只补建视图，不重复保存学习事件。
 
-更新 state 中的任务、讨论记录、课程焦点、mistakes 和 review_queue 后，运行 `daily.py run`、`daily.py check`。统一入口维护今日/周计划、Upcoming、今日具体复习题、复习队列、学习反馈、考前覆盖、周复盘和模拟卷入口共9份系统页面，以及已登记的各科试卷；模拟题错题区写入本科错题本时保留其他内容。一般教学问答产生的错题仍由助手按状态同步到本科错题本。
+更新 state 中的任务、讨论记录、课程焦点、mistakes 和 review_queue 后，运行 `daily.py run`、`daily.py check`。统一入口维护今日/周计划、Upcoming、今日具体复习题、复习队列、学习反馈、考前覆盖、周复盘和模拟卷入口共9份系统页面，以及已登记的各科试卷；模拟题错题区写入本科错题本时保留其他内容。助手批改后将真实错误追加到统一错题库，也可链接该原记录。初始化仅在缺失时创建 `Study/错题库.md`，已有安装首次收录时可从 `templates/mistake-bank.md` 创建；已有文件不覆盖。`daily.py run/render/check` 不管理这份笔记，单纯追加错题不触发状态或视图重建。
 
 没有新状态的普通追问不重复生成计划。真实作答、提示曝光、错题和进度反馈仍按原规则及时保存；减少 Moodle 检查不改变学习证据标准。跨日呈现计划时做本地重建与校验，不触发新的学校检查。
 

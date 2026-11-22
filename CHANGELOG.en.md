@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-22
+
+- Add one `Study/错题库.md` for direct collection of actual learner mistakes in the same turn, preserving the question source, original answer, error, corrected approach and retests. Collection alone needs no state edit or plan rebuild. Corrections and retests retain history; questions and unanswered work are not mistakes.
+- Initialization creates only a missing file. Existing installations can create it from `templates/mistake-bank.md` on first collection without overwriting notes. Refresh does not manage these source notes; existing state and course notebooks stay intact. Course-material replacement also protects the bank. See the [mistake bank guide](docs/MISTAKE_BANK.md).
+- Validation: **823 offline tests passed** (Node 141, onboarding Python 92, study Python 590), including repeated initialization, refresh preservation and material-replacement protection. Actual model compliance on every mistake was not tested. Nothing pushed or published.
+
 ## 2026-11-17 · Narrow-screen formulas
 
 - Add short notation, nearby symbol definitions, split long equations, and step-by-step text fallbacks for complex formulas to reduce clipping in narrow chats.

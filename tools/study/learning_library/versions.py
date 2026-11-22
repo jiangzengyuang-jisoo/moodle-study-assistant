@@ -78,7 +78,7 @@ def assert_source_identity(old, incoming):
 
 def verify(study, row):
     path = safe(study, row["relative_path"])
-    if any(p.casefold() in {"_system", "backups", "错题本"} for p in path.relative_to(study).parts):
+    if any(p.casefold() in {"_system", "backups", "错题本", "错题库.md"} for p in path.relative_to(study).parts):
         raise ValueError("Learning records and system files cannot be versioned as course originals")
     if not row.get("sha256") or not path.is_file() or sha(path) != row["sha256"]:
         raise ValueError("Material is missing or locally modified: " + row["id"])
@@ -283,7 +283,7 @@ def promote(state_path, incoming, old_id=None, at=None, *, allow_missing_previou
             if not original.exists() and allow_missing_previous:
                 if not _same_authorized_source(state, old, incoming) or not re.fullmatch(r"[a-f0-9]{64}", old.get("sha256", "")):
                     raise ValueError("Missing original needs one matching account-bound source before replacement")
-                if any(p.casefold() in {"_system", "backups", "错题本"} for p in original.relative_to(study).parts):
+                if any(p.casefold() in {"_system", "backups", "错题本", "错题库.md"} for p in original.relative_to(study).parts):
                     raise ValueError("Learning records cannot be replaced as missing course originals")
                 missing_original = old["id"]
             else:

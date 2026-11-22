@@ -11,6 +11,10 @@ test('initialization is blank, portable and preserves existing state', () => {
   try {
     initialize(root);
     const path = join(root, 'Study/_System/state.json');
+    const bank = join(root, 'Study/错题库.md');
+    assert.match(readFileSync(bank, 'utf8'), /^# 错题库/);
+    const notes = '\uFEFF# 我的错题\r\n\r\n原答：0；后续更正仍保留原答。\r\n';
+    writeFileSync(bank, notes, 'utf8');
     const state = JSON.parse(readFileSync(path));
     assert.deepEqual(state.courses, []);
     assert.deepEqual(state.mistakes, []);
@@ -30,6 +34,7 @@ test('initialization is blank, portable and preserves existing state', () => {
     state.tasks.push({id: 'KEEP', status: 'Completed'});
     writeFileSync(path, JSON.stringify(state));
     initialize(root);
+    assert.equal(readFileSync(bank, 'utf8'), notes);
     assert.equal(JSON.parse(readFileSync(path)).tasks[0].id, 'KEEP');
     assert.equal(JSON.parse(readFileSync(path)).settings.moodle_refresh_policy.mode, 'user_selected_policy');
   } finally { rmSync(root, {recursive: true, force: true}); }

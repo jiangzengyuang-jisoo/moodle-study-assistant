@@ -54,6 +54,8 @@ https://github.com/jiangzengyuang-jisoo/moodle-study-assistant/tree/codex
 
 ↗ **换个聊天，也能接上。** 在同一工作区保留进度、错题和下一步；讲过什么与独立掌握什么分别记录。
 
+错题统一放在 `Study/错题库.md`：助手发现真实错误后直接追加原答、错因和正确思路，刷新不会覆盖笔记。[错题库说明](docs/MISTAKE_BANK.md)
+
 ## 内置作业「反诱导提示词」规则
 
 > [!WARNING]
