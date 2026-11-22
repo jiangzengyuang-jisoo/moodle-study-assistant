@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-22
+
+- Add one `Study/错题库.md` for direct collection of actual learner mistakes in the same turn, retaining the question source, original answer, assistance conditions, error, corrected approach and retests. Collection alone needs no state edit or plan rebuild; corrections and retests preserve history.
+- Initialization creates only a missing file. Existing installations can create it from `templates/mistake-bank.md` on first collection without overwriting notes. Refresh does not manage the bank; existing state and course notebooks stay intact. Course-material replacement protects it. See the [mistake bank guide](docs/MISTAKE_BANK.md).
+- Update plugin teaching-rule source to use the actual `dataDir/Study/错题库.md`, never the program directory. No package rebuild or installed-plugin replacement; existing plugins require a later package update to load these rules.
+- Validation: **1,152 offline tests passed** (Node 323, onboarding Python 133, study Python 696). Project-local temporary folders resolved system-temp permissions. The Node suite passed 322/323; the remaining index test passed a targeted rerun with the existing `STUDY_PYTHON` set. Coverage includes create-only initialization, separate data roots, refresh preservation and material-replacement protection. Actual model compliance on every mistake was not tested.
+- GitHub branch synchronization ports only this mistake-bank change, retaining the published homepage layout, upgrade guidance and teaching rules. Relevant code, tests and dependency locks match the validated local commit; 14 initialization/data-root checks and 2 mistake-bank protection checks passed after the port.
+
 ## 2026-11-17 · Narrow-screen formulas
 
 - Add short notation, nearby symbol definitions, split long equations, and step-by-step text fallbacks for complex formulas to reduce clipping in narrow chats.

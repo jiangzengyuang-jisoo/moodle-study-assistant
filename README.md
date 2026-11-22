@@ -59,6 +59,8 @@ Verify my progress and mistakes are preserved; explain what changed and whether 
 
 ↗ **Continue in another chat.** Keep your study position, mistakes and next step in the same workspace. Hearing an explanation is kept separate from independent mastery.
 
+Keep actual mistakes in one file: `Study/错题库.md`. The assistant appends your answer, the error and the corrected approach; refreshing preserves your notes. [Mistake bank guide](docs/MISTAKE_BANK.md)
+
 ## Built-in alerts for AI-targeted assignment instructions
 
 > [!WARNING]

@@ -54,6 +54,8 @@ description: "使用本插件在 DeepSeek Harness 聊天中完成 Moodle 学习�
    - 用 `study_check_chapter` 按时间戳核对本章文件。参数：`course_id`（本地课程 ID）、`section` 或 `module_ids`、必填 `chat_id`（先调用 `moodle_study_chat` 取得）；同一聊天同一章且本地资料未变时会复用回执，不要额外传 `force`；只有学生明确要求重新核对才传 `force: true`。学校连不上或核对失败时会如实返回失败状态，不会把失败写成成功回执，也不要把它当成本轮已核验最新版本。
 3. 本次所需课件正文已核读并满足上述继续条件后，立即输出实质讲解，不要先做维护、保存或补跑计划页面。默认一次讲透一个适量知识点（具体例子 → 概念/符号/条件 → 示范 → 一个相关问题），等学生回答后再推进；学生明确要求整章讲义、完整答案或不要互动时按其要求一次交付。
 4. 讲解确实输出、学生给出真实作答，或教学位置/原答实际变化后，用 `study_teaching_save` 保存：传 `course_id`、`chat_id`（先调用 `moodle_study_chat` 取得）和只含本轮变化的 `event`；`event.id` 由你提供并在重试时沿用同一编号，`expected_revision` 一般省略，工具会读取当前状态版本，并发变化由引擎拒绝并返回可重试错误。`source.kind` 固定为 chat、`source.thread_id` 由 `chat_id` 补全，`occurred_at`、`event_type`、`affects_current`、`turn_ids`、`position`、`attempts`（真实原答）由引擎校验。只有返回 `readback_verified=true` 才能说已保存；失败如实说明，不要手写整份学习状态。旧 `study_teaching_event` 仅兼容旧流程（如引导登记），新教学进度与原答优先用 `study_teaching_save`。
+
+发现真实错误时，当轮直接追加到 `<dataDir>/Study/错题库.md`：先从 `study_setup_status` 或 `moodle_study_status` 读取实际资料位置，再读文件查重，保留日期、课程/章节、题面与来源、本人原答、帮助条件、错因、正确思路和待复测状态；未知写待确认，更正与复测追加保留历史，写后回读。只收录本人实际错误，不把提问、未答、跳过或他人的错误写成答错。初始化仅创建缺失文件；旧安装首次收录可用 `program/templates/mistake-bank.md` 空白格式创建，不能覆盖已有笔记或写入插件程序目录。用当前客户端的文件编辑能力完成，单纯收录不必调用教学事件工具或重建页面；实际教学接续仍按上一步保存。`daily.py run/render/check` 不管理错题库，复习时直接读取相关条目。旧状态错题、每科笔记和模拟卷自动区保留；助手批改后在统一库追加或链接实际错误，不重复复制同次作答。
 5. 学生需要作业要求、截止日期、公告、考试安排，或本地缺该章资料时，才用 `study_refresh`（先取 `chat_id`）采集最新学校信息；普通讲解不查询或汇报无关的公告、在线练习、旧章未答题。
 
 ## 学校暂时连不上时

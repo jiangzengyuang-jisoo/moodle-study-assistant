@@ -27,6 +27,7 @@ function programCopy() {
   const program = join(tempRoot, 'program');
   cpSync(join(ROOT, 'tools'), join(program, 'tools'), {recursive: true,
     filter: source => !source.split(/[\\/]/).includes('__pycache__') && !source.endsWith('.pyc')});
+  cpSync(join(ROOT, 'templates'), join(program, 'templates'), {recursive: true});
   cpSync(join(ROOT, 'node_modules'), join(program, 'node_modules'), {recursive: true});
   cpSync(join(ROOT, 'client-target.json'), join(program, 'client-target.json'));
   cpSync(join(ROOT, 'package.json'), join(program, 'package.json'));
@@ -61,6 +62,7 @@ test('run.mjs init writes only STUDY_DATA_ROOT and repeats idempotently', () => 
   const first = initializeWith(program, data);
   assert.equal(first.status, 0, first.stderr);
   assert.ok(existsSync(join(data, 'Study/_System/state.json')));
+  assert.ok(existsSync(join(data, 'Study/错题库.md')));
   assert.ok(existsSync(join(data, 'config.local.json')));
   assert.ok(existsSync(join(data, '.private')));
   assertProgramClean(program);

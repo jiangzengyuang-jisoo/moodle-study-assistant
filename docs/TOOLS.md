@@ -2,6 +2,10 @@
 
 以下命令在用户的学习项目根目录运行。普通同学通过自然语言提出任务；本页供 AI 和维护者参考。不要在共享技能安装目录运行个人初始化或保存学习状态。
 
+## 错题库
+
+真实错题直接追加到 `Study/错题库.md`，先读已有内容查重并保留原答。已有安装缺失该文件时，从 `templates/mistake-bank.md` 创建；只能创建缺失文件，不能覆盖现有笔记。单纯收录不需要命令或状态草稿，`daily.py run/render/check` 不管理此文件。具体格式、复习读取与旧记录兼容见 [错题库](MISTAKE_BANK.md)。
+
 ## Moodle
 
 ```powershell
@@ -14,7 +18,7 @@ node tools/moodle/run.mjs refresh
 node tools/moodle/run.mjs mcp
 ```
 
-`init` 只创建缺失的配置/空白状态，不覆盖已有资料。`courses` 交互选择跟踪页面，并确认课程级资料授权（完整初始化或只同步课程信息），保留未选页面的既有历史；完整初始化、非交互入口和授权保存位置见 [课程级资料授权与自动同步](COURSE_LIBRARY.md)。`library-sync` 对已保存完整授权的课程页面增量枚举、下载、归档、登记并建立索引；学校接口仍只用只读调用，不开始测验尝试、不提交作业、不发帖、不修改学校状态。`chapter-check` 先用本地资料索引与来源映射定位本章模块，再只比对本章文件（教学默认 `--mode timestamp`，`strict` 为显式内容诊断，`quick` 只读元数据）；Moodle 区块位置、日期和 Tutorial 编号不会仅因数字相同被选中，匹配不唯一时返回候选和原因，在已授权范围更新资料与正文索引，必要时删除本次被替代旧原件并保留历史元数据；回执在 `Study/_System/ChapterChecks/`，记录学校/账号归属、已定位模块和本地文件内容哈希；同聊天同范围更新回执可按聊天摘要复用、本地新增资料只核对新增部分，`--force` 强制重查。判定见 [单章资料核对](WORKFLOW.md#单章资料核对不触发完整采集)。`refresh` 采集到 `Study/_System/Runtime/runs/<run_id>/snapshot.json`，完整成功另存 `refresh-last-complete.json`；不直接更新个人掌握、作业完成或 AI 核读状态。退出码2表示部分采集失败。一个 `Study/` 档案只对应一所学校和账号：选课、旧 CLI 授权、资料同步、采集、下载、刷新预检、章节核对和登录会先核对档案已记录的学校/账号，不一致时停止且不写入；换学校请复制/新建独立项目目录并使用独立档案，见 [课程级资料授权](COURSE_LIBRARY.md#一档一校一账号)。
+`init` 只创建缺失的配置、空白状态和 `Study/错题库.md`，不覆盖已有资料或错题笔记。`courses` 交互选择跟踪页面，并确认课程级资料授权（完整初始化或只同步课程信息），保留未选页面的既有历史；完整初始化、非交互入口和授权保存位置见 [课程级资料授权与自动同步](COURSE_LIBRARY.md)。`library-sync` 对已保存完整授权的课程页面增量枚举、下载、归档、登记并建立索引；学校接口仍只用只读调用，不开始测验尝试、不提交作业、不发帖、不修改学校状态。`chapter-check` 先用本地资料索引与来源映射定位本章模块，再只比对本章文件（教学默认 `--mode timestamp`，`strict` 为显式内容诊断，`quick` 只读元数据）；Moodle 区块位置、日期和 Tutorial 编号不会仅因数字相同被选中，匹配不唯一时返回候选和原因，在已授权范围更新资料与正文索引，必要时删除本次被替代旧原件并保留历史元数据；回执在 `Study/_System/ChapterChecks/`，记录学校/账号归属、已定位模块和本地文件内容哈希；同聊天同范围更新回执可按聊天摘要复用、本地新增资料只核对新增部分，`--force` 强制重查。判定见 [单章资料核对](WORKFLOW.md#单章资料核对不触发完整采集)。`refresh` 采集到 `Study/_System/Runtime/runs/<run_id>/snapshot.json`，完整成功另存 `refresh-last-complete.json`；不直接更新个人掌握、作业完成或 AI 核读状态。退出码2表示部分采集失败。一个 `Study/` 档案只对应一所学校和账号：选课、旧 CLI 授权、资料同步、采集、下载、刷新预检、章节核对和登录会先核对档案已记录的学校/账号，不一致时停止且不写入；换学校请复制/新建独立项目目录并使用独立档案，见 [课程级资料授权](COURSE_LIBRARY.md#一档一校一账号)。
 
 AI 在需要校务信息或用户明确要求时调用 `continue/refresh`，不会每条追问重复执行；单章教学优先用 MCP `study_check_chapter`（`chapter-check` 为异常 CLI 后备），不会触发完整采集。命令本身始终进行真实采集。采集器全局最多同时执行4个 API 请求，每个论坛的分页仍按顺序读取，完整正文、回复和权限核对保留。同聊天复用返回的是上次本章更新回执（标记 `reused: true`、`network_started: false`），不是新的联网检查；本人明确要求重新核对时，工具用 `force: true`（CLI 后备用 `--force`）；不为获取新结果而更换聊天 ID 或扩大成完整刷新。CLI 后备 `chapter-check` 的阶段进度在 stderr，最终结构化结果只在 stdout；慢速首次核对可由助手用 Harness 后台任务跟进同一任务，不用 `Select-Object -Last 40` 截断进度。不要把没有重新联网的缓存复用记为新的检查。
 
@@ -223,7 +227,7 @@ Get-Content -Raw -Encoding UTF8 'tmp/teaching-event.json' | .\study.cmd --chat "
 - 无变化：合并后与最新状态相同 → `unchanged`，不写盘、不重建视图。
 - 重试：省略 `--operation-id` 时编号由“聊天 + 事件内容”派生，同内容重试得到同编号 → `duplicate`，只补视图；需要固定编号时先用 `study.cmd --chat "ID" operation-id` 分配，再用 `--operation-id` 提交，重试沿用原编号和内容；同编号不同内容报冲突。
 - 视图生成崩溃：学习状态已提交时重试只补视图，不重复保存事件。
-- 保存成功后可选用 `daily.py check` 只读确认页面；教学位置之外的状态（任务、错题、复习队列、计划、考试、跨日呈现等）仍走各自命令并 `daily.py run/check`。
+- 保存成功后可选用 `daily.py check` 只读确认页面；教学位置之外的状态（任务、结构化错题与复习队列、计划、考试、跨日呈现等）仍走各自命令并 `daily.py run/check`。
 - 禁止：掌握度/评级、改写既有 `checks/history`、证据集合（`topic_evidence`/`evidence_bindings` 等）、考试与作业记录、其他课程、未知键、超长超大事件。内部任务（`--subtask`）不能写教学事件；事件里的聊天 ID 必须来自当前入口，不手填。
 
 ## 考前覆盖与模拟卷

@@ -64,6 +64,16 @@ export function initialize(root) {
     }
   }
   for (const dir of ['Study/_System', 'Study/_Inbox', '.private', ...(target === 'codex' ? ['.codex'] : [])]) mkdirSync(join(root, dir), {recursive: true});
+  const mistakeBank = join(root, 'Study/错题库.md');
+  if (!existsSync(mistakeBank)) {
+    const template = readFileSync(new URL('../../templates/mistake-bank.md', import.meta.url), 'utf8');
+    try {
+      // Personal source notes: create once, never regenerate or overwrite them.
+      writeFileSync(mistakeBank, template, {encoding: 'utf8', flag: 'wx'});
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+    }
+  }
   const configPath = join(root, 'config.local.json');
   if (!existsSync(configPath)) atomicJSON(configPath, {moodle_url: 'https://moodle.hku.hk', timezone: 'Asia/Hong_Kong'});
   if (!existsSync(path)) {
